@@ -140,6 +140,12 @@ public enum UserErrorCode implements ApiErrorCode {
     // 그대로 통과시켰다. 형식(이동전화 여부)까지 판정한다.
     , USER_400_079(HttpStatus.BAD_REQUEST, "휴대폰번호 형식이 올바르지 않습니다. 이동전화 번호를 입력해 주세요.")
     , USER_400_080(HttpStatus.BAD_REQUEST, "생년월일을 올바르게 입력해 주세요. (YYMMDD)")
+
+    // ===== 경력인정 이원화(2026-08-21, 지시서 §1-1) - 반영/일수 모드 서버 검증 =====
+    // 연차 반영 모드[LEAVE_CALC_YN] 값이 'Y'/'N' 이외인 경우.
+    , USER_400_081(HttpStatus.BAD_REQUEST, "연차 반영 모드 값이 올바르지 않습니다.")
+    // 일수 모드(N)인데 연간 추가 부여 일수 미입력/범위 밖(0.5 단위, 0 초과 25 이하 필수).
+    , USER_400_082(HttpStatus.BAD_REQUEST, "일수 모드는 연간 추가 부여 일수를 0.5일 단위로 0일 초과 25일 이하로 입력해 주세요.")
     ;
 
     private final HttpStatus httpStatus;

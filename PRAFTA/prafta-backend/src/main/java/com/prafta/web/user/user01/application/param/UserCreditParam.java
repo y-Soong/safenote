@@ -1,5 +1,6 @@
 package com.prafta.web.user.user01.application.param;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.prafta.common.dto.TokenInfo;
@@ -20,7 +21,11 @@ public record UserCreditParam(
 ) {
     public record CreditItem(
         Integer creditMonths
+        , String reasonType
         , String reasonDetail
+        // 경력인정 이원화(2026-08-21) — 원문 그대로 보존, 정규화/검증은 서비스 레이어(User01ServiceImpl)에서 수행.
+        , String leaveCalcYn
+        , BigDecimal extraLeaveDays
     ) {}
 
     public static UserCreditParam from(UserCreditRequest request, TokenInfo tokenInfo) {
@@ -33,7 +38,13 @@ public record UserCreditParam(
         List<CreditItem> items = (request.getCreditList() == null)
             ? List.of()
             : request.getCreditList().stream()
-                .map(it -> new CreditItem(it.getCreditMonths(), it.getReasonDetail()))
+                .map(it -> new CreditItem(
+                    it.getCreditMonths()
+                    , it.getReasonType()
+                    , it.getReasonDetail()
+                    , it.getLeaveCalcYn()
+                    , it.getExtraLeaveDays()
+                ))
                 .toList();
 
         return new UserCreditParam(

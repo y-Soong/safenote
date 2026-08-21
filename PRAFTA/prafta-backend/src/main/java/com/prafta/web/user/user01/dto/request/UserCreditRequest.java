@@ -1,5 +1,6 @@
 package com.prafta.web.user.user01.dto.request;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.prafta.common.annotation.FieldLabel;
@@ -39,8 +40,23 @@ public class UserCreditRequest {
         @Min(0)
         private Integer creditMonths;
 
+        /** 경력 인정 사유 유형 [SYS042] — 미입력 시 서버가 'OTHER'로 기본 처리(하위호환). */
+        @FieldLabel("사유 유형")
+        private String reasonType;
+
         @FieldLabel("상세 설명")
         @Size(max = 500)
         private String reasonDetail;
+
+        /**
+         * 경력인정 이원화(2026-08-21, 지시서 §1-1) — 연차 산정 반영 여부.
+         * 'Y'(반영 모드, 기본) / 'N'(일수 모드). 미전송 시 서버가 'Y'로 기본 처리(하위호환).
+         */
+        @FieldLabel("연차 반영 모드")
+        private String leaveCalcYn;
+
+        /** 일수 모드(N) 전용 연간 추가 부여 일수. 반영 모드(Y)에서는 서버가 무시(NULL 강제)한다. */
+        @FieldLabel("연간 추가 부여 일수")
+        private BigDecimal extraLeaveDays;
     }
 }

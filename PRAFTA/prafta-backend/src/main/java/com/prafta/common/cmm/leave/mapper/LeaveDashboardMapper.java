@@ -268,10 +268,20 @@ public interface LeaveDashboardMapper {
                              @Param("leaveCd") String leaveCd);
 
     /**
-     * 경력 인정 개월 합계 (tb_user_service_credit, USE_YN='Y'). 입사일 기준 부여 시 근속 가산용.
+     * 경력 인정 개월 합계 (tb_user_service_credit, USE_YN='Y' AND LEAVE_CALC_YN='Y'). 입사일 기준 부여 시 근속 가산용.
+     * 경력인정 이원화(2026-08-21, 지시서 §1-2): 일수 모드(LEAVE_CALC_YN='N')는 산정근속 미가산(정책 P-7)이라 제외.
      */
     int selectCreditMonths(@Param("cmpnyCd") String cmpnyCd,
                            @Param("userCd") String userCd);
+
+    /**
+     * 일수 모드 경력인정 연간 추가 부여 일수 합계 (tb_user_service_credit, USE_YN='Y' AND LEAVE_CALC_YN='N').
+     * 경력인정 이원화(2026-08-21, 지시서 §1-4) — MANUAL_CAREER 연간 자동 부여량 산정용.
+     *
+     * @return 활성 일수 모드 credit 행들의 EXTRA_LEAVE_DAYS 합(없으면 0)
+     */
+    java.math.BigDecimal selectExtraLeaveDaysSum(@Param("cmpnyCd") String cmpnyCd,
+                                                 @Param("userCd") String userCd);
 
     /**
      * 입사일 변경 차액 보전(prafta-030 BE-1)용 "기존 부여누적" 합계 (정정 2026-05-26 / 결정문서 D1).

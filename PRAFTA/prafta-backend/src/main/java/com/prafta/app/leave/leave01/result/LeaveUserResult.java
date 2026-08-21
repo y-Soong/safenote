@@ -6,7 +6,7 @@ package com.prafta.app.leave.leave01.result;
  * <pre>
  *   U.USER_NM                           AS userNm              (평문 PII, 로그 출력 금지)
  *   U.HIRE_DATE                         AS hireDate            (YYYYMMDD 원본, FE 포맷)
- *   SUM(C.CREDIT_MONTHS WHERE USE_YN='Y') AS serviceCreditMonths (없으면 0)
+ *   SUM(C.CREDIT_MONTHS WHERE USE_YN='Y' AND LEAVE_CALC_YN='Y') AS serviceCreditMonths (없으면 0, 경력인정 이원화 — 일수 모드 제외)
  * </pre>
  * serviceMonths(실근속 개월)는 서버 LocalDate 계산(hireDate~오늘)으로 별도 산출한다.
  */

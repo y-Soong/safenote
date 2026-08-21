@@ -1,5 +1,6 @@
 package com.prafta.web.user.user01.application.param;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.prafta.common.dto.TokenInfo;
@@ -30,6 +31,9 @@ public record UserCreateParam(
     , Integer creditMonths
     , String creditReasonType
     , String creditReasonDetail
+    // 경력인정 이원화(2026-08-21, 지시서 §1-1) — 'Y'(반영, 기본)/'N'(일수). 정규화/검증은 서비스 레이어.
+    , String creditLeaveCalcYn
+    , BigDecimal creditExtraLeaveDays
     // PRAFTA-037-F7 — 추가 권한 사이트 코드 목록 (기본 siteCd 외). 엑셀 업로드는 null/빈 리스트.
     , List<String> additionalSiteCdList
     // PRAFTA-COM-008-E-5 — 기본 근무타입(SCH_CD, 선택). 엑셀 업로드는 null.
@@ -76,6 +80,8 @@ public record UserCreateParam(
             , request.getCreditMonths()
             , request.getCreditReasonType()
             , request.getCreditReasonDetail()
+            , request.getCreditLeaveCalcYn()
+            , request.getCreditExtraLeaveDays()
             , request.getAdditionalSiteCdList()
             , request.getDefaultSchCd()
             , request.getStdWorkType()

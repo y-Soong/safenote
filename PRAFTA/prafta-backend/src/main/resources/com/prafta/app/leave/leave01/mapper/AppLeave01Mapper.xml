@@ -120,7 +120,8 @@
 
     <!--
       사용자 메타(userNm/hireDate/serviceCreditMonths). 본인 자기조회 스코프(cmpnyCd+userCd).
-      serviceCreditMonths = SUM(CREDIT_MONTHS WHERE USE_YN='Y') (웹 LeaveDashboardMapper.selectCreditMonths 동일).
+      serviceCreditMonths = SUM(CREDIT_MONTHS WHERE USE_YN='Y' AND LEAVE_CALC_YN='Y') (웹 LeaveDashboardMapper.selectCreditMonths 동일).
+      경력인정 이원화(2026-08-21): LEAVE_CALC_YN='N'(일수 모드)은 산정근속 미가산이라 제외(정책 P-7).
       serviceMonths(실근속)는 서버 LocalDate 계산이므로 SELECT 하지 않는다.
     -->
     <select id="selectUser"
@@ -136,6 +137,7 @@
                WHERE C.CMPNY_CD = U.CMPNY_CD
                  AND C.USER_CD = U.USER_CD
                  AND C.USE_YN = 'Y'
+                 AND C.LEAVE_CALC_YN = 'Y'
           ), 0) AS serviceCreditMonths
     FROM TB_USER U
     WHERE U.CMPNY_CD = #{ param.cmpnyCd }

@@ -79,6 +79,11 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
      * SYS043: '01'=자동 부여(AUTO) / '02'=관리자 수동 부여(ADMIN) — prafta-017-2 시드.
      */
     private static final String GRANT_BY_TYPE_ADMIN = "02";
+    /**
+     * 자동 부여 방식 코드 (GRANT_BY_TYPE). SYS043 '01'=자동 부여(AUTO).
+     * 회수 가드 특례(P-11, GRANT_TYPE=MANUAL_CAREER)에서만 참조한다.
+     */
+    private static final String GRANT_BY_TYPE_AUTO = "01";
     private static final String STATUS_ACTIVE = "ACTIVE";
     private static final int DEFAULT_VALIDITY_MONTHS = 12;
 
@@ -113,6 +118,13 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     // ===== 수동 부여 연차 회수 (soft cancel, PRAFTA-031) =====
     /** 관리자 수동 부여 식별 prefix(GRANT_TYPE). 회수 대상은 MANUAL_* 만. */
     private static final String MANUAL_GRANT_PREFIX = "MANUAL_";
+    /**
+     * 경력인정 일수 모드 자동 부여 유형(GRANT_TYPE, prafta-경력인정-이원화 P-10).
+     * GRANT_BY_TYPE='01'(자동)로 적재되지만, 오입력 복구 안전망을 위해 회수 가드에서
+     * 이 타입 한정 예외를 둔다(P-11, 사용자 확정 2026-08-21). 다른 자동 부여 타입(STATUTORY_* 등)은
+     * 기존 조건(GRANT_BY_TYPE='02') 그대로 유지 — 특례는 MANUAL_CAREER 한정.
+     */
+    private static final String GRANT_TYPE_CAREER = "MANUAL_CAREER";
     private static final String STATUS_CANCELED = "CANCELED";
     /** 알림 유형 [SYS045] — 부여 연차 회수. */
     private static final String NOTI_TYPE_RECALLED = "LEAVE_GRANT_RECALLED";
@@ -550,8 +562,13 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
 
         // 4. 서버 재검증 (정책서 §8.5.8 확정 결정 1/2)
         //    4-1. 관리자 수동 부여건만 회수 가능: GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02'
+        //    4-1-특례(P-11): GRANT_TYPE='MANUAL_CAREER'(경력인정 일수 모드 자동 부여)는
+        //         GRANT_BY_TYPE='01'(자동)이어도 회수 가능 — 오입력 복구 안전망. 다른 자동 부여 타입은 미적용.
         boolean isManualType = target.getGrantType() != null && target.getGrantType().startsWith(MANUAL_GRANT_PREFIX);
-        if (!isManualType || !GRANT_BY_TYPE_ADMIN.equals(target.getGrantByType())) {
+        boolean isCareerRecallException = GRANT_TYPE_CAREER.equals(target.getGrantType())
+                && GRANT_BY_TYPE_AUTO.equals(target.getGrantByType());
+        boolean grantByTypeOk = GRANT_BY_TYPE_ADMIN.equals(target.getGrantByType()) || isCareerRecallException;
+        if (!isManualType || !grantByTypeOk) {
             log.warn("연차 회수 - 수동 부여건 아님. cmpnyCd={}, grantId={}, grantType={}, grantByType={}",
                     cmpnyCd, safeGrantId, target.getGrantType(), target.getGrantByType());
             throw new ApiException(AttdErrorCode.ATTD_400_071);
@@ -578,7 +595,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
             throw new ApiException(AttdErrorCode.ATTD_409_071);
         }
 
-        // 6. 알림 outbox 적재 (발송은 추후 모바일 push). 중복 발송 방지 키 = 'RECALL_'+grantId.
+        // 6. 알림 outbox 적재 (발송은 추후 모바일 push).
+        //    N-1(2차 QA): 중복 발송 방지 키 = 'RECALL_'+grantId+'_'+notiId (회수 이벤트마다 유일 — 아래 메서드 참조).
         insertRecallNotiOutbox(cmpnyCd, target, safeReason, operatorUserCd);
 
         log.info("연차 회수 완료. cmpnyCd={}, grantId={}, 대상직원={}, 수행자={}",
@@ -593,11 +611,23 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     /**
      * 회수 알림 outbox 1건 적재(PRAFTA-031, 공통 정책서 §10).
      * DATA_PAYLOAD는 Jackson으로 안전하게 직렬화(사유 내 따옴표 이스케이프 위임).
+     *
+     * <p><b>N-1(2차 QA 재검증, 2026-08-21) — DEDUP_KEY 구성 변경:</b>
+     * 종전에는 {@code "RECALL_" + grantId} 단독 키였다. P-11(D-2)로 {@code MANUAL_CAREER} 회수가 열리면서
+     * "회수 → (정기/즉시부여로) 재활성화 → 다시 회수"가 처음으로 가능해졌는데, 두 번째 회수의 outbox INSERT가
+     * 첫 번째와 동일한 grantId 키로 {@code UK_NOTI_OUTBOX_DEDUP} UNIQUE(CMPNY_CD, DEDUP_KEY) 제약에 걸려
+     * {@link DuplicateKeyException} → 회수 트랜잭션 전체 롤백(500)이 발생했다.
+     * <p>같은 클릭/재전송에 의한 중복은 이 키가 아니라 {@link #recallGrant} 5단계의 원자적 UPDATE
+     * (WHERE STATUS='ACTIVE')가 이미 막는다 — 두 번째 요청은 그 UPDATE에서 0건이 되어 {@code ATTD_409_071}로
+     * 이 메서드 호출 자체에 도달하지 못한다. 따라서 outbox 쪽 키는 "같은 grantId라도 회수 이벤트마다 유일"하기만
+     * 하면 되고, 이미 이벤트마다 새로 채번되는 {@code notiId}(날짜+시퀀스, 회수 실행 시점을 식별)를 grantId 뒤에
+     * 덧붙이는 것으로 충분하다(신규 시간/카운터 컬럼 추가 없이 기존 채번값 재사용).
      */
     private void insertRecallNotiOutbox(String cmpnyCd, LeaveRecallTargetVO target, String reason,
                                         String operatorUserCd) {
         NotiOutboxInsertVO vo = new NotiOutboxInsertVO();
-        vo.setNotiId(leaveDashboardMapper.selectNextNotiId(cmpnyCd));
+        String notiId = leaveDashboardMapper.selectNextNotiId(cmpnyCd);
+        vo.setNotiId(notiId);
         vo.setCmpnyCd(cmpnyCd);
         vo.setSiteCd(null);
         vo.setTargetUserCd(target.getUserCd());
@@ -607,7 +637,7 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         vo.setBody(buildRecallNotiBody(target));
         vo.setDataPayload(buildRecallPayload(target, reason));
         vo.setSendStatus(NOTI_SEND_STATUS_PENDING);
-        vo.setDedupKey("RECALL_" + target.getGrantId());
+        vo.setDedupKey("RECALL_" + target.getGrantId() + "_" + notiId);
         vo.setInsertNo(operatorUserCd);
 
         leaveDashboardMapper.insertNotiOutbox(vo);

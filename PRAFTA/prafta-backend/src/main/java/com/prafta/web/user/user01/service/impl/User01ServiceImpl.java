@@ -133,6 +133,47 @@ public class User01ServiceImpl implements User01Service{
 	// REASON_DETAIL varchar(500) - 경력 인정 상세 설명 서버측 길이 상한
 	private static final int REASON_DETAIL_MAX_LEN = 500;
 
+	// ===== 경력인정 이원화(2026-08-21, 지시서 §1-1) =====
+	// LEAVE_CALC_YN: 'Y'=반영 모드(개월수를 연차 산식에 반영, 기본) / 'N'=일수 모드(기록용 + 연간 N일 부여).
+	private static final String LEAVE_CALC_YN_REFLECT = "Y";
+	private static final String LEAVE_CALC_YN_DAYS = "N";
+	// EXTRA_LEAVE_DAYS decimal(4,1) — 일수 모드 연간 추가 부여 일수 상한/단위.
+	private static final java.math.BigDecimal EXTRA_LEAVE_DAYS_MAX = new java.math.BigDecimal("25");
+	private static final java.math.BigDecimal EXTRA_LEAVE_DAYS_UNIT = new java.math.BigDecimal("0.5");
+
+	/**
+	 * 연차 반영 모드 정규화 — 미전송(null/blank)은 'Y'(반영 모드)로 하위호환 처리(R-3).
+	 * 'Y'/'N' 이외 값은 거부.
+	 */
+	private String normalizeLeaveCalcYn(String raw) {
+		if (isBlank(raw)) {
+			return LEAVE_CALC_YN_REFLECT;
+		}
+		String v = raw.trim();
+		if (!LEAVE_CALC_YN_REFLECT.equals(v) && !LEAVE_CALC_YN_DAYS.equals(v)) {
+			throw new ApiException(UserErrorCode.USER_400_081);
+		}
+		return v;
+	}
+
+	/**
+	 * 일수 모드(N) 전용 연간 추가 부여 일수 검증·정규화.
+	 * 반영 모드(Y)는 클라 입력을 신뢰하지 않고 NULL 강제(지시서 §1-1).
+	 * 일수 모드(N)는 0.5일 단위·0일 초과·25일 이하 필수.
+	 */
+	private java.math.BigDecimal resolveExtraLeaveDays(String normalizedLeaveCalcYn, java.math.BigDecimal raw) {
+		if (LEAVE_CALC_YN_REFLECT.equals(normalizedLeaveCalcYn)) {
+			return null;
+		}
+		if (raw == null
+				|| raw.compareTo(java.math.BigDecimal.ZERO) <= 0
+				|| raw.compareTo(EXTRA_LEAVE_DAYS_MAX) > 0
+				|| raw.remainder(EXTRA_LEAVE_DAYS_UNIT).compareTo(java.math.BigDecimal.ZERO) != 0) {
+			throw new ApiException(UserErrorCode.USER_400_082);
+		}
+		return raw;
+	}
+
 	// PRAFTA-COM-008-E-5: 자동생성 트리거 운영 게이트. 미충족이면 설정만 저장하고 생성은 스킵.
 	//   코드 기본값을 true 로 통일(로그인 게이트/배치 스케줄러와 정합). properties 에 명시값이 있으면 그 값 우선.
 	//   기본 false 비대칭이 User_01 경로에서 운영 누락(생성 미동작)을 유발하던 문제 해소.
@@ -536,7 +577,10 @@ public class User01ServiceImpl implements User01Service{
 		int totalMonths = 0;
 		for (ServiceCreditResult cr : creditResults) {
 			creditItems.add(LeaveInfoResponse.CreditItem.from(cr));
-			if (cr.creditMonths() != null) {
+			// 경력인정 이원화(2026-08-21): 법적 근속 기준일은 반영 모드(LEAVE_CALC_YN='Y') 개월수만 가산한다.
+			// 일수 모드(N)는 산정근속 미가산 약정이므로(정책 P-7) 여기 합계에서 제외 — selectCreditMonths 필터와 동일 기준.
+			boolean isReflectMode = cr.leaveCalcYn() == null || LEAVE_CALC_YN_REFLECT.equals(cr.leaveCalcYn());
+			if (isReflectMode && cr.creditMonths() != null) {
 				totalMonths += cr.creditMonths();
 			}
 		}
@@ -570,6 +614,7 @@ public class User01ServiceImpl implements User01Service{
 		}
 
 		// 입력 검증: 인정 개월은 0 이상, 상세 설명은 500자 이내(REASON_DETAIL varchar(500))
+		// + 사유 유형[SYS042] 허용코드 + 경력인정 이원화(2026-08-21) 반영/일수 모드 검증(지시서 §1-1).
 		for (UserCreditParam.CreditItem item : param.creditList()) {
 			if (item.creditMonths() == null || item.creditMonths() < 0) {
 				throw new ApiException(UserErrorCode.USER_400_008);
@@ -577,6 +622,11 @@ public class User01ServiceImpl implements User01Service{
 			if (item.reasonDetail() != null && item.reasonDetail().length() > REASON_DETAIL_MAX_LEN) {
 				throw new ApiException(UserErrorCode.USER_400_009);
 			}
+			if (!isBlank(item.reasonType()) && !ALLOWED_REASON_TYPES.contains(item.reasonType())) {
+				throw new ApiException(UserErrorCode.USER_400_048);
+			}
+			String normalizedLeaveCalcYn = normalizeLeaveCalcYn(item.leaveCalcYn());
+			resolveExtraLeaveDays(normalizedLeaveCalcYn, item.extraLeaveDays());
 		}
 
 		// 대상 userCd가 자사(gvCmpnyCd)에 실제 존재하는 사용자인지 검증 (고아 경력 인정 레코드 방지)
@@ -590,17 +640,34 @@ public class User01ServiceImpl implements User01Service{
 		// delete-and-insert: 기존 USE_YN='Y' 전량 소프트 삭제 후 신규 INSERT
 		user01Mapper.deleteUserServiceCredit(UserCreditDeleteCommand.from(param));
 
+		boolean hasDaysMode = false;
 		for (UserCreditParam.CreditItem item : param.creditList()) {
+			String reasonType = isBlank(item.reasonType()) ? "OTHER" : item.reasonType();
+			String normalizedLeaveCalcYn = normalizeLeaveCalcYn(item.leaveCalcYn());
+			java.math.BigDecimal normalizedExtraLeaveDays =
+					resolveExtraLeaveDays(normalizedLeaveCalcYn, item.extraLeaveDays());
+			if (LEAVE_CALC_YN_DAYS.equals(normalizedLeaveCalcYn)) {
+				hasDaysMode = true;
+			}
 			user01Mapper.insertUserServiceCredit(
 					UserCreditInsertCommand.of(
 							param.gvCmpnyCd()
 							, param.userCd()
 							, item.creditMonths()
+							, reasonType
 							, item.reasonDetail()
+							, normalizedLeaveCalcYn
+							, normalizedExtraLeaveDays
 							, param.gvCmpnyCd()
 							, param.gvUserCd()
 					)
 			);
+		}
+
+		// 경력인정 이원화(2026-08-21, 지시서 §1-4 P-8): 일수 모드 항목이 하나라도 있으면 당해 회차분 즉시 부여.
+		// delete-and-insert 이후 전체 활성 행 기준으로 재계산되므로(엔진이 SUM 재조회) 항목별이 아닌 1회 호출로 충분.
+		if (hasDaysMode) {
+			leaveGrantEngineService.grantManualCareerImmediate(param.gvCmpnyCd(), param.userCd(), param.gvUserCd());
 		}
 
 		log.info("경력 인정 저장 완료 - userCd={}, 항목수={}", param.userCd(), param.creditList().size());
@@ -798,6 +865,14 @@ public class User01ServiceImpl implements User01Service{
 			throw new ApiException(UserErrorCode.USER_400_009);
 		}
 
+		// 5-2) 경력인정 이원화(2026-08-21, 지시서 §1-1): 연차 반영 모드 검증.
+		//   미전송(null/blank)은 'Y'(반영 모드)로 정규화(하위호환, R-3). 'N'(일수 모드)이면
+		//   EXTRA_LEAVE_DAYS 필수(0.5 단위, 0 초과 25 이하) — resolveExtraLeaveDays 가 검증하고,
+		//   'Y'이면 클라 입력값을 신뢰하지 않고 NULL 강제한다.
+		String creditLeaveCalcYn = normalizeLeaveCalcYn(param.creditLeaveCalcYn());
+		java.math.BigDecimal creditExtraLeaveDays =
+				resolveExtraLeaveDays(creditLeaveCalcYn, param.creditExtraLeaveDays());
+
 		// 6) 권한코드 존재 + 권한레벨 이중 검증 (요청자 권한레벨 이상만 부여 가능 — sortIdx 가 크거나 같아야 함).
 		String targetAuthLevelStr = user01Mapper.selectAuthLevelByAuthCd(param.gvCmpnyCd(), param.authCd());
 		if (isBlank(targetAuthLevelStr)) {
@@ -968,6 +1043,7 @@ public class User01ServiceImpl implements User01Service{
 		}
 
 		// 19) 경력 인정 1건(개월 > 0 일 때만) INSERT. 사유 유형 미지정 시 'OTHER'.
+		//   경력인정 이원화(2026-08-21): leaveCalcYn/extraLeaveDays 는 상단(5-2)에서 이미 정규화·검증된 값.
 		if (param.creditMonths() != null && param.creditMonths() > 0) {
 			String reasonType = isBlank(param.creditReasonType()) ? "OTHER" : param.creditReasonType();
 			user01Mapper.insertUserServiceCredit(new UserCreditInsertCommand(
@@ -976,9 +1052,18 @@ public class User01ServiceImpl implements User01Service{
 					, param.creditMonths()
 					, reasonType
 					, param.creditReasonDetail()
+					, creditLeaveCalcYn
+					, creditExtraLeaveDays
 					, param.gvCmpnyCd()
 					, param.gvUserCd()
 			));
+
+			// 19-2) 경력인정 이원화(2026-08-21, 지시서 §1-4 P-8): 일수 모드 등록 즉시 당해 회차분 부여.
+			//   실패(시스템 예외)는 계정 생성 트랜잭션과 함께 롤백(REQUIRES_NEW 이므로 이 메서드 단위로만 롤백,
+			//   다른 회사/사용자 영향 없음). 소정-05 OFF 등 정책상 스킵은 engine 내부에서 throw 없이 처리(R-5).
+			if (LEAVE_CALC_YN_DAYS.equals(creditLeaveCalcYn)) {
+				leaveGrantEngineService.grantManualCareerImmediate(param.gvCmpnyCd(), userCd, param.gvUserCd());
+			}
 		}
 
 		// 20) PRAFTA-COM-008-E-5: 기본 근무타입 설정 시 즉시 자동생성(E-3 트리거2) — 교대 비소속·운영 게이트 on.

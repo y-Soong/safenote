@@ -10,7 +10,8 @@ import lombok.Setter;
  * {@code SEND_STATUS='PENDING'} 1행을 적재한다(발송은 추후 모바일 push).
  *
  * <p>중복 발송 방지(§10.3): {@code dedupKey} + UNIQUE(CMPNY_CD, DEDUP_KEY).
- * 회수 이벤트는 {@code "RECALL_" + grantId} 키로 1건만 적재된다.
+ * 회수 이벤트는 {@code "RECALL_" + grantId + "_" + notiId} 키로 회수 이벤트마다 1건씩 적재된다
+ * (N-1, 2026-08-21 — grantId 단독 키였던 종전 구성은 재활성화 후 재회수 시 UNIQUE 충돌을 유발했다).
  */
 @Getter
 @Setter

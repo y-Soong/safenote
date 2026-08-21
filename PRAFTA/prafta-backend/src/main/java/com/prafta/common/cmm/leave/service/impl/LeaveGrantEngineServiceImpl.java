@@ -85,11 +85,17 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     private static final String LEAVE_CD_ANNUAL = "SYS_ANNUAL";
     private static final String LEAVE_CD_MONTHLY = "SYS_MONTHLY";
     private static final String LEAVE_CD_TENURE = "SYS_TENURE_BONUS";
+    /** 경력인정 일수 모드 전용 시스템 연차 종류 (지시서 P-10, 2026-08-21 신설 — 약정). */
+    private static final String LEAVE_CD_CAREER = "SYS_CAREER";
     /** 부여 행 분류(TB_USER_LEAVE_GRANT.GRANT_TYPE, 법정=STATUTORY_ prefix). */
     private static final String GRANT_TYPE_ANNUAL = "STATUTORY_ANNUAL";
     private static final String GRANT_TYPE_MONTHLY = "STATUTORY_MONTHLY";
     private static final String GRANT_TYPE_TENURE = "STATUTORY_TENURE_BONUS";
+    /** 경력인정 일수 모드 연간 자동 부여(SYS035 신설, 약정 — 촉진 비대상). 지시서 §1-4 T-3. */
+    private static final String GRANT_TYPE_CAREER = "MANUAL_CAREER";
     private static final String HIRE_GRANT_REASON = "정책 기준 연차 부여";
+    /** 경력인정 일수 모드 연간 자동 부여 사유(지시서 §1-4). */
+    private static final String CAREER_GRANT_REASON = "경력인정 일수 모드 연간 자동 부여";
     /** 1회 부여 대상 인원 상한(장시간 트랜잭션/대량 부여 방지). */
     private static final int MAX_GRANT_USER_COUNT = 500;
     /** 자동 정기부여(prafta-023 E) 수행자(INSERT_NO) 시스템 식별자. */
@@ -200,6 +206,29 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                 }
             }
 
+            // (c-2) 일수 모드 경력인정(MANUAL_CAREER) 연간 자동 부여 — 본연차와 동일 회차·시점(T-1, 지시서 §1-4).
+            //   부여량 = 활성 일수 모드 credit 행들의 EXTRA_LEAVE_DAYS 합. grantType이 신규 네임스페이스라
+            //   keySuffix는 표준(plan.keySuffix, 항상 "")를 그대로 써도 기존 STATUTORY_* 멱등키와 충돌하지 않는다(R-4).
+            //   ★소정-05 게이트(P-9)는 본 메서드 진입부(prepareGrantContext)가 회사 단위로 이미 전면 차단하므로
+            //   (OFF 회사는 여기 도달 자체가 불가) 여기서 재검사하지 않는다. 즉시부여 경로는 별도 게이트 보유
+            //   (grantManualCareerImmediate).
+            BigDecimal careerExtraDays = nvlZero(leaveDashboardMapper.selectExtraLeaveDaysSum(cmpnyCd, tu));
+            if (careerExtraDays.signum() > 0) {
+                if (leaveDashboardMapper.countLeaveTypeExists(cmpnyCd, LEAVE_CD_CAREER) < 1) {
+                    // 시드 미설정 회사 방어(정상 운영에선 마이그레이션이 전 활성 회사에 백필) — throw 대신 skip+로그(R-5 동일 원칙).
+                    log.warn("경력인정 일수 모드 정기부여 - 시스템 연차 종류(SYS_CAREER) 미설정, skip. cmpnyCd={}, userCd={}",
+                            cmpnyCd, tu);
+                } else {
+                    boolean insertedCareer = grantComponent(cmpnyCd, tu, LEAVE_CD_CAREER, GRANT_TYPE_CAREER,
+                            careerExtraDays, ctx.policySeq, ctx.today, plan.availFromDate, ctx.availToDate,
+                            plan.yearLabel, plan.keySuffix, CAREER_GRANT_REASON, operatorUserCd);
+                    if (insertedCareer) {
+                        grantedAny = true;
+                        grantedDaysForUser = grantedDaysForUser.add(careerExtraDays);
+                    }
+                }
+            }
+
             // (d) 부여 성공 시 미적용 이력 일괄 적용 마킹 (재클릭 멱등화)
             if (grantedAny) {
                 leaveGrantEngineMapper.markHireDateHistoryApplied(cmpnyCd, tu, operatorUserCd);
@@ -273,12 +302,30 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                 }
             }
             addDays = addDays.add(monthlyDays);
+
+            // (c-2) 일수 모드 경력인정(MANUAL_CAREER) 프리뷰 집계 — hireDateGrant (c-2)와 동일 산식 재사용(D-1 재작업).
+            //   별도 산식 발명 없이 동일 조건(합계>0 + SYS_CAREER 시드 존재 + 미부여)만 read-only로 재확인한다.
+            BigDecimal careerExtraDays = BigDecimal.ZERO;
+            BigDecimal careerAvailable = nvlZero(leaveDashboardMapper.selectExtraLeaveDaysSum(cmpnyCd, tu));
+            if (careerAvailable.signum() > 0
+                    && leaveDashboardMapper.countLeaveTypeExists(cmpnyCd, LEAVE_CD_CAREER) >= 1
+                    && !alreadyGranted(cmpnyCd, tu, plan.yearLabel, GRANT_TYPE_CAREER, plan.keySuffix)) {
+                careerExtraDays = careerAvailable;
+            }
+            addDays = addDays.add(careerExtraDays);
             int addDaysInt = addDays.setScale(0, RoundingMode.HALF_UP).intValue(); // 프리뷰 표시용(0.5는 반올림)
 
-            // 당기가 멱등(변경 없음)이라도 월차 추가분이 있으면 "변경 없음" 노트는 오해 → 보정
-            String note = (monthlyDays.signum() > 0)
-                    ? ("추가 예정 " + addDaysInt + "일(월차 " + monthlyDays.stripTrailingZeros().toPlainString() + ")")
-                    : plan.note;
+            // 당기가 멱등(변경 없음)이라도 월차/경력인정 추가분이 있으면 "변경 없음" 노트는 오해 → 보정
+            List<String> addNoteParts = new ArrayList<>();
+            if (monthlyDays.signum() > 0) {
+                addNoteParts.add("월차 " + monthlyDays.stripTrailingZeros().toPlainString());
+            }
+            if (careerExtraDays.signum() > 0) {
+                addNoteParts.add("경력인정 " + careerExtraDays.stripTrailingZeros().toPlainString());
+            }
+            String note = addNoteParts.isEmpty()
+                    ? plan.note
+                    : ("추가 예정 " + addDaysInt + "일(" + String.join(", ", addNoteParts) + ")");
 
             rows.add(PolicyGrantPreviewRowVO.builder()
                     .userCd(tu)
@@ -394,6 +441,58 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         }
         log.info("자동 정기부여 실행 완료 — 회사 {}곳, 부여 {}명", companies.size(), total);
         return total;
+    }
+
+    // ============================================================
+    // 경력인정 일수 모드(MANUAL_CAREER) 즉시 부여 (지시서 §1-4 P-8)
+    // ============================================================
+
+    @Override
+    @Transactional
+    public void grantManualCareerImmediate(String cmpnyCd, String userCd, String operatorUserCd) {
+        requireCmpnyCd(cmpnyCd);
+
+        // 활성 일수 모드 credit 행 합계가 0 이하면 부여 대상 아님(정상 — 반영 모드만 등록한 경우 등).
+        BigDecimal extraDays = nvlZero(leaveDashboardMapper.selectExtraLeaveDaysSum(cmpnyCd, userCd));
+        if (extraDays.signum() <= 0) {
+            return;
+        }
+
+        // ★소정-05 게이트(P-9): OFF 회사는 skip+로그만 — 등록 트랜잭션을 롤백시키지 않는다(R-5,
+        //   엔진 adjustStatutoryGrantsByHireDateChange의 diff>0 게이트 선례와 동일 원칙).
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(cmpnyCd)) {
+            log.warn("법정 연차 자동 부여 off 회사 — 경력인정 일수 모드 즉시 부여 skip. cmpnyCd={}, userCd={}, 합계={}",
+                    cmpnyCd, userCd, extraDays.toPlainString());
+            return;
+        }
+
+        if (leaveDashboardMapper.countLeaveTypeExists(cmpnyCd, LEAVE_CD_CAREER) < 1) {
+            log.warn("경력인정 일수 모드 즉시 부여 - 시스템 연차 종류(SYS_CAREER) 미설정, skip. cmpnyCd={}, userCd={}",
+                    cmpnyCd, userCd);
+            return;
+        }
+
+        String hireDate = leaveDashboardMapper.selectUserHireDate(cmpnyCd, userCd);
+        LocalDate hire = parseYyyymmdd(hireDate);
+        if (hire == null || hire.isAfter(LocalDate.now())) {
+            log.info("경력인정 일수 모드 즉시 부여 - 입사일 미입력/미래, skip. cmpnyCd={}, userCd={}", cmpnyCd, userCd);
+            return;
+        }
+
+        // 회차 라벨은 정기부여(hireDateGrant)와 동일 산식(resolveEntitlement)을 재사용한다(산식 복제 금지).
+        LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+        int creditMonths = leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd);
+        Entitlement ent = resolveEntitlement(policy, hireDate, creditMonths, cmpnyCd, userCd);
+
+        String today = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        String availFromDate = ent.availFromDate(today);
+        String availToDate = addMonthsYyyymmdd(availFromDate, resolveValidityMonths(cmpnyCd));
+        Long policySeq = (policy == null) ? null : policy.getPolicySeq();
+
+        // 멱등키는 hireDateGrant의 정기부여 컴포넌트와 완전히 동일한 규칙(userCd_기간라벨_MANUAL_CAREER) —
+        // 같은 회차에 배치가 먼저 지나갔거나 즉시부여가 먼저 실행됐으면 자동으로 skip(P-8 이중생성 차단).
+        grantComponent(cmpnyCd, userCd, LEAVE_CD_CAREER, GRANT_TYPE_CAREER, extraDays,
+                policySeq, today, availFromDate, availToDate, ent.yearLabel, "", CAREER_GRANT_REASON, operatorUserCd);
     }
 
     // ============================================================
@@ -1450,8 +1549,11 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
      *       연도식별자 = 현재 달력연도 YYYY.</li>
      *   <li>AXIS1=FISCAL_YEAR: AXIS2(시작 MM/DD)로 현재 회계연도 라벨/시작일 산정 후, 입사 이후 회계연도
      *       시작을 몇 번 넘겼는지(crossedFiscalStarts)로 본연차/근속가산 산정. 연도식별자 = fiscalYear 라벨.</li>
-     *   <li>AXIS3=PRORATE는 prafta-023로 분리 → NEXT_YEAR_BULK로 폴백(INFO 로그). MONTHLY_ONLY와
-     *       NEXT_YEAR_BULK는 022에서 "본연차는 첫 회계연도 시작 이후부터" 동일 처리(부분기간 비례 없음).</li>
+     *   <li>AXIS3=PRORATE는 prafta-029 표준모델로 본 엔진에 구현되어 있다({@link #computeProratedAnnualDays},
+     *       AXIS4 반올림 정책 반영) — 정정(2026-08-21, 경력인정 이원화 P1-6): 종전 "023로 분리 → NEXT_YEAR_BULK
+     *       폴백"은 stale 문서였다(§2-4 PRORATE 봉인 해제의 전제 사실). 화면단 봉인({@code Baim_07.vue}
+     *       {@code PRORATE_TEMPORARILY_DISABLED})으로 저장을 막고 있을 뿐, 엔진 산식은 이미 정상 동작한다.
+     *       MONTHLY_ONLY와 NEXT_YEAR_BULK는 022에서 "본연차는 첫 회계연도 시작 이후부터" 동일 처리(부분기간 비례 없음).</li>
      *   <li>정책 없음(policy==null): HIRE_DATE 기준 법정 기본으로 폴백.</li>
      * </ul>
      */

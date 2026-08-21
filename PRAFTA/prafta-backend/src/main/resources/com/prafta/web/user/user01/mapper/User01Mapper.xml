@@ -587,6 +587,8 @@
 	  AND A.USER_CD  = #{userCd}
 	</select>
 
+	<!-- 경력인정 이원화(2026-08-21, 지시서 §1-1): CRUD 조회는 전 모드(Y/N) 관리 대상이라 필터 비적용.
+	     ★record 위치매핑 — ServiceCreditResult 생성자 순서와 아래 SELECT 컬럼 순서 엄수. -->
 	<select id="selectUserServiceCreditList" parameterType="com.prafta.web.user.user01.application.query.LeaveInfoQuery" resultType="com.prafta.web.user.user01.result.ServiceCreditResult">
 	/* User01Mapper.selectUserServiceCreditList */
 	SELECT
@@ -594,6 +596,8 @@
 		, A.CREDIT_MONTHS	AS creditMonths
 		, A.REASON_TYPE		AS reasonType
 		, A.REASON_DETAIL	AS reasonDetail
+		, A.LEAVE_CALC_YN	AS leaveCalcYn
+		, A.EXTRA_LEAVE_DAYS	AS extraLeaveDays
 	FROM TB_USER_SERVICE_CREDIT A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.USER_CD  = #{userCd}
@@ -630,6 +634,8 @@
 		, CREDIT_MONTHS
 		, REASON_TYPE
 		, REASON_DETAIL
+		, LEAVE_CALC_YN
+		, EXTRA_LEAVE_DAYS
 		, USE_YN
 		, INSERT_NO
 		, INSERT_DATE
@@ -641,6 +647,8 @@
 		, #{creditMonths}
 		, #{reasonType}
 		, #{reasonDetail}
+		, #{leaveCalcYn}
+		, #{extraLeaveDays}
 		, 'Y'
 		, #{gvUserCd}
 		, NOW()

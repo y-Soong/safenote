@@ -12,6 +12,8 @@ import lombok.Setter;
  *
  * <p>서버 재검증용 최소 컬럼만 담는다. 회수 가능 조건:
  * {@code GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02' AND STATUS='ACTIVE' AND USED_DAYS=0 AND DEL_YN='N'}.
+ * (P-11, 2026-08-21 경력인정 이원화 D-2) 단, {@code GRANT_TYPE='MANUAL_CAREER'} 는
+ * {@code GRANT_BY_TYPE='01'}(자동)이어도 회수 가능 — 오입력 복구 안전망 특례. 다른 자동 부여 타입은 미적용.
  * 회수는 STATUS='CANCELED' 소프트 처리이며 USED_DAYS는 절대 갱신하지 않는다(§8.5.8 #2).
  */
 @Getter

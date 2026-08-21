@@ -1,5 +1,6 @@
 package com.prafta.web.user.user01.dto.request;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import lombok.Getter;
@@ -64,6 +65,15 @@ public class UserCreateRequest {
 
     /** 경력 인정 상세 설명 (선택, 500자 이내). */
     private String creditReasonDetail;
+
+    /**
+     * 경력인정 이원화(2026-08-21, 지시서 §1-1) — 연차 산정 반영 여부.
+     * 'Y'(반영 모드, 기본) / 'N'(일수 모드). 미전송 시 서버가 'Y'로 기본 처리(하위호환).
+     */
+    private String creditLeaveCalcYn;
+
+    /** 일수 모드(creditLeaveCalcYn='N') 전용 연간 추가 부여 일수. 반영 모드에서는 서버가 무시(NULL 강제)한다. */
+    private BigDecimal creditExtraLeaveDays;
 
     /**
      * PRAFTA-037-F7 — 추가 권한 사이트 코드 목록 (선택).

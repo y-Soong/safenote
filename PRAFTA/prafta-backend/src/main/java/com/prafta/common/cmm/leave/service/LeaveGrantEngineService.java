@@ -94,6 +94,23 @@ public interface LeaveGrantEngineService {
     int runScheduledAutoGrant();
 
     /**
+     * 경력인정 일수 모드(LEAVE_CALC_YN='N') 당해 회차분 즉시 부여 (지시서 §1-4 P-8). <b>@Transactional(REQUIRED)</b> —
+     * 호출부(User01ServiceImpl 경력 인정 등록/수정)의 트랜잭션에 합류한다.
+     *
+     * <p>부여량 = 대상자의 활성(USE_YN='Y') 일수 모드 credit 행들의 EXTRA_LEAVE_DAYS 합(0 이하면 무처리).
+     * 멱등키는 {@link #hireDateGrant}의 정기부여(T-1, 본연차와 동일 회차 라벨)와 <b>동일 규칙</b>을 쓰므로,
+     * 이미 이 방식으로 즉시 부여됐거나 정기부여 배치가 먼저 지나갔으면 멱등 skip 된다(이중 생성 불가, P-8 요건).
+     *
+     * <p>소정-05 게이트(P-9): 법정 자동부여 OFF 회사는 부여를 skip(로그만) 하고 <b>throw 하지 않는다</b> — 경력 인정
+     * 등록 자체(계산·저장)는 계속 허용해야 하므로 호출부 트랜잭션을 롤백시키지 않는다(R-5).
+     *
+     * @param cmpnyCd        회사 코드
+     * @param userCd         대상 직원 코드
+     * @param operatorUserCd 수행자 USER_CD(INSERT_NO 기록용)
+     */
+    void grantManualCareerImmediate(String cmpnyCd, String userCd, String operatorUserCd);
+
+    /**
      * 입사일 변경에 따른 수동 연차 조정(prafta-032 D3/D4/D5). <b>@Transactional(REQUIRED)</b> — 호출부
      * ({@code User01ServiceImpl.updateUserHireDate})의 단일 트랜잭션에 합류한다(D8). 검증 실패/예외 시 전체 롤백.
      *

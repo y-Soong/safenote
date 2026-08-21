@@ -1,6 +1,8 @@
 package com.prafta.common.cmm.leave.service.impl;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -63,6 +65,9 @@ class LeaveGrantEnginePrafta030Test {
 
     private static final String GRANT_TYPE_ANNUAL = "STATUTORY_ANNUAL";
     private static final String GRANT_TYPE_MONTHLY = "STATUTORY_MONTHLY";
+    // 경력인정 이원화(2026-08-21, 지시서 §1-4) — 일수 모드 연간 자동 부여.
+    private static final String GRANT_TYPE_CAREER = "MANUAL_CAREER";
+    private static final String LEAVE_CD_CAREER = "SYS_CAREER";
 
     private LeaveDashboardMapper dash;
     private LeaveGrantEngineMapper eng;
@@ -98,6 +103,8 @@ class LeaveGrantEnginePrafta030Test {
         when(dash.countActiveBySuffixVariant(anyString(), anyString())).thenReturn(0);
         // 기존 부여누적 기본값 0 (각 케이스가 SHEET 값으로 덮어씀). prafta-030 정정: 소멸제외·사용포함 + 월차 포함(3-arg).
         when(dash.selectStatutoryGrantAccrual(anyString(), anyString(), anyString())).thenReturn(BigDecimal.ZERO);
+        // 경력인정 이원화(2026-08-21) — 일수 모드 credit 합계 기본값 0(각 케이스가 필요 시 덮어씀).
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.ZERO);
         when(eng.selectLatestUnappliedHandling(anyString(), anyString())).thenReturn(null);
         when(eng.selectActiveStatutoryGrantIds(anyString(), anyString())).thenReturn(List.of());
         final AtomicInteger seq = new AtomicInteger();
@@ -332,9 +339,186 @@ class LeaveGrantEnginePrafta030Test {
         when(dash.countActiveByIdempotencyKey(anyString(), anyString())).thenReturn(0);
         when(dash.countActiveBySuffixVariant(anyString(), anyString())).thenReturn(0);
         when(dash.selectStatutoryGrantAccrual(anyString(), anyString(), anyString())).thenReturn(BigDecimal.ZERO);
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.ZERO);
         when(eng.selectLatestUnappliedHandling(anyString(), anyString())).thenReturn(null);
         when(eng.selectActiveStatutoryGrantIds(anyString(), anyString())).thenReturn(new ArrayList<>());
         final AtomicInteger seq = new AtomicInteger();
         when(dash.selectNextGrantId(anyString())).thenAnswer(inv -> "G" + seq.incrementAndGet());
+    }
+
+    // ============================ 경력인정 이원화(2026-08-21, 지시서 §1) — Phase 1 신규 케이스 ============================
+
+    /** apply 실행 후 특정 GRANT_TYPE 의 INSERT 건수. */
+    private int countInsertsByType(String grantType) {
+        ArgumentCaptor<LeaveGrantInsertVO> cap = ArgumentCaptor.forClass(LeaveGrantInsertVO.class);
+        verify(dash, atLeast(0)).insertManualGrant(cap.capture());
+        int n = 0;
+        for (LeaveGrantInsertVO vo : cap.getAllValues()) {
+            if (grantType.equals(vo.getGrantType())) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /** apply 실행 후 특정 GRANT_TYPE 의 첫 INSERT VO(없으면 null). */
+    private LeaveGrantInsertVO firstInsertByType(String grantType) {
+        ArgumentCaptor<LeaveGrantInsertVO> cap = ArgumentCaptor.forClass(LeaveGrantInsertVO.class);
+        verify(dash, atLeast(0)).insertManualGrant(cap.capture());
+        for (LeaveGrantInsertVO vo : cap.getAllValues()) {
+            if (grantType.equals(vo.getGrantType())) {
+                return vo;
+            }
+        }
+        return null;
+    }
+
+    @Test
+    @DisplayName("일수 모드: 반영 개월(selectCreditMonths, Y-필터) 0 + 일수 모드 합계 3.5 → 월차 정상 발생 + MANUAL_CAREER 3.5일 부여")
+    void daysMode_monthlyStaysNormal_andCareerGranted() {
+        // 입사 2025-11-26 → 오늘(2026-05-26) 기준 실근속 6개월. 일수 모드는 selectCreditMonths(Y-필터 SQL)에
+        // 잡히지 않으므로(정책 P-7) 0으로 스텁 — 산정근속도 6개월(<12)이라 월차 게이트 비대상.
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20251126");
+        when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(0);
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(3.5));
+
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+
+        assertTrue(countInsertsByType(GRANT_TYPE_MONTHLY) > 0, "일수 모드는 산정근속 미가산 → 월차 정상 발생");
+        assertEquals(0, countInsertsByType(GRANT_TYPE_ANNUAL), "실근속 6개월 미만이라 본연차는 미발생(정상)");
+
+        LeaveGrantInsertVO career = firstInsertByType(GRANT_TYPE_CAREER);
+        assertNotNull(career, "MANUAL_CAREER 컴포넌트가 정기부여 배치에 편입되어야 한다(T-1)");
+        assertEquals(0, BigDecimal.valueOf(3.5).compareTo(career.getGrantDays()), "부여량=일수 모드 합계 3.5");
+        assertEquals(LEAVE_CD_CAREER, career.getLeaveCd());
+        assertTrue(career.getIdempotencyKey() != null
+                        && career.getIdempotencyKey().startsWith(USER + "_")
+                        && career.getIdempotencyKey().endsWith("_" + GRANT_TYPE_CAREER),
+                () -> "멱등키 형식 = {userCd}_{periodLabel}_MANUAL_CAREER, 실제=" + career.getIdempotencyKey());
+    }
+
+    @Test
+    @DisplayName("혼합 보유자: 반영 모드(월차 게이트+본연차 가산)와 일수 모드(MANUAL_CAREER)가 한 사용자에게 동시 적용")
+    void mixedHolder_reflectGatesMonthly_andDaysGrantsCareerIndependently() {
+        // 반영 모드 15개월 가산 → 산정근속 6+15=21(>=12) → 월차 게이트 발동 + 본연차 15일 발생.
+        // 동시에 일수 모드 2.5일도 등록되어 있어 MANUAL_CAREER 는 반영 모드 가산과 무관하게 별도 부여된다.
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20251126");
+        when(dash.selectCreditMonths(anyString(), anyString())).thenReturn(15);
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(2.5));
+
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+
+        assertEquals(0, countInsertsByType(GRANT_TYPE_MONTHLY), "반영 모드 산정근속 12개월 도달 → 월차 게이트 발동");
+        LeaveGrantInsertVO annual = firstInsertByType(GRANT_TYPE_ANNUAL);
+        assertNotNull(annual, "반영 모드 가산으로 산정근속 12개월 이상 → 본연차 발생");
+        assertEquals(0, BigDecimal.valueOf(15).compareTo(annual.getGrantDays()));
+
+        LeaveGrantInsertVO career = firstInsertByType(GRANT_TYPE_CAREER);
+        assertNotNull(career, "일수 모드 합계가 있으면 반영 모드 여부와 무관하게 MANUAL_CAREER 부여");
+        assertEquals(0, BigDecimal.valueOf(2.5).compareTo(career.getGrantDays()));
+    }
+
+    @Test
+    @DisplayName("MANUAL_CAREER 정기부여 - 시스템 연차 종류(SYS_CAREER) 미설정 회사는 skip(로그만, 다른 부여는 정상 진행)")
+    void careerMode_missingLeaveType_skipsWithoutBlockingOthers() {
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20210101"); // 장기 근속 → 본연차+가산 발생
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(3));
+        // SYS_CAREER 만 미설정, 그 외(SYS_ANNUAL/MONTHLY/TENURE)는 기본 스텁(1)대로 존재.
+        when(dash.countLeaveTypeExists(eq(CMPNY), eq(LEAVE_CD_CAREER))).thenReturn(0);
+
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+
+        assertEquals(0, countInsertsByType(GRANT_TYPE_CAREER), "SYS_CAREER 미설정이면 MANUAL_CAREER는 skip");
+        assertNotNull(firstInsertByType(GRANT_TYPE_ANNUAL), "SYS_CAREER 미설정이 본연차 부여까지 막으면 안 된다(throw 금지)");
+    }
+
+    @Test
+    @DisplayName("P-8 즉시 부여 → 정기부여 배치 재실행 시 이중 생성 0건(동일 멱등키 공유)")
+    void immediateGrant_thenScheduledBatch_noDoubleGrant() {
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20251126");
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(3));
+
+        // (1) 경력 인정 등록 즉시 부여(P-8) — User01ServiceImpl 이 호출하는 경로.
+        svc.grantManualCareerImmediate(CMPNY, USER, OP);
+
+        LeaveGrantInsertVO firstGrant = firstInsertByType(GRANT_TYPE_CAREER);
+        assertNotNull(firstGrant, "즉시 부여 1건이 생성되어야 한다");
+        assertEquals(1, countInsertsByType(GRANT_TYPE_CAREER));
+
+        // (2) 방금 부여된 멱등키가 이제 live 상태라고 가정(실제로는 DB 상태) — 정기부여 배치가 재실행돼도
+        //     같은 키로 alreadyGranted() 가 true 를 반환해 재INSERT 되지 않아야 한다(P-8 이중생성 차단).
+        when(dash.countLiveByIdempotencyKey(eq(CMPNY), eq(firstGrant.getIdempotencyKey()))).thenReturn(1);
+
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+
+        assertEquals(1, countInsertsByType(GRANT_TYPE_CAREER), "정기부여 배치 재실행 후에도 MANUAL_CAREER 는 여전히 1건(이중 생성 없음)");
+    }
+
+    @Test
+    @DisplayName("P-9 게이트: 즉시 부여 경로는 법정 자동부여 OFF 회사에서 skip(예외 없음, throw 금지)")
+    void immediateGrant_autoGrantOff_skipsWithoutThrow() {
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20251126");
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(3));
+        // 이 회사만 소정-05 OFF.
+        when(policySvc.isStatutoryAutoGrantEnabled(eq(CMPNY))).thenReturn(false);
+
+        assertDoesNotThrow(() -> svc.grantManualCareerImmediate(CMPNY, USER, OP),
+                "등록 트랜잭션을 롤백시키지 않도록 throw 하지 않아야 한다(R-5)");
+        assertEquals(0, countInsertsByType(GRANT_TYPE_CAREER), "OFF 회사는 실제 부여를 skip");
+    }
+
+    @Test
+    @DisplayName("즉시 부여: 일수 모드 합계가 0이면 무처리(반영 모드만 등록한 경우 등)")
+    void immediateGrant_zeroSum_noOp() {
+        // selectExtraLeaveDaysSum 기본값(setUp)=0 그대로 사용.
+        assertDoesNotThrow(() -> svc.grantManualCareerImmediate(CMPNY, USER, OP));
+        assertEquals(0, countInsertsByType(GRANT_TYPE_CAREER));
+    }
+
+    // ============================ D-1 재작업(2026-08-21, qa-report) — 프리뷰/적용 정합 ============================
+
+    @Test
+    @DisplayName("D-1: previewPolicyGrant 가 MANUAL_CAREER 를 집계한다(프리뷰=적용 정합, 별도 산식 없이 동일 로직 재사용)")
+    void preview_includesManualCareer_matchesApply() {
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20210101");
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(4));
+        // 본연차/가산/월차는 이미 당기 부여 완료(live) — MANUAL_CAREER 만 아직 미부여인 상태를 재현(qa D-1 실측 그대로).
+        when(dash.countLiveByIdempotencyKey(anyString(), anyString())).thenAnswer(inv -> {
+            String key = inv.getArgument(1);
+            return key.contains(GRANT_TYPE_CAREER) ? 0 : 1;
+        });
+
+        PolicyGrantPreviewVO preview = svc.previewPolicyGrant(CMPNY, List.of(USER), MGR);
+        assertEquals(4, preview.getRows().get(0).getAddDays(),
+                "프리뷰가 MANUAL_CAREER 합계(4일)를 addDays 에 반영해야 한다(수정 전엔 0으로 누락됨)");
+        assertTrue(preview.getRows().get(0).getNote() != null
+                        && preview.getRows().get(0).getNote().contains("경력인정"),
+                "note 에 경력인정 표기가 있어야 한다(월차와 동일한 방식으로 안내)");
+
+        // 적용(hireDateGrant)도 동일 4일을 실제로 부여해야 한다 — qa D-1 재현 "프리뷰 0 vs 적용 4" 불일치 해소 확인.
+        svc.hireDateGrant(CMPNY, List.of(USER), MGR, OP);
+        LeaveGrantInsertVO career = firstInsertByType(GRANT_TYPE_CAREER);
+        assertNotNull(career, "MANUAL_CAREER 가 실제로 부여되어야 한다");
+        assertEquals(0, BigDecimal.valueOf(4).compareTo(career.getGrantDays()),
+                "프리뷰 집계량과 실제 부여량이 일치해야 한다(프리뷰/적용 불일치 해소)");
+    }
+
+    @Test
+    @DisplayName("D-1: SYS_CAREER 미설정 회사는 프리뷰에서도 MANUAL_CAREER 를 집계하지 않는다(적용과 동일 skip 조건 공유)")
+    void preview_skipsManualCareer_whenLeaveTypeMissing() {
+        when(policySvc.findActivePolicy(anyString())).thenReturn(hirePolicy());
+        when(dash.selectUserHireDate(eq(CMPNY), eq(USER))).thenReturn("20210101");
+        when(dash.selectExtraLeaveDaysSum(anyString(), anyString())).thenReturn(BigDecimal.valueOf(4));
+        when(dash.countLeaveTypeExists(eq(CMPNY), eq(LEAVE_CD_CAREER))).thenReturn(0);
+        when(dash.countLiveByIdempotencyKey(anyString(), anyString())).thenReturn(1);
+
+        PolicyGrantPreviewVO preview = svc.previewPolicyGrant(CMPNY, List.of(USER), MGR);
+        assertEquals(0, preview.getRows().get(0).getAddDays(),
+                "SYS_CAREER 미설정 회사는 프리뷰도 0 — 적용의 skip 조건(countLeaveTypeExists)과 동일하게 맞춰야 한다");
     }
 }

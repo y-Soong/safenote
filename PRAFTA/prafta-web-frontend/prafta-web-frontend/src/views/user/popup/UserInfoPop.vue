@@ -406,26 +406,39 @@
           <div class="leave-section" v-if="isHrOrMaster">
             <div class="leave-section-title">경력 인정</div>
 
-            <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030) -->
+            <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030, 경력인정 이원화 2026-08-21 갱신) -->
             <div class="credit-notice">
               <p>
-                경력 인정은 <strong>본연차·근속가산</strong> 산정에 반영됩니다.
+                경력 인정은 <strong>반영 모드</strong> 또는
+                <strong>일수 모드</strong> 중 하나로 동작합니다(항목별 배타
+                선택 — 동시 적용 불가).
+              </p>
+              <p>
+                <strong>반영 모드</strong>: 인정 개월수가
+                <strong>본연차·근속가산</strong> 산정에 그대로 반영됩니다.
                 <span class="credit-notice-mono"
                   >산정 근속 = 실제 입사일 + 인정 경력</span
                 >
-              </p>
-              <p>
                 인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
                 시점부터는 실제 근무가 1년 미만이라도
                 <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong>(고용승계
                 등 — 재직자와 동일 대우). 예를 들어 경력 6개월을 인정하면 입사
                 6개월째부터 월차가 멈춥니다.
               </p>
+              <p>
+                <strong>일수 모드</strong>: 인정 개월수는
+                <strong>기록·퇴직정산 참고용</strong>일 뿐 연차 산정에
+                반영되지 않아 <strong>1년 미만 월차가 실근속 기준으로 정상
+                발생</strong>합니다. 대신 매년 정기부여 시점에 입력한
+                <strong>연간 추가 일수만큼 약정 휴가가 자동 부여</strong>됩니다(사용촉진
+                비대상).
+              </p>
               <p class="credit-notice-warn">
-                ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는 본연차
-                부여일이 회계 기준일 하루뿐이라, 월차가 멈춘 시점과 첫 본연차
-                부여일 사이에 <strong>연차가 발생하지 않는 기간</strong>이 생길 수
-                있습니다. 해당 기간분은 노무 검토 후 별도 보전 예정이며, 필요하면
+                ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는
+                반영 모드 사용 시 본연차 부여일이 회계 기준일 하루뿐이라, 월차가
+                멈춘 시점과 첫 본연차 부여일 사이에
+                <strong>연차가 발생하지 않는 기간</strong>이 생길 수 있습니다.
+                해당 기간분은 노무 검토 후 별도 보전 예정이며, 필요하면
                 사용자 연차관리(Attd_09)에서 수동 부여로 처리하세요.
               </p>
               <p>
@@ -463,6 +476,49 @@
                     placeholder="0"
                   />
                   <span class="credit-suffix">개월</span>
+                </div>
+                <div class="form-row-max">
+                  <label>사유 유형</label>
+                  <select
+                    v-model="item.reasonType"
+                    @change="fnApplyModeRecommend(item)"
+                  >
+                    <option value="">선택</option>
+                    <option value="CONTRACT_TO_REGULAR">계약직→정규 전환</option>
+                    <option value="GROUP_MOVE">그룹사 이동</option>
+                    <option value="MA_TRANSFER">인수합병 승계</option>
+                    <option value="EXPERIENCE_SAME">동종 경력 우대</option>
+                    <option value="EXPERIENCE_DIFF">이종 경력 우대</option>
+                    <option value="OTHER">기타</option>
+                  </select>
+                </div>
+                <div class="form-row-max">
+                  <label>연차 반영</label>
+                  <div class="credit-mode-group">
+                    <label class="credit-mode-radio">
+                      <input type="radio" value="Y" v-model="item.leaveCalcYn" />
+                      반영 모드
+                      <span class="credit-mode-hint">개월수를 연차 산식에 반영</span>
+                    </label>
+                    <label class="credit-mode-radio">
+                      <input type="radio" value="N" v-model="item.leaveCalcYn" />
+                      일수 모드
+                      <span class="credit-mode-hint">기록용 + 매년 N일 추가 부여</span>
+                    </label>
+                  </div>
+                </div>
+                <div class="form-row-max" v-if="item.leaveCalcYn === 'N'">
+                  <label>연간 추가 일수</label>
+                  <input
+                    class="row-short"
+                    type="number"
+                    min="0.5"
+                    max="25"
+                    step="0.5"
+                    v-model.number="item.extraLeaveDays"
+                    placeholder="0.0"
+                  />
+                  <span class="credit-suffix">일/년</span>
                 </div>
                 <div class="form-row-max">
                   <label>상세 설명</label>
@@ -673,8 +729,13 @@ const viewerAuthLevel = ref(
 const hireDate = ref("");          // 입사일 (YYYY-MM-DD)
 // PRAFTA_COM_003-B: 생성 팝업은 정규직(REGULAR) 고정. 수정 모드에서는 fnGetLeaveInfo 가 조회값으로 덮어쓴다.
 const employmentType = ref("REGULAR"); // 고용형태 [SYS041]
-const creditList = ref([]);        // 경력 인정 항목 [{ creditMonths, reasonDetail }]
+// 경력 인정 항목 [{ creditMonths, reasonType, reasonDetail, leaveCalcYn, extraLeaveDays }]
+// 경력인정 이원화(2026-08-21, 지시서 §1-1): leaveCalcYn='Y'(반영 모드,기본)/'N'(일수 모드).
+const creditList = ref([]);
 const legalTenureBaseDate = ref(""); // 법적 근속 기준일 (YYYY-MM-DD)
+// D-5 재작업(2026-08-21): 서버(leave-info)가 이미 반영 모드만 합산해 내려주는 총 인정 개월.
+//   프론트 자체 재계산(전 모드 합산)을 버리고 이 값을 그대로 표시한다 — legalTenureBaseDate 와 동일 모수 유지.
+const creditTotalMonthsServer = ref(0);
 
 // PRAFTA-036 생성 모드 전용 입력값
 const hireDateInput = ref("");          // CalendarSrch — YYYY-MM-DD
@@ -808,10 +869,18 @@ const fnLoadStdWorkOptions = async () => {
   }
 };
 
-// 경력 인정 총 개월/년 (프론트 계산, 요약 표시용)
+// 경력 인정 총 인정 개월 (D-5 재작업 + N-4 재작업, 2차 QA 재검증)
+//   생성/수정 모드 공통: 화면에 로드된 creditList(반영 모드만 합산, 서버와 동일 필터)를 그대로 계산해
+//   표시한다(신규 산식 아님 — 서버 규칙 "leaveCalcYn!=='N'만 합산"을 프론트에서도 동일 적용).
+//   - 수정 모드 초기 표시 : fnGetLeaveInfo()가 creditList를 서버값으로 채우는 즉시 이 계산 결과가
+//     creditTotalMonthsServer(=leave-info.creditTotalMonths, legalTenureBaseDate와 동일 모수)와 일치한다.
+//   - 수정 모드 편집 중   : 사용자가 개월수/모드를 바꾸면(저장 전) 즉시 갱신되어 저장 전 피드백을 제공한다
+//     (N-4 — 종전에는 creditTotalMonthsServer 고정값만 표시해 편집이 반영되지 않았다).
+//   - 저장 완료 후        : onSaved 콜백이 fnGetLeaveInfo()를 재호출해 creditList를 서버값으로 다시 채우므로
+//     별도 처리 없이 서버값으로 자연스럽게 갱신된다.
 const creditTotalMonths = computed(() =>
   creditList.value.reduce(
-    (sum, it) => sum + (Number(it.creditMonths) || 0),
+    (sum, it) => sum + (it.leaveCalcYn !== "N" ? Number(it.creditMonths) || 0 : 0),
     0
   )
 );
@@ -1108,8 +1177,16 @@ const fnUserInfoSave = async () => {
 
   // 생성 모드: /insert-user-info 단건 호출. 경력은 같은 트랜잭션으로 서버에서 함께 INSERT.
   if (isCreate.value) {
+    const credit = creditList.value[0];
+    // 경력인정 이원화(2026-08-21): 생성 모드도 동일 검증(반영 모드는 제한 없음, 일수 모드는 0.5단위·0초과·25이하).
+    if (credit) {
+      const validationError = validateCreditItems([credit]);
+      if (validationError) {
+        fnAlertMsg(validationError);
+        return;
+      }
+    }
     try {
-      const credit = creditList.value[0];
       const payload = {
         userId: userId.value,
         userNm: userNm.value,
@@ -1126,8 +1203,12 @@ const fnUserInfoSave = async () => {
         employmentType: "REGULAR",
         contractEndDate: null,
         creditMonths: credit ? Number(credit.creditMonths) || 0 : 0,
-        creditReasonType: null,
+        creditReasonType: credit && credit.reasonType ? credit.reasonType : null,
         creditReasonDetail: credit ? credit.reasonDetail : null,
+        // 경력인정 이원화(2026-08-21, 지시서 §1-1) — 미전송 시 서버가 'Y'(반영 모드)로 기본 처리.
+        creditLeaveCalcYn: credit ? credit.leaveCalcYn || "Y" : null,
+        creditExtraLeaveDays:
+          credit && credit.leaveCalcYn === "N" ? Number(credit.extraLeaveDays) : null,
         // PRAFTA_COM_003-B: 추가 사이트 권한 제거(생성 팝업 한정). 백엔드는 빈 목록 정상 처리.
         additionalSiteCdList: [],
         // PRAFTA-COM-008-E-5: 기본 근무타입(선택). 빈값이면 미설정.
@@ -1207,9 +1288,14 @@ const fnGetLeaveInfo = async () => {
       hireDate.value = data.hireDate || "";
       employmentType.value = data.employmentType || "";
       legalTenureBaseDate.value = data.legalTenureBaseDate || "";
+      creditTotalMonthsServer.value = Number(data.creditTotalMonths) || 0;
       creditList.value = (data.creditList || []).map((it) => ({
         creditMonths: it.creditMonths,
+        reasonType: it.reasonType || "",
         reasonDetail: it.reasonDetail,
+        // 경력인정 이원화: 서버 미지정(레거시 행)은 'Y'(반영 모드)로 표시(DB DEFAULT 'Y'와 동일 가정).
+        leaveCalcYn: it.leaveCalcYn || "Y",
+        extraLeaveDays: it.extraLeaveDays,
       }));
     }
   } catch (err) {
@@ -1219,9 +1305,15 @@ const fnGetLeaveInfo = async () => {
   }
 };
 
-// 경력 인정 항목 추가
+// 경력 인정 항목 추가 (기본값: 반영 모드 'Y' — 하위호환 기본과 동일)
 const fnAddCredit = () => {
-  creditList.value.push({ creditMonths: 0, reasonDetail: "" });
+  creditList.value.push({
+    creditMonths: 0,
+    reasonType: "",
+    reasonDetail: "",
+    leaveCalcYn: "Y",
+    extraLeaveDays: null,
+  });
 };
 
 // 경력 인정 항목 삭제
@@ -1229,15 +1321,52 @@ const fnRemoveCredit = (idx) => {
   creditList.value.splice(idx, 1);
 };
 
-// 경력 인정 저장 (delete-and-insert 전량 교체). 성공 시 true 반환.
-const fnSaveCredit = async () => {
-  // 인정 개월 검증: 0 이상 정수
-  for (const it of creditList.value) {
+// T-6(08-20 설계 논의): 사유 유형별 기본 모드 추천 — 어디까지나 UI 기본값이며 최종 선택은 관리자.
+// 승계형(계약→정규/그룹사 이동/M&A 승계) → 반영 모드, 우대형(동종/이종 경력) → 일수 모드, 기타 → 추천 없음.
+const CREDIT_MODE_RECOMMEND = {
+  CONTRACT_TO_REGULAR: "Y",
+  GROUP_MOVE: "Y",
+  MA_TRANSFER: "Y",
+  EXPERIENCE_SAME: "N",
+  EXPERIENCE_DIFF: "N",
+};
+
+const fnApplyModeRecommend = (item) => {
+  const recommended = CREDIT_MODE_RECOMMEND[item.reasonType];
+  if (recommended) {
+    item.leaveCalcYn = recommended;
+  }
+};
+
+// 경력인정 이원화(2026-08-21, 지시서 §1-1) 클라이언트측 검증(서버 재검증과 별개, UX 조기 안내용).
+// 반영 모드(Y)는 추가 제약 없음. 일수 모드(N)는 연간 추가 일수가 0.5일 단위·0일 초과·25일 이하 필수.
+const validateCreditItems = (list) => {
+  for (const it of list) {
     const months = Number(it.creditMonths);
     if (!Number.isFinite(months) || months < 0) {
-      await proxy.$alert("인정 개월 수는 0 이상으로 입력해 주세요.");
-      return false;
+      return "인정 개월 수는 0 이상으로 입력해 주세요.";
     }
+    if (it.leaveCalcYn === "N") {
+      const days = Number(it.extraLeaveDays);
+      if (
+        !Number.isFinite(days) ||
+        days <= 0 ||
+        days > 25 ||
+        Math.round(days * 2) !== days * 2
+      ) {
+        return "일수 모드는 연간 추가 부여 일수를 0.5일 단위로 0일 초과 25일 이하로 입력해 주세요.";
+      }
+    }
+  }
+  return null;
+};
+
+// 경력 인정 저장 (delete-and-insert 전량 교체). 성공 시 true 반환.
+const fnSaveCredit = async () => {
+  const validationError = validateCreditItems(creditList.value);
+  if (validationError) {
+    await proxy.$alert(validationError);
+    return false;
   }
 
   try {
@@ -1246,7 +1375,10 @@ const fnSaveCredit = async () => {
       userCd: userCd.value,
       creditList: creditList.value.map((it) => ({
         creditMonths: Number(it.creditMonths) || 0,
+        reasonType: it.reasonType || null,
         reasonDetail: it.reasonDetail,
+        leaveCalcYn: it.leaveCalcYn || "Y",
+        extraLeaveDays: it.leaveCalcYn === "N" ? Number(it.extraLeaveDays) : null,
       })),
     });
     return response.status === 200;
@@ -1761,6 +1893,34 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
 
 .credit-suffix {
   font-size: 0.75rem;
+  color: var(--color-text-muted, #4b5563);
+}
+
+/* 경력인정 이원화(2026-08-21) — 반영/일수 모드 선택 */
+.credit-mode-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.credit-mode-radio {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  align-items: center;
+  max-width: 100%;
+  font-size: 0.8125rem;
+  color: var(--color-text, #374151);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.credit-mode-hint {
+  /* N-2(2차 QA 재검증): 라벨(.credit-mode-radio)의 white-space:nowrap이 상속되어
+     힌트 문구가 줄바꿈 없이 부모 폭을 넘어서던 결함 수정 — 힌트만 명시적으로 정상 줄바꿈 허용. */
+  white-space: normal;
+  font-size: 0.6875rem;
   color: var(--color-text-muted, #4b5563);
 }
 

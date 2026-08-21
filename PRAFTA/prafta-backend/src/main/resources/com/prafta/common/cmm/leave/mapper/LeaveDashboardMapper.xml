@@ -170,6 +170,7 @@
                WHERE C.CMPNY_CD = U.CMPNY_CD
                  AND C.USER_CD  = U.USER_CD
                  AND C.USE_YN   = 'Y'
+                 AND C.LEAVE_CALC_YN = 'Y'
           ), 0) AS creditMonths
         , IFNULL((
               SELECT SUM(G.GRANT_DAYS)
@@ -290,6 +291,7 @@
                WHERE C.CMPNY_CD = U.CMPNY_CD
                  AND C.USER_CD  = U.USER_CD
                  AND C.USE_YN   = 'Y'
+                 AND C.LEAVE_CALC_YN = 'Y'
           ), 0) AS creditMonths
         , IFNULL((
               SELECT SUM(G.GRANT_DAYS)
@@ -362,9 +364,13 @@
         , G.USED_DAYS    AS usedDays
         , G.GRANT_BY_TYPE AS grantByType
         <!-- PRAFTA-031: 회수(soft cancel) 가능 여부를 SQL에서 산출(0/1 → boolean 매핑).
-             수동 부여(MANUAL_ + GRANT_BY_TYPE='02') + 미사용(USED_DAYS=0) + ACTIVE + 미삭제일 때만 회수 가능. -->
+             수동 부여(MANUAL_ + GRANT_BY_TYPE='02') + 미사용(USED_DAYS=0) + ACTIVE + 미삭제일 때만 회수 가능.
+             P-11(2026-08-21, 경력인정 이원화 D-2): GRANT_TYPE='MANUAL_CAREER' 는 GRANT_BY_TYPE='01'(자동)
+             이어도 회수 가능 — 오입력 복구 안전망. 서비스 계층 재검증(LeaveDashboardServiceImpl.recallGrant)과
+             동일 조건으로 맞춘다. 다른 자동 부여 타입(STATUTORY_* 등)은 미적용. -->
         , CASE WHEN G.GRANT_TYPE LIKE 'MANUAL\_%'
-                AND G.GRANT_BY_TYPE = '02'
+                AND (G.GRANT_BY_TYPE = '02'
+                     OR (G.GRANT_TYPE = 'MANUAL_CAREER' AND G.GRANT_BY_TYPE = '01'))
                 AND G.STATUS = 'ACTIVE'
                 AND G.USED_DAYS = 0
                 AND G.DEL_YN = 'N'
@@ -569,7 +575,9 @@
 
     <!-- ============ 알림 outbox(PRAFTA-031): INSERT ============
       회수 완료 시 1행 적재(SEND_STATUS='PENDING'). 발송은 추후 모바일 push.
-      중복 발송 방지(§10.3): UNIQUE(CMPNY_CD, DEDUP_KEY) — DEDUP_KEY='RECALL_'+grantId. -->
+      중복 발송 방지(§10.3): UNIQUE(CMPNY_CD, DEDUP_KEY) — DEDUP_KEY='RECALL_'+grantId+'_'+notiId
+      (2026-08-21 N-1 수정: grantId 단독 키는 재활성화 후 재회수 시 충돌 — notiId 를 더해 회수 이벤트마다 유일화.
+      더블클릭 중복 방지는 recallGrant() 의 원자적 UPDATE(WHERE STATUS='ACTIVE')가 상위에서 이미 차단). -->
     <insert id="insertNotiOutbox" parameterType="com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO">
     /* LeaveDashboardMapper.insertNotiOutbox */
     INSERT INTO TB_NOTI_OUTBOX (
@@ -712,7 +720,9 @@
        AND T.USE_YN = 'Y'
     </select>
 
-    <!-- ============ 입사일 기준 부여: 경력 인정 개월 합계 ============ -->
+    <!-- ============ 입사일 기준 부여: 경력 인정 개월 합계 ============
+      경력인정 이원화(2026-08-21): LEAVE_CALC_YN='Y'(반영 모드) 행만 산정근속에 가산.
+      'N'(일수 모드)은 기록용이며 산정근속 미가산(정책 P-7) — 여기서 필터 필수. -->
     <select id="selectCreditMonths" resultType="int">
     /* LeaveDashboardMapper.selectCreditMonths */
     SELECT IFNULL(SUM(C.CREDIT_MONTHS), 0)
@@ -720,6 +730,18 @@
      WHERE C.CMPNY_CD = #{cmpnyCd}
        AND C.USER_CD  = #{userCd}
        AND C.USE_YN   = 'Y'
+       AND C.LEAVE_CALC_YN = 'Y'
+    </select>
+
+    <!-- ============ 경력인정 이원화(2026-08-21, 지시서 §1-4): 일수 모드 연간 추가 부여 일수 합계 ============ -->
+    <select id="selectExtraLeaveDaysSum" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectExtraLeaveDaysSum */
+    SELECT IFNULL(SUM(C.EXTRA_LEAVE_DAYS), 0)
+      FROM TB_USER_SERVICE_CREDIT C
+     WHERE C.CMPNY_CD = #{cmpnyCd}
+       AND C.USER_CD  = #{userCd}
+       AND C.USE_YN   = 'Y'
+       AND C.LEAVE_CALC_YN = 'N'
     </select>
 
     <!-- ============ prafta-030 BE-1(정정 2026-05-26): 입사일 변경 차액 보전용 "기존 부여누적" ============

@@ -259,7 +259,9 @@
               <th rowspan="2" class="is-left is-middle">직원</th>
               <th rowspan="2" class="is-middle">입사일</th>
               <th rowspan="2" class="is-right is-middle">근속</th>
-              <th rowspan="2" class="is-right is-middle">경력인정</th>
+              <th rowspan="2" class="is-right is-middle ld-th-wrap">
+                산정 반영 경력(개월)
+              </th>
               <th colspan="4" class="ld-parent-header ld-grp-legal">
                 법정 휴가
               </th>
@@ -685,7 +687,7 @@ const fnExcel = () => {
     "입사일",
     "근속",
     "고용형태",
-    "경력인정개월",
+    "산정 반영 경력(개월)",
     "법정부여",
     "법정사용",
     "법정사용예정",
@@ -1370,6 +1372,15 @@ const fnCsvCell = (v) => {
 
 .ld-table th.is-middle {
   vertical-align: middle;
+}
+
+/* N-3(2차 QA 재검증): "산정 반영 경력(개월)" 라벨이 종전 "경력인정"보다 길어져
+   table-layout:fixed 컬럼(6%) 폭을 넘어서면서 옆 그룹헤더를 침범하던 결함 수정.
+   rowspan=2 로 세로 공간은 이미 여유가 있으므로 이 헤더만 정상 줄바꿈을 허용한다. */
+.ld-table th.ld-th-wrap {
+  white-space: normal;
+  word-break: keep-all;
+  line-height: 1.15;
 }
 
 /* 2단 헤더의 그룹 헤더(법정 휴가 / 법정 휴가 외 / 전체) — 배경색은 그룹 톤(.ld-grp-*)에서 지정 */

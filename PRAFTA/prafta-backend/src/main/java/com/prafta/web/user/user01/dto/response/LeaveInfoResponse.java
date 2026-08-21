@@ -1,5 +1,6 @@
 package com.prafta.web.user.user01.dto.response;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.prafta.web.user.user01.result.ServiceCreditResult;
@@ -32,6 +33,10 @@ public class LeaveInfoResponse {
         private Integer creditMonths;
         private String reasonType;
         private String reasonDetail;
+        // 경력인정 이원화(2026-08-21, 지시서 §1-1) — 'Y'(반영 모드)/'N'(일수 모드).
+        private String leaveCalcYn;
+        // 일수 모드(N) 전용 연간 추가 부여 일수. 반영 모드에서는 NULL.
+        private BigDecimal extraLeaveDays;
 
         public static CreditItem from(ServiceCreditResult result) {
             return CreditItem.builder()
@@ -39,6 +44,8 @@ public class LeaveInfoResponse {
                 .creditMonths(result.creditMonths())
                 .reasonType(result.reasonType())
                 .reasonDetail(result.reasonDetail())
+                .leaveCalcYn(result.leaveCalcYn())
+                .extraLeaveDays(result.extraLeaveDays())
                 .build();
         }
     }
