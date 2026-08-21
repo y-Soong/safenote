@@ -28,6 +28,7 @@ import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
 import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
+import com.prafta.common.cmm.attd.util.RecognizedMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.error.subcon.SubconErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -1564,6 +1565,11 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         //   고정연장이 설정된 배정일만 조회되므로 미사용 사업장은 빈 맵(현행 완전 동일).
         Map<String, FixedOtScheduleRow> fixedOtSchByKey = loadFixedOtScheduleMap(req);
 
+        // PRAFTA-SUBCON-T8-1(D-1): (근로자, 근무일) 확정 시각연차 창 맵 — 상세행별 "인정시간(분)" 산출용.
+        //   NF-2a 재판정과 동일 술어(selectHalfLeaveWindows)를 같은 트랜잭션에서 재조회하므로 항상 같은 답.
+        //   시각연차가 없는 기간은 빈 맵(차감 0 — 현행 산식 그대로).
+        Map<String, List<String[]>> halfLeaveWinByKey = loadHalfLeaveWindowMap(req);
+
         // 로컬 인물 번호 채번(정규/일용 동명이인도 USER_CD 가 다르면 다른 번호).
         Set<String> userCds = new TreeSet<>();
         for (SnapshotSourceRow row : rows) {
@@ -1603,6 +1609,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                     , row.attdStatusCd()
                     , row.otMinutes() == null ? 0 : row.otMinutes()
                     , resolveFixedOtMinutes(fixedOtSchByKey, row)
+                    , resolveRecogMinutes(halfLeaveWinByKey, row)
                     , row.leaveNm()
                     , row.leaveDays()
                     , row.leaveMinutes()
@@ -1668,6 +1675,55 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 sch.preFixedOtStrTime(), sch.preFixedOtEndTime(),
                 sch.fixedOtStrTime(), sch.fixedOtEndTime(),
                 List.of(actSeg));
+    }
+
+    /**
+     * PRAFTA-SUBCON-T8-1(D-1): 기간 내 확정 시각연차(반차 01 + 시간차 02/03/04) 창을
+     * (userCd|workYmd) 맵으로 적재한다 — 상세행별 "인정시간(분)" 산출 입력.
+     *
+     * <p>NF-2a 재판정({@code applyHalfLeaveAttdStatus})이 쓰는 {@code selectHalfLeaveWindows} 와
+     * 동일 술어를 같은 트랜잭션에서 재조회하므로 판정에 쓴 창과 항상 같은 답이다
+     * ({@code loadFixedOtScheduleMap} 패턴 미러). 시각연차 없는 기간은 빈 맵.
+     */
+    private Map<String, List<String[]>> loadHalfLeaveWindowMap(ShareReqRaw req) {
+        List<HalfLeaveWindowRow> rows = subcon03Mapper.selectHalfLeaveWindows(
+                req.prvCmpnyCd(), req.targetSiteCd(), req.periodStr(), req.periodEnd());
+        if (rows == null || rows.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        Map<String, List<String[]>> map = new HashMap<>(rows.size() * 2);
+        for (HalfLeaveWindowRow r : rows) {
+            if (r.userCd() == null || r.workYmd() == null) {
+                continue;
+            }
+            map.computeIfAbsent(r.userCd() + "|" + r.workYmd(), k -> new ArrayList<>())
+                    .add(new String[] { r.startTime(), r.endTime() });
+        }
+        return map;
+    }
+
+    /**
+     * PRAFTA-SUBCON-T8-1: 상세행 1건의 정상근무 인정시간(분) = (실제∩스케줄) − 휴게 − 확정 시각연차 겹침
+     * ({@code RecognizedMinutesUtils} 단일 출처 — 웹 Attd_08 recognizedMin 파리티).
+     *
+     * <p>★null 계약: OT_ONLY/LEAVE_ONLY 행·WORK_SEQ 1/2 외·미출근·미퇴근·스케줄 시각 공백('' 포함)은
+     * 전부 <b>null (0 아님)</b> — {@code resolveFixedOtMinutes} 의 0 반환과 계약이 다르다.
+     * OT_ONLY 의 인정분은 이미 "초과(분)" 축이 보여주므로 중복 표기하지 않는다(축 분리).
+     */
+    private Integer resolveRecogMinutes(Map<String, List<String[]>> halfLeaveWinByKey, SnapshotSourceRow row) {
+        if (!ROW_TYPE_ATTD.equals(row.rowType())) {
+            return null;
+        }
+        if (row.workSeq() == null || (row.workSeq() != 1 && row.workSeq() != 2)) {
+            return null;
+        }
+        return RecognizedMinutesUtils.recognizedMinutes(
+                row.workYmd(),
+                row.checkInDate(), blankToNull(row.checkInTime()),
+                row.checkOutDate(), blankToNull(row.checkOutTime()),
+                blankToNull(row.planStrTime()), blankToNull(row.planEndTime()),
+                row.planBrkMin(),
+                halfLeaveWinByKey.getOrDefault(row.userCd() + "|" + row.workYmd(), List.of()));
     }
 
     // =========================== private — 검증/공통 ===========================

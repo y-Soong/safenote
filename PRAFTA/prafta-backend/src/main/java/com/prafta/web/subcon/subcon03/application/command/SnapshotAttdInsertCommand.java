@@ -34,6 +34,12 @@ public record SnapshotAttdInsertCommand(
      * 승인 시점 파생 산출값을 스냅샷으로 고정 복사한다(원장 아님). 고정연장 미설정 타입은 0.
      */
     , int fixedOtMinutes
+    /**
+     * PRAFTA-SUBCON-T8-1: 정상근무 인정시간(분) — (실제∩스케줄)−휴게−확정 시각연차 겹침(Attd_08 산식 파리티).
+     * 승인 시점 파생 산출값을 스냅샷으로 고정 복사한다. ★null = 산출 불가(OT_ONLY/LEAVE_ONLY/미출근·미퇴근/
+     * 스케줄 시각 공백) — fixedOtMinutes 의 0 과 계약이 다르므로 int 금지(Integer 유지).
+     */
+    , Integer recogMinutes
     , String leaveNm
     , BigDecimal leaveDays
     , Integer leaveMinutes

@@ -166,6 +166,9 @@
                     <th style="width: 8%">출근</th>
                     <th style="width: 8%">퇴근</th>
                     <th style="width: 8%">판정</th>
+                    <!-- 인정(분): 스냅샷 생성 시점 고정값(RECOG_MINUTES). NULL(구스냅샷·산출불가)은
+                         '-' 로 표시하며 클라이언트 재계산 폴백은 만들지 않는다(반차일 과대 표기 방지). -->
+                    <th style="width: 8%">인정(분)</th>
                     <th style="width: 8%">초과(분)</th>
                     <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분) — 실근태가 근무타입 고정연장
                          구간을 커버한 분. 승인 시점 스냅샷 고정값이며, "연장 미이행" 배지는
@@ -177,7 +180,7 @@
                 <tbody>
                   <template v-if="!detailList.length">
                     <tr>
-                      <td colspan="12" class="edu-grid-empty">
+                      <td colspan="13" class="edu-grid-empty">
                         표시할 데이터가 없습니다.
                       </td>
                     </tr>
@@ -201,6 +204,10 @@
                       <td style="text-align: center">
                         {{ attdStatusLabel(row.attdStatusCd) }}
                       </td>
+                      <!-- 0 은 0 으로 표시 — NULL 만 '-' (fixedOtMinutes 의 || 0 패턴과 다름, ?? 필수) -->
+                      <td style="text-align: center">
+                        {{ row.recogMinutes ?? "-" }}
+                      </td>
                       <td style="text-align: center">
                         {{ row.otMinutes || 0 }}
                       </td>
@@ -208,7 +215,10 @@
                       <td style="text-align: center">
                         {{ row.fixedOtMinutes || 0 }}
                       </td>
-                      <td>{{ row.leaveNm }}</td>
+                      <td>
+                        {{ row.leaveNm
+                        }}<span v-if="row.leaveMinutes > 0"> · {{ row.leaveMinutes }}분</span>
+                      </td>
                     </tr>
                   </template>
                 </tbody>

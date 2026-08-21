@@ -687,7 +687,29 @@
             SELECT
                   L.USER_CD                                                             AS USER_CD
                 , L.START_DATE                                                          AS START_DATE
-                , LEFT(GROUP_CONCAT(DISTINCT T.LEAVE_NM ORDER BY T.LEAVE_NM SEPARATOR ','), 200) AS leaveNm
+                <!-- PRAFTA-SUBCON-T8-1(B): 연차 종류명에 사용단위(SYS025) 접미를 붙여 명칭 스냅샷으로 고정한다.
+                     '00'(1일)은 접미 없음(종전 동일). ORDER BY 는 DISTINCT 표현식과 동일한 CONCAT 전체를
+                     반복해야 한다(MySQL 8 제약 — 다른 표현식이면 조회 에러). -->
+                , LEFT(GROUP_CONCAT(DISTINCT
+                    CONCAT(T.LEAVE_NM,
+                        CASE L.USE_UNIT_TYPE
+                            WHEN '01' THEN '(반차)'
+                            WHEN '02' THEN '(시간차)'
+                            WHEN '03' THEN '(시간차)'
+                            WHEN '04' THEN '(시간차)'
+                            WHEN '05' THEN '(반반차)'
+                            ELSE ''
+                        END)
+                    ORDER BY CONCAT(T.LEAVE_NM,
+                        CASE L.USE_UNIT_TYPE
+                            WHEN '01' THEN '(반차)'
+                            WHEN '02' THEN '(시간차)'
+                            WHEN '03' THEN '(시간차)'
+                            WHEN '04' THEN '(시간차)'
+                            WHEN '05' THEN '(반반차)'
+                            ELSE ''
+                        END)
+                    SEPARATOR ','), 200) AS leaveNm
                 , SUM(IFNULL(L.LEAVE_DAYS, 0))                                          AS leaveDays
                 , SUM(IFNULL(L.LEAVE_MINUTES, 0))                                       AS leaveMinutes
             FROM TB_USER_LEAVE_USE L
@@ -853,7 +875,28 @@
         , NULL                                                          AS checkOutTime
         , NULL                                                          AS attdStatusCd
         , 0                                                             AS otMinutes
-        , LEFT(GROUP_CONCAT(DISTINCT T.LEAVE_NM ORDER BY T.LEAVE_NM SEPARATOR ','), 200) AS leaveNm
+        <!-- PRAFTA-SUBCON-T8-1(B): 연차 종류명 사용단위(SYS025) 접미 — selectAttdSourceRows LV 서브쿼리와 동일.
+             ORDER BY 는 DISTINCT 표현식과 동일한 CONCAT 전체 반복(MySQL 8 제약). -->
+        , LEFT(GROUP_CONCAT(DISTINCT
+            CONCAT(T.LEAVE_NM,
+                CASE L.USE_UNIT_TYPE
+                    WHEN '01' THEN '(반차)'
+                    WHEN '02' THEN '(시간차)'
+                    WHEN '03' THEN '(시간차)'
+                    WHEN '04' THEN '(시간차)'
+                    WHEN '05' THEN '(반반차)'
+                    ELSE ''
+                END)
+            ORDER BY CONCAT(T.LEAVE_NM,
+                CASE L.USE_UNIT_TYPE
+                    WHEN '01' THEN '(반차)'
+                    WHEN '02' THEN '(시간차)'
+                    WHEN '03' THEN '(시간차)'
+                    WHEN '04' THEN '(시간차)'
+                    WHEN '05' THEN '(반반차)'
+                    ELSE ''
+                END)
+            SEPARATOR ','), 200) AS leaveNm
         , SUM(IFNULL(L.LEAVE_DAYS, 0))                                  AS leaveDays
         , SUM(IFNULL(L.LEAVE_MINUTES, 0))                               AS leaveMinutes
         , MAX(L.END_DATE)                                               AS leaveEndYmd
@@ -978,6 +1021,9 @@
              승인 시점 파생 산출값을 스냅샷으로 고정 복사한다. "연장 미이행" 배지는 판정 보조
              정보라 스냅샷에서 제외한다(plan §5-2 확정). 고정연장 없는 타입은 항상 0. -->
         , FIXED_OT_MINUTES
+        <!-- PRAFTA-SUBCON-T8-1: 정상근무 인정시간(분) — Attd_08 산식 파리티, 승인 시점 고정 복사.
+             ★NULL = 산출 불가(OT_ONLY/LEAVE_ONLY/미출근·미퇴근/스케줄 시각 공백) — 0 과 구분한다. -->
+        , RECOG_MINUTES
         , LEAVE_NM
         , LEAVE_DAYS
         , LEAVE_MINUTES
@@ -1007,6 +1053,7 @@
             , #{row.attdStatusCd}
             , #{row.otMinutes}
             , #{row.fixedOtMinutes}
+            , #{row.recogMinutes}
             , #{row.leaveNm}
             , #{row.leaveDays}
             , #{row.leaveMinutes}
@@ -1108,6 +1155,8 @@
         , OT_MINUTES
         <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분)도 릴레이 복사에 동반한다(누락 시 n차 체인에서만 0). -->
         , FIXED_OT_MINUTES
+        <!-- PRAFTA-SUBCON-T8-1: 인정시간(분)도 릴레이 복사에 동반한다(누락 시 n차 체인에서만 NULL 증발). -->
+        , RECOG_MINUTES
         , LEAVE_NM
         , LEAVE_DAYS
         , LEAVE_MINUTES
@@ -1136,6 +1185,7 @@
         , D.ATTD_STATUS_CD
         , D.OT_MINUTES
         , D.FIXED_OT_MINUTES
+        , D.RECOG_MINUTES
         , D.LEAVE_NM
         , D.LEAVE_DAYS
         , D.LEAVE_MINUTES
@@ -1266,6 +1316,9 @@
         <!-- PRAFTA-FIXEDOT-3(M21): 고정연장 실적(분). ⚠️ record(SnapshotDetailResult) 끝 필드와
              동일 순서로 SELECT 끝에 둔다(MyBatis 위치 기반 매핑). -->
         , D.FIXED_OT_MINUTES AS fixedOtMinutes
+        <!-- PRAFTA-SUBCON-T8-1: 정상근무 인정시간(분). NULL=산출불가/구스냅샷(0 과 구분).
+             ⚠️ record 끝 = SELECT 끝 동일 순서(MyBatis 위치 기반 매핑). -->
+        , D.RECOG_MINUTES    AS recogMinutes
     FROM TB_CMPNY_SHARE_SNAPSHOT_ATTD D
     WHERE D.SNAPSHOT_ID = #{snapshotId}
       AND EXISTS (
