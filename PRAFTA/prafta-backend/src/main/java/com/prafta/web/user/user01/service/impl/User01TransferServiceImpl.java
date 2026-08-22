@@ -154,6 +154,14 @@ public class User01TransferServiceImpl implements User01TransferService {
             if (toDefaultSchCd == null) {
                 throw new ApiException(UserErrorCode.USER_400_064);
             }
+            // 3-b-1) 근무타입 이동일 적용 가능 검증 — 이동 사업장 활성 근무타입이고 APPLY_DATE(현재본
+            //   또는 이력본)가 이동일 이하인 버전이 있어야 한다. 적용일자가 전부 미래인 근무타입은
+            //   발효 시 유효버전 폴백으로 시각이 해석돼 오류 없이 통과하므로 등록 시점에 차단한다.
+            //   (근무타입 실재·활성 검증 겸함 — 종전에는 미검증이었다.)
+            if (userTransferMapper.selectSchUsableOnDate(
+                    param.gvCmpnyCd(), param.toSiteCd(), toDefaultSchCd, moveDate) <= 0) {
+                throw new ApiException(UserErrorCode.USER_400_083);
+            }
             // 4) 5종 불가케이스 사전검증(정규직 한정). 불가 시 첫 사유로 차단(fail-closed).
             List<TransferBlockReason> reasons = userTransferValidator.evaluate(
                     param.gvCmpnyCd(), target, toDefaultSchCd, param.toSiteCd(), moveDate);

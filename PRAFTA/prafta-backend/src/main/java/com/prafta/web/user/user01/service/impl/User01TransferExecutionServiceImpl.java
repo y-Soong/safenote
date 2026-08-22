@@ -197,6 +197,15 @@ public class User01TransferExecutionServiceImpl implements User01TransferExecuti
             return;
         }
 
+        // 정규직: 기본 근무타입 이동일 적용 가능 재검증(등록 경로 3-b-1 동일 가드) —
+        //   예약 후 근무타입 삭제/비활성/적용일 변경 대비. 실패 시 FAILED+사유로 남긴다.
+        if (row.toDefaultSchCd() != null && !row.toDefaultSchCd().isBlank()
+                && userTransferMapper.selectSchUsableOnDate(
+                        cmpnyCd, row.toSiteCd(), row.toDefaultSchCd(), row.moveDate()) <= 0) {
+            throw new IllegalStateException(
+                    "재검증 실패: 기본 근무타입 이동일 적용 불가(USER_400_083) toDefaultSchCd=" + row.toDefaultSchCd());
+        }
+
         // 정규직: 5종 불가케이스 재실행(예약행 이동 정보로 입력 재구성, 대상자 현재 상태 기준).
         List<TransferBlockReason> reasons = userTransferValidator.evaluate(
                 cmpnyCd, target, row.toDefaultSchCd(), row.toSiteCd(), row.moveDate());

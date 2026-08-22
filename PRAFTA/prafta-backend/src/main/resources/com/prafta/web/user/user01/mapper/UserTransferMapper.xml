@@ -54,6 +54,36 @@
     </select>
 
     <!-- ============================================================
+         기본 근무타입 이동일 적용 가능 검증 — 이동 사업장 활성 근무타입이고,
+         현재본 또는 이력본에 APPLY_DATE 가 이동일 이하인 버전이 존재하면 1.
+         적용일자가 전부 미래인 근무타입 지정 차단(USER_400_083). 실재 검증 겸함.
+         ============================================================ -->
+    <select id="selectSchUsableOnDate" resultType="int">
+    /* UserTransferMapper.selectSchUsableOnDate */
+    SELECT COUNT(*)
+    FROM (
+        SELECT 1
+          FROM TB_SCH_MGMT M
+         WHERE M.CMPNY_CD = #{cmpnyCd}
+           AND M.SITE_CD  = #{siteCd}
+           AND M.SCH_CD   = #{schCd}
+           AND M.USE_YN   = 'Y'
+           AND (
+                 M.APPLY_DATE <![CDATA[ <= ]]> #{moveDate}
+                 OR EXISTS (
+                     SELECT 1
+                       FROM TB_SCH_MGMT_HIST H
+                      WHERE H.CMPNY_CD = M.CMPNY_CD
+                        AND H.SITE_CD  = M.SITE_CD
+                        AND H.SCH_CD   = M.SCH_CD
+                        AND H.APPLY_DATE <![CDATA[ <= ]]> #{moveDate}
+                 )
+               )
+         LIMIT 1
+    ) T
+    </select>
+
+    <!-- ============================================================
          불가① 사업장 관리자(Baim_01): 대상자가 현재 사업장의 SITE_ADMIN_CD 인지.
          ============================================================ -->
     <select id="selectIsSiteAdmin" resultType="int">

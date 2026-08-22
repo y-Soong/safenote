@@ -118,7 +118,7 @@
             >
               <option :value="''">-</option>
               <option
-                v-for="opt in schTypeOptions"
+                v-for="opt in filteredSchTypeOptions"
                 :key="opt.schCd"
                 :value="opt.schCd"
               >
@@ -128,6 +128,9 @@
               </option>
             </BaseSelect>
           </div>
+          <p class="transfer-hint" v-if="isRegular">
+            ⓘ 적용일자가 이동일 이전인 근무타입만 선택할 수 있습니다.
+          </p>
           <p class="transfer-hint" v-if="isRegular">
             ⓘ 소속이동일(발효)부터 당해 연말까지 평일 근무계획이 자동
             생성·갱신됩니다(빈 날·자동생성분만, 휴일·연차·교대팀 구간 제외).
@@ -277,6 +280,17 @@ const fnFmtSchTime = (t) => {
   return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
 };
 
+// 이동일 기준 적용 가능한(최초 적용일 ≤ 이동일) 근무타입만 노출. 이동일 미선택이면 전체 노출.
+//   earliestApplyDate 는 현재본·이력본 통틀어 가장 이른 APPLY_DATE(YYYYMMDD).
+//   최종 판정은 서버(USER_400_083) — 프론트 필터는 안내용.
+const filteredSchTypeOptions = computed(() => {
+  const ymd = (moveDate.value || "").replace(/-/g, "");
+  if (!ymd) return schTypeOptions.value;
+  return schTypeOptions.value.filter(
+    (o) => !o.earliestApplyDate || o.earliestApplyDate <= ymd
+  );
+});
+
 // =========================== Watch ===========================
 // 사업장 변경 시: 선택값(부서/근무타입) reset + 정규직이면 근무타입 옵션 재조회.
 watch(toSiteCd, (newSiteCd) => {
@@ -290,6 +304,16 @@ watch(toSiteCd, (newSiteCd) => {
 //   값 변경 시 eligibility 를 디바운스 재조회한다.
 watch([toSiteCd, toNodeCd, toDefaultSchCd, moveDate], () => {
   scheduleEligibility();
+});
+
+// 이동일 변경(또는 옵션 재조회)으로 선택한 근무타입이 필터에서 빠지면 선택 해제(무효 선택 잔존 방지).
+watch([moveDate, schTypeOptions], () => {
+  if (
+    toDefaultSchCd.value &&
+    !filteredSchTypeOptions.value.some((o) => o.schCd === toDefaultSchCd.value)
+  ) {
+    toDefaultSchCd.value = "";
+  }
 });
 
 // =========================== Life Cycle ===========================

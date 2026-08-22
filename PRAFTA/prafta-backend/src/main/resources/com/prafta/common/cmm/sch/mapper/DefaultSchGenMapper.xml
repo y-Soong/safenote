@@ -191,6 +191,13 @@
         , M.FST_SCH_END_TIME  AS fstSchEndTime
         , M.SEC_SCH_STR_TIME  AS secSchStrTime
         , M.SEC_SCH_END_TIME  AS secSchEndTime
+        , LEAST(M.APPLY_DATE, COALESCE((
+              SELECT MIN(H.APPLY_DATE)
+                FROM TB_SCH_MGMT_HIST H
+               WHERE H.CMPNY_CD = M.CMPNY_CD
+                 AND H.SITE_CD  = M.SITE_CD
+                 AND H.SCH_CD   = M.SCH_CD
+          ), M.APPLY_DATE))    AS earliestApplyDate
       FROM TB_SCH_MGMT M
      WHERE M.CMPNY_CD = #{cmpnyCd}
        AND M.SITE_CD  = #{siteCd}

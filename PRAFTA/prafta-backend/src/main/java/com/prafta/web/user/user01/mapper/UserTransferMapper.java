@@ -30,6 +30,14 @@ public interface UserTransferMapper {
     /** 이동 소속부서 실재 검증: (CMPNY_CD, SITE_CD, NODE_CD) 존재 카운트(회사 스코프). 1 이상이면 실재. */
     int selectNodeExists(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("nodeCd") String nodeCd);
 
+    /**
+     * 기본 근무타입의 이동일 적용 가능 검증: 이동 사업장에 활성(USE_YN='Y')으로 존재하고,
+     * 현재본 또는 이력본 중 APPLY_DATE 가 이동일 이하인 버전이 하나라도 있으면 1.
+     * (적용일자가 전부 이동일보다 미래인 근무타입 지정 차단 — USER_400_083)
+     */
+    int selectSchUsableOnDate(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd,
+            @Param("schCd") String schCd, @Param("moveDate") String moveDate);
+
     /** 불가① 대상자가 현재 사업장(siteCd)의 사업장 관리자(SITE_ADMIN_CD)인지. 1 이상이면 불가. */
     int selectIsSiteAdmin(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("userCd") String userCd);
 
