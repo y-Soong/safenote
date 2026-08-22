@@ -205,16 +205,22 @@ async function onNavigate(menu) {
   }
 }
 
-/* 탭 목록에 항목만 등록한다(네비게이션 없음). 이미 있으면 무시. */
+/* 탭 목록에 항목만 등록한다(네비게이션 없음). 이미 있으면 무시.
+   새로 등록했으면 true, 기존 탭이 있어 무시했으면 false 를 반환한다(롤백 판단용). */
 function registerTab(tab) {
   const exists = tabs.value.find((t) => t.route === tab.route);
-  if (!exists) tabs.value.push(tab);
+  if (exists) return false;
+  tabs.value.push(tab);
+  return true;
 }
 
 /* 탭 추가 + 실제 이동.
-   router.push 결과와 무관하게 탭을 먼저 만들어두면, 세션 만료 등으로 가드가 다른 곳으로
-   리다이렉트하거나 내비게이션이 취소될 때 "탭은 생겼는데 화면은 안 바뀌는" 불일치가 생긴다.
-   그래서 이동을 먼저 마친 뒤 실제로 목적 라우트에 도달했을 때만 탭을 등록한다.
+   탭을 먼저 등록한 뒤 이동하고, 가드 리다이렉트(세션 만료 등)·내비게이션 취소로
+   목적지에 도달하지 못했으면 방금 등록한 탭을 되돌린다.
+   ① push 를 먼저 하면 새 화면이 탭 등록 전에 마운트되어 공통 버튼 props(buttons)가
+      빈 채로 스냅샷 고정된다(각 뷰의 localButtons = ref({...props.buttons}) 패턴) —
+      조회/저장/삭제 버튼 실종 회귀의 원인이라 선등록이 필수.
+   ② 선등록 후 미도달 시 제거하므로 "탭만 생기고 화면은 안 바뀌는" 불일치도 그대로 방지.
    성공 여부를 반환한다 (탭 상한 거부·이동 실패 시 false — 호출부가 후속 정리 판단). */
 async function addTab(tab) {
   // 홈 포함 탭 개수 제한 (10개)
@@ -223,12 +229,20 @@ async function addTab(tab) {
     return false;
   }
 
+  const newlyAdded = registerTab(tab);
+
   await router.push(tab.route).catch(() => {});
 
-  // 가드 리다이렉트(세션 만료 등)나 내비게이션 취소로 목적지에 도달하지 못했으면 탭을 만들지 않는다.
-  if (route.path !== tab.route) return false;
+  // 목적지에 도달하지 못했으면(가드 리다이렉트·취소) 이번에 새로 만든 탭만 되돌린다.
+  // 원래 있던 탭은 사용자가 이미 쓰던 것이므로 남긴다.
+  if (route.path !== tab.route) {
+    if (newlyAdded) {
+      const idx = tabs.value.findIndex((t) => t.route === tab.route);
+      if (idx !== -1) tabs.value.splice(idx, 1);
+    }
+    return false;
+  }
 
-  registerTab(tab);
   return true;
 }
 
