@@ -15,6 +15,7 @@ import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
+import com.prafta.common.cmm.leave.vo.ShortfallCandidateVO;
 
 /**
  * 연차 현황 대시보드/상세/수동 부여(attd09) 전용 Mapper.
@@ -407,4 +408,77 @@ public interface LeaveDashboardMapper {
      */
     Integer selectHourlyUsedMinutes(@Param("cmpnyCd") String cmpnyCd,
                                     @Param("userCd") String userCd);
+
+    // ============================================================
+    // 입사일 기준 차액 조회 (경력인정 이원화 Phase 2 §2-2, Attd_09_Shortfall)
+    // ============================================================
+
+    /**
+     * 차액 조회 대상 후보 페이징 목록 (입사일 미입력자 제외). {@code selectDashboardList}와 동일한
+     * 사업장/부서/이름 필터(dashboardWhere/nodeTreeCte)를 재사용한다. 정답/실제 누적은 서비스 계층에서
+     * 사용자별로 산정(SQL 집계 불가).
+     *
+     * @param cmpnyCd      회사 코드 (CMPNY_CD 스코프)
+     * @param siteCd       사업장 코드 필터 (NULL/빈값이면 전체)
+     * @param nodeCd       소속부서 노드 필터 (NULL/빈값이면 전체)
+     * @param incSubNodeYn 하위부서 포함 여부 'Y'/'N'
+     * @param userNm       사용자명 LIKE 검색어
+     * @param offset       페이징 offset
+     * @param limit        페이징 limit
+     */
+    List<ShortfallCandidateVO> selectShortfallCandidateList(@Param("cmpnyCd") String cmpnyCd,
+                                                            @Param("siteCd") String siteCd,
+                                                            @Param("nodeCd") String nodeCd,
+                                                            @Param("incSubNodeYn") String incSubNodeYn,
+                                                            @Param("userNm") String userNm,
+                                                            @Param("offset") int offset,
+                                                            @Param("limit") int limit);
+
+    /** {@link #selectShortfallCandidateList} 전체 행 수 (페이징 메타). */
+    long countShortfallCandidateList(@Param("cmpnyCd") String cmpnyCd,
+                                     @Param("siteCd") String siteCd,
+                                     @Param("nodeCd") String nodeCd,
+                                     @Param("incSubNodeYn") String incSubNodeYn,
+                                     @Param("userNm") String userNm);
+
+    /**
+     * 법정 수기부여(_COVER) 합계 — 대상 사용자의 live(STATUS!='CANCELED' AND DEL_YN='N') _COVER 부여
+     * GRANT_DAYS 합. 식별: {@code GRANT_BY_TYPE='02' AND IDEMPOTENCY_KEY LIKE '%\_COVER'}(멱등키 전용
+     * 접미사, plan §2-3 R-6). 없으면 0.
+     */
+    java.math.BigDecimal selectCoverGrantTotal(@Param("cmpnyCd") String cmpnyCd,
+                                               @Param("userCd") String userCd);
+
+    /**
+     * 입사일 기준 차액(부족분) 산정의 "실제 부여 누적" 축 — <b>live 법정 부여 총량</b>(지시서 §0 P-12).
+     *
+     * <p>산식: {@code SUM(GRANT_DAYS)} WHERE {@code GRANT_TYPE LIKE 'STATUTORY\_%'} AND
+     * {@code STATUS != 'CANCELED'} AND {@code DEL_YN = 'N'} — <b>사용·만료 무관</b>(회수/삭제분만 제외).
+     * 보전 산정 목적상 "부여했어야 할 총량 vs 부여한 총량"이 대칭이며, 사용·만료는 근로자 선택/시간
+     * 경과의 결과라 무관하다(P2R2-N1 해소 축 — 소멸 월차가 부족분으로 부활 집계되던 결함).
+     *
+     * <p>★{@code LeaveGrantEngineMapper.selectActiveStatutoryGrantedTotal}(STATUS='ACTIVE' 한정)을
+     * 재사용하지 않은 이유: STATUS 는 만료 배치({@code LeaveGrantStatusService.expireOverdueGrants})로
+     * ACTIVE→EXPIRED, 전량 사용 시 EXHAUSTED 로 전이된다. ACTIVE 한정이면 소멸 월차(EXPIRED)가 다시
+     * 빠져 P2R2-N1 이 그대로 재발하고, 전량 사용(EXHAUSTED) 행도 빠져 사용량 의존이 재발한다.
+     *
+     * <p>★{@link #selectStatutoryGrantAccrual}(소멸 제외+사용 포함)과 축이 다르다 — 그쪽은 입사일 변경
+     * 보전(computeBackfillShortfall) 맥락 전용으로 무수정 유지. 차액 조회({@code getShortfallList})와
+     * 부여 상한({@code coverGrant})은 반드시 본 쿼리(동일 축)만 사용한다.
+     *
+     * @param cmpnyCd 회사 코드 (CMPNY_CD 스코프)
+     * @param userCd  대상 직원 코드
+     * @return live 법정 부여 총량(사용·만료 무관, 없으면 0)
+     */
+    java.math.BigDecimal selectStatutoryGrantedLiveTotal(@Param("cmpnyCd") String cmpnyCd,
+                                                         @Param("userCd") String userCd);
+
+    /**
+     * SEC-P2-1: 보전 부여 상한 재계산~INSERT 구간 직렬화용 advisory lock 획득
+     * (LeaveRemnantCoverMapper.getAdvisoryLock 미러). 1=획득, 0=타임아웃, null=오류.
+     */
+    Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
+
+    /** advisory lock 해제 (acquire/release 쌍 — MD5 래핑 동일 적용). */
+    Integer releaseAdvisoryLock(@Param("lockKey") String lockKey);
 }

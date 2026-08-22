@@ -1,6 +1,7 @@
 package com.prafta.common.cmm.leave.service;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
@@ -109,6 +110,30 @@ public interface LeaveGrantEngineService {
      * @param operatorUserCd 수행자 USER_CD(INSERT_NO 기록용)
      */
     void grantManualCareerImmediate(String cmpnyCd, String userCd, String operatorUserCd);
+
+    /**
+     * 입사일 기준 "정답" 누적치 산정 (경력인정 이원화 Phase 2 §2-1, read-only). <b>DB 쓰기 없음</b>.
+     *
+     * <p>회사의 실제 정책 AXIS1(HIRE_DATE/FISCAL_YEAR) 설정과 <b>무관하게</b> 항상 입사일 기준 트랙으로
+     * 계산한다(타임라인 §3.1 "n번째 입사기념일에 15+floor((n-1)/2)"를 활성 정책 AXIS5로 일반화 —
+     * {@link #computeBorrowQuota} 등이 쓰는 {@code tenureBonusDays}를 그대로 재사용, 산식 복제 아님).
+     * 월차(1년 미만, §8.5.4)는 <b>월 단위</b>로 누적한다(P2-D1 재작업) — k번째 월차(발생일 = 입사+k개월)는
+     * 그 발생 시점의 산정근속(k + 반영 모드 creditMonths)이 12개월 미만이었을 때만 발생한 것으로 보며,
+     * 기발생분은 1년 경과 후에도 누적에 남는다(경력 0 근로자 1주년 정답 = 월차 11 + 본연차 15 = 26).
+     * 반영 모드 경력인정 보유자는 산정근속 12개월 도달 시점부터 월차 발생이 중단된다(엔진 월차 게이트
+     * isCreditDoubleDip의 월별 동작과 동일 의미 — 081eaabd).
+     * 25일 캡은 근속가산 산식(tenureBonusDays의 AXIS5 maxDays)이 자동으로 강제한다.
+     *
+     * <p>퇴직정산 참고 조회(P-3)와 차액 조회 화면(§2-2)이 본 메서드를 공유한다. {@code LocalDate.now()}를
+     * 내부에서 쓰지 않고 baseDate를 전 구간 일관되게 사용한다(081eaabd에서 제거한 결함 유형 재유입 금지).
+     *
+     * @param cmpnyCd  회사 코드
+     * @param userCd   대상 직원 코드
+     * @param baseDate 기준일(퇴사(예정)일 입력 시 퇴직정산 참고 조회가 된다)
+     * @return baseDate까지 입사일 기준 트랙으로 발생했어야 할 법정연차(월차+본연차+근속가산) 누적. 입사일
+     *         미입력/미래면 0.
+     */
+    BigDecimal computeHireBasisAccrual(String cmpnyCd, String userCd, LocalDate baseDate);
 
     /**
      * 입사일 변경에 따른 수동 연차 조정(prafta-032 D3/D4/D5). <b>@Transactional(REQUIRED)</b> — 호출부

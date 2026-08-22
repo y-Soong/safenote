@@ -13,11 +13,13 @@ import java.util.List;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.prafta.common.cmm.leave.command.CoverGrantCommand;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
@@ -26,6 +28,7 @@ import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.vo.AppliedLeaveTypeVO;
+import com.prafta.common.cmm.leave.vo.CoverGrantResultVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveBalanceVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardItemVO;
@@ -47,9 +50,14 @@ import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.cmm.leave.vo.PagingMetaVO;
+import com.prafta.common.cmm.leave.vo.ShortfallCandidateVO;
+import com.prafta.common.cmm.leave.vo.ShortfallListResultVO;
+import com.prafta.common.cmm.leave.vo.ShortfallRowVO;
+import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.common.util.AdvisoryLockTxUtils;
 import com.prafta.common.util.AuthRoleUtils;
 
 import lombok.RequiredArgsConstructor;
@@ -116,13 +124,14 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     private static final String AXIS1_FISCAL_YEAR = "FISCAL_YEAR";
 
     // ===== 수동 부여 연차 회수 (soft cancel, PRAFTA-031) =====
-    /** 관리자 수동 부여 식별 prefix(GRANT_TYPE). 회수 대상은 MANUAL_* 만. */
-    private static final String MANUAL_GRANT_PREFIX = "MANUAL_";
     /**
      * 경력인정 일수 모드 자동 부여 유형(GRANT_TYPE, prafta-경력인정-이원화 P-10).
      * GRANT_BY_TYPE='01'(자동)로 적재되지만, 오입력 복구 안전망을 위해 회수 가드에서
      * 이 타입 한정 예외를 둔다(P-11, 사용자 확정 2026-08-21). 다른 자동 부여 타입(STATUTORY_* 등)은
      * 기존 조건(GRANT_BY_TYPE='02') 그대로 유지 — 특례는 MANUAL_CAREER 한정.
+     *
+     * <p>(Phase 2 §2-3, 2026-08-21) 회수 가드 자체는 더 이상 GRANT_TYPE 접두(MANUAL_%)를 요구하지 않는다
+     * (아래 {@code recallGrant} 4-1 참조) — {@code GRANT_BY_TYPE='02'}이면 GRANT_TYPE 무관 회수 가능.
      */
     private static final String GRANT_TYPE_CAREER = "MANUAL_CAREER";
     private static final String STATUS_CANCELED = "CANCELED";
@@ -133,12 +142,36 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     /** 회수 알림 제목(한국어). */
     private static final String NOTI_RECALL_TITLE = "부여 연차 회수 안내";
 
+    // ===== 경력인정 이원화 Phase 2 §2-3: 입사일 기준 차액 보전(법정 수기부여, _COVER) =====
+    /** 보전 부여의 연차 코드 — 법정 본연차와 동일(LeaveGrantEngineServiceImpl.LEAVE_CD_ANNUAL 미러, 대시보드/통계 집계 정합). */
+    private static final String LEAVE_CD_STATUTORY_ANNUAL = "SYS_ANNUAL";
+    /** 보전 부여의 부여 분류 — 법정 본연차(STATUTORY_ANNUAL). 촉진 후보/기준선 집계에 코드 수정 없이 자동 편입(P2-6). */
+    private static final String GRANT_TYPE_STATUTORY_ANNUAL = "STATUTORY_ANNUAL";
+    /**
+     * ★R-6 최우선 방어: _COVER 멱등키 전용 접미사. 엔진 표준키({@code {userCd}_{periodLabel}_STATUTORY_ANNUAL...})
+     * 형식을 절대 쓰지 않는다 — 그 형식을 쓰면 엔진 {@code alreadyGranted}의 변형키 가드
+     * ({@code countActiveBySuffixVariant}, baseKey LIKE)가 _COVER 건을 "기부여"로 오인해 같은 회차의 정기
+     * 본연차 부여를 skip시키는 대형 회귀가 난다. 수동 부여 키 체계({@code buildIdempotencyKey})에 이 접미사만
+     * 덧붙여 격리한다.
+     */
+    private static final String COVER_KEY_SUFFIX = "_COVER";
+    /** 보전 부여 사유 접두(감사 추적용). */
+    private static final String COVER_GRANT_REASON_PREFIX = "[입사일기준 차액보전] ";
+    /** 보전 부여 일수 단위(0.5일). */
+    private static final BigDecimal COVER_GRANT_UNIT = BigDecimal.valueOf(0.5);
+    /** SEC-P2-1: 보전 부여 상한 재계산~INSERT 직렬화 advisory lock 키 접두(사용자 단위). */
+    private static final String COVER_GRANT_LOCK_PREFIX = "leaveCoverGrant:";
+    /** SEC-P2-1: advisory lock 타임아웃(초) — 기존 락 지점 관례(5초) 미러. */
+    private static final int COVER_GRANT_LOCK_TIMEOUT_SEC = 5;
+
     private final LeaveDashboardMapper leaveDashboardMapper;
     private final LeavePolicyService leavePolicyService;
     private final LeaveGrantEngineService leaveGrantEngineService;
     private final ObjectMapper objectMapper;
     /** LC-07(표기): 현재 기준 1일 환산시간(분) 조회 — FE "N일 H시간 M분" 조립 분모 단일 출처. */
     private final LeaveConversionPolicyService leaveConversionPolicyService;
+    /** 사업장 접근 인가(User_03 원장 기반) — 경력인정 이원화 Phase 2 §2-2 차액 조회 게이트(security 3회 재발 함정). */
+    private final SiteAccessService siteAccessService;
 
     // ============================================================
     // 대시보드 목록
@@ -561,14 +594,18 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
         }
 
         // 4. 서버 재검증 (정책서 §8.5.8 확정 결정 1/2)
-        //    4-1. 관리자 수동 부여건만 회수 가능: GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02'
+        //    4-1(경력인정-이원화 Phase 2 §2-3 확장, 2026-08-21): 관리자 수동(GRANT_BY_TYPE='02') 부여건은
+        //         GRANT_TYPE 접두(MANUAL_%) 제한 없이 전부 회수 가능하도록 확장 — 법정 수기부여(_COVER,
+        //         GRANT_TYPE='STATUTORY_ANNUAL')도 미사용 시 회수 가능해야 하기 때문(plan §H-2·P2-4).
+        //         ★착수 전 전수 grep(2026-08-21): GRANT_BY_TYPE='02'로 INSERT하는 지점은 본 클래스의
+        //         manualGrant()(MANUAL_OTHER) 단 1곳뿐이었다(가불/borrow GRANT은 전부 '01' — 970/1310행 주석
+        //         참조). 즉 이 조건 완화로 회수가 새로 열리는 기존 타입은 없다(신규 _COVER만 대상으로 추가됨).
         //    4-1-특례(P-11): GRANT_TYPE='MANUAL_CAREER'(경력인정 일수 모드 자동 부여)는
         //         GRANT_BY_TYPE='01'(자동)이어도 회수 가능 — 오입력 복구 안전망. 다른 자동 부여 타입은 미적용.
-        boolean isManualType = target.getGrantType() != null && target.getGrantType().startsWith(MANUAL_GRANT_PREFIX);
         boolean isCareerRecallException = GRANT_TYPE_CAREER.equals(target.getGrantType())
                 && GRANT_BY_TYPE_AUTO.equals(target.getGrantByType());
         boolean grantByTypeOk = GRANT_BY_TYPE_ADMIN.equals(target.getGrantByType()) || isCareerRecallException;
-        if (!isManualType || !grantByTypeOk) {
+        if (!grantByTypeOk) {
             log.warn("연차 회수 - 수동 부여건 아님. cmpnyCd={}, grantId={}, grantType={}, grantByType={}",
                     cmpnyCd, safeGrantId, target.getGrantType(), target.getGrantByType());
             throw new ApiException(AttdErrorCode.ATTD_400_071);
@@ -673,6 +710,328 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     public HireDateGrantResultVO hireDateGrant(String cmpnyCd, List<String> userCds, String authCd, String operatorUserCd) {
         // 부여 핵심 로직은 공용 부여 엔진으로 이관됨. @Transactional은 엔진 메서드가 보유한다.
         return leaveGrantEngineService.hireDateGrant(cmpnyCd, userCds, authCd, operatorUserCd);
+    }
+
+    // ============================================================
+    // 입사일 기준 차액 조회 (경력인정 이원화 Phase 2 §2-2, Attd_09_Shortfall)
+    // ============================================================
+
+    @Override
+    public ShortfallListResultVO getShortfallList(String cmpnyCd, String authCd, String gvUserCd, String gvSiteCd,
+                                                  String siteCd, String nodeCd, String incSubNodeYn, String userNm,
+                                                  String baseYmd, int page, int size) {
+        requireCmpnyCd(cmpnyCd);
+
+        String siteFilter = blankToNull(siteCd);
+        String nodeFilter = blankToNull(nodeCd);
+        String incSub = ("Y".equals(incSubNodeYn) && nodeFilter != null) ? "Y" : "N";
+
+        // ★P-13(SEC-P2-2, 사용자 확정 2026-08-22): 차액 조회 권한 = master/hr 전용 — Attd_09 본문
+        //   (getDashboard)과 동일 게이트로 통일. 종전 canManageNode 채택으로 safe·부서 관리자에게
+        //   열리던 것을 회수(연차 도메인 최초 safe 개방이었음). 추후 필요 시 User_02 권한 화면에서 제어.
+        ensureManager(cmpnyCd, authCd, "입사일 기준 차액 조회");
+        // 사업장 필터 지정 시 원장 기반 접근 검증은 방어선 관례로 유지(master/hr 전사 허용이라 실질 통과).
+        if (siteFilter != null) {
+            siteAccessService.assertSiteAccess(cmpnyCd, gvUserCd, authCd, gvSiteCd, siteFilter);
+        }
+
+        if (!isValidYyyymmdd(baseYmd)) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // AXIS1=FISCAL_YEAR 회사가 아니면 탭 비노출 판정용 meta 만 반환(에러 아님, plan §2-2).
+        LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+        String axis1 = (policy == null) ? AXIS1_HIRE_DATE : nvlStr(policy.getAxis1GrantBase(), AXIS1_HIRE_DATE);
+        if (!AXIS1_FISCAL_YEAR.equals(axis1)) {
+            return ShortfallListResultVO.builder()
+                    .fiscalYearYn("N")
+                    .baseYmd(baseYmd)
+                    .rows(new ArrayList<>())
+                    .totalCount(0)
+                    .build();
+        }
+
+        int safePage = (page < 1) ? 1 : page;
+        int safeSize = (size < 1) ? 20 : Math.min(size, MAX_PAGE_SIZE);
+        int offset = (safePage - 1) * safeSize;
+        String keyword = blankToNull(userNm);
+
+        long total = leaveDashboardMapper.countShortfallCandidateList(cmpnyCd, siteFilter, nodeFilter, incSub, keyword);
+        List<ShortfallCandidateVO> candidates = total == 0
+                ? new ArrayList<>()
+                : leaveDashboardMapper.selectShortfallCandidateList(
+                        cmpnyCd, siteFilter, nodeFilter, incSub, keyword, offset, safeSize);
+
+        LocalDate baseDate = parseYyyymmdd(baseYmd);
+        List<ShortfallRowVO> rows = new ArrayList<>(candidates.size());
+        for (ShortfallCandidateVO c : candidates) {
+            BigDecimal hireBasis = leaveGrantEngineService.computeHireBasisAccrual(cmpnyCd, c.getUserCd(), baseDate);
+            // ★P-12(사용자 확정 2026-08-22, P2R2-N1 해소): 실제 부여 누적 = live 법정 부여 총량
+            //   (SUM(GRANT_DAYS), 사용·만료 무관 — 회수/삭제만 제외). "부여했어야 할 총량 vs 부여한 총량"
+            //   대칭. 종전 selectStatutoryGrantAccrual(소멸 제외+사용 포함)은 소멸 월차의 미사용분이 빠져
+            //   사용량에 따라 부족분이 26.0/20.5/15.0 으로 흔들렸다(정답 15). 부여 상한(coverGrant)과
+            //   반드시 동일 축 — 두 지점 모두 selectStatutoryGrantedLiveTotal 만 사용한다.
+            //   (기준일 파라미터 없음 — live 총량은 조회 기준일과 무관. 기보전 합도 같은 live 축이라
+            //   먼 미래 기준일에서 "기보전 합 > 실제 누적" 모순 표시(P2R2-I1)도 함께 해소.)
+            BigDecimal actual = nz(leaveDashboardMapper.selectStatutoryGrantedLiveTotal(cmpnyCd, c.getUserCd()));
+            BigDecimal covered = nz(leaveDashboardMapper.selectCoverGrantTotal(cmpnyCd, c.getUserCd()));
+            // 남은 부족분 = 정답 누적 − 실제 부여 누적. 기보전(_COVER)은 실제 부여 누적에 이미 포함되므로
+            //   여기서 다시 빼지 않는다(이중 차감 금지, plan §2-2). 음수(회계연도 트랙 우세)는 그대로 노출.
+            BigDecimal diff = hireBasis.subtract(actual);
+            rows.add(ShortfallRowVO.builder()
+                    .userCd(c.getUserCd())
+                    .userNm(c.getUserNm())
+                    .hireDate(c.getHireDate())
+                    .hireBasisAccrual(hireBasis.setScale(1, RoundingMode.HALF_UP))
+                    .actualAccrual(actual.setScale(1, RoundingMode.HALF_UP))
+                    .diff(diff.setScale(1, RoundingMode.HALF_UP))
+                    .coveredTotal(covered.setScale(1, RoundingMode.HALF_UP))
+                    .remainingShortfall(diff.setScale(1, RoundingMode.HALF_UP))
+                    .build());
+        }
+
+        log.info("입사일 기준 차액 조회. cmpnyCd={}, siteCd={}, nodeCd={}, baseYmd={}, page={}, size={}, total={}",
+                cmpnyCd, siteFilter, nodeFilter, baseYmd, safePage, safeSize, total);
+
+        return ShortfallListResultVO.builder()
+                .fiscalYearYn("Y")
+                .baseYmd(baseYmd)
+                .rows(rows)
+                .totalCount(total)
+                .build();
+    }
+
+    // ============================================================
+    // 입사일 기준 차액 보전 (법정 수기부여, 경력인정 이원화 Phase 2 §2-3)
+    // ============================================================
+
+    // ★P2R3-N1(3차 qa): READ_COMMITTED 필수 — 아래 SEC-P2-1 advisory lock 과 한 쌍이다. 한쪽만 되돌리지 말 것.
+    //   이 트랜잭션의 첫 비잠금 SELECT(countActiveUser)가 락 획득(acquireCoverGrantLock)보다 앞에 있어,
+    //   기본 격리(REPEATABLE READ)면 그 시점에 read view 가 고정된다. GET_LOCK 은 테이블을 읽지 않아
+    //   read view 를 재생성하지 않으므로, 락 대기 후 실행하는 상한 재계산(selectStatutoryGrantedLiveTotal)이
+    //   경쟁 트랜잭션의 커밋된 INSERT 를 못 보는 stale 읽기가 된다 → 상이 사유 동시 2요청이 각각 상한을
+    //   통과해 합산 초과 부여 성립(직렬화 실효 상실). READ_COMMITTED 는 statement 마다 새 read view 를
+    //   만들므로 락 획득 후 재계산이 반드시 최신 커밋을 본다(프로젝트 선례: SmsRateLimitGuard 4차 T-1/R-1,
+    //   동일 메커니즘 2회차 재발 — AdvisoryLockTxUtils javadoc 참조).
+    //   ★전제 1: binlog_format=ROW (STATEMENT 면 READ_COMMITTED 쓰기가 1665 거부) — 개발 DB 실측 ROW
+    //     확인 완료(2026-08-22 메인 세션), 운영 RDS 도 ROW(SmsRateLimitGuard 경로 가동 중).
+    //   ★전제 2: 격리수준 속성은 이 메서드가 트랜잭션을 "시작"할 때만 적용된다 — 진입점
+    //     (Attd09ServiceImpl/컨트롤러)에 외부 @Transactional 없음 확인(3차 qa). 외부 트랜잭션으로 감싸는
+    //     호출자를 새로 만들면 이 방어가 조용히 무효화되니 금지.
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public CoverGrantResultVO coverGrant(String cmpnyCd, CoverGrantCommand command, String authCd,
+                                         String operatorUserCd) {
+        requireCmpnyCd(cmpnyCd);
+        if (command == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 1. 권한 가드 — 기존 수동 부여 관례(AUTH_MASTER OR AUTH_HR_MANAGER, 정책서 §8.5.7).
+        //    ★설계 메모: plan §F-2 는 canManageNode 게이트도 함께 요구하나, 본 회사 최고관리자(MASTER/HR)
+        //    한정 실행(ensureManager)이면 canManageNode 는 항상 통과(canManageAllNodes short-circuit)라
+        //    실효 게이트가 아니고, 대상 사용자 siteCd 를 요청 바디가 갖지 않아(F-2 스펙) canManageUser 조회가
+        //    불가하다. 기존 자매 EP(manualGrant/recallGrant)와 동일하게 ensureManager + countActiveUser
+        //    스코프 검증으로 IDOR을 방어한다(dev-notes 기록, 이후 node-admin 실행이 필요해지면 F-2에 siteCd
+        //    추가 후 canManageUser 로 확장).
+        ensureManager(cmpnyCd, authCd, "입사일 기준 차액 보전 부여");
+
+        String targetUserCd = blankToNull(command.userCd());
+        if (targetUserCd == null) {
+            throw new ApiException(AttdErrorCode.ATTD_400_033);
+        }
+        // IDOR 방어: 대상 직원이 본 회사 활성 사용자인지 검증(스코프 격리, manualGrant와 동일 관례).
+        if (leaveDashboardMapper.countActiveUser(cmpnyCd, targetUserCd) < 1) {
+            log.warn("입사일 기준 차액 보전 부여 - 대상 직원 스코프 밖/미존재. cmpnyCd={}, userCd={}", cmpnyCd, targetUserCd);
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+
+        // 2. AXIS1 게이트(P2-D3 재작업): 입사일 기준 차액 보전은 회계연도(FISCAL_YEAR) 축 전용 개념 —
+        //    조회 EP(getShortfallList, fiscalYearYn='N' 차단)와 게이트 수준을 동기화해 HIRE_DATE 회사의
+        //    쓰기 실행을 차단한다.
+        LeavePolicyVO activePolicy = leavePolicyService.findActivePolicy(cmpnyCd);
+        String axis1 = (activePolicy == null) ? AXIS1_HIRE_DATE
+                : nvlStr(activePolicy.getAxis1GrantBase(), AXIS1_HIRE_DATE);
+        if (!AXIS1_FISCAL_YEAR.equals(axis1)) {
+            log.warn("입사일 기준 차액 보전 부여 - 회계연도 축 아님(차단). cmpnyCd={}, userCd={}, axis1={}",
+                    cmpnyCd, targetUserCd, axis1);
+            throw new ApiException(AttdErrorCode.ATTD_400_213);
+        }
+
+        // 2-1. 소정-05 게이트(P-9): 법정 자동부여 OFF 회사는 보전 부여 실행 자체를 차단(계산/조회는 별개 API에서 계속 허용).
+        if (!leavePolicyService.isStatutoryAutoGrantEnabled(cmpnyCd)) {
+            log.warn("법정 연차 자동 부여 off 회사 - 입사일 기준 차액 보전 부여 차단. cmpnyCd={}, userCd={}",
+                    cmpnyCd, targetUserCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_211);
+        }
+
+        // 3. 입력 검증: 0.5일 단위 · 0 초과.
+        BigDecimal grantDays = command.grantDays();
+        if (!isValidCoverGrantDays(grantDays)) {
+            throw new ApiException(AttdErrorCode.ATTD_400_212);
+        }
+        if (command.reason() != null && command.reason().length() > MAX_REASON_LENGTH) {
+            throw new ApiException(AttdErrorCode.ATTD_400_034);
+        }
+        // baseYmd 는 P2-D2 재작업으로 상한 산정에 더 이상 쓰지 않는다(서버 오늘 고정 — 아래 4번 참조).
+        //   요청 계약(F-2) 유지 차원에서 형식 검증만 남긴다(불량 형식은 종전대로 400).
+        if (!isValidYyyymmdd(command.baseYmd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 3-1. ★SEC-P2-1(상한 TOCTOU 봉쇄): 상한 재계산~INSERT 구간을 사용자 단위 advisory lock 으로
+        //      직렬화. 동일 페이로드는 멱등키 유니크로 차단되지만, 사유 텍스트가 다르면 hash8 이 갈려
+        //      두 동시 요청이 같은 남은 부족분을 읽고 각각 통과 → 합산 상한 초과 부여가 가능했다.
+        //      세션 단위 락이라 트랜잭션 커밋(afterCompletion) 시점에 해제해야 두 번째 요청이
+        //      커밋된 INSERT 를 반드시 보게 된다(기존 락 지점 관례 미러 — LeaveRemnantCoverServiceImpl).
+        String lockKey = COVER_GRANT_LOCK_PREFIX + cmpnyCd + ":" + targetUserCd;
+        acquireCoverGrantLock(lockKey);
+        boolean lockDeferred = AdvisoryLockTxUtils.deferReleaseToAfterCompletion(lockKey, this::releaseCoverGrantLock);
+        try {
+            // 4. ★상한 서버 강제(R-6/§2-3 유일 구조적 방어선): 요청량 ≤ 서버 재계산 남은 부족분.
+            //    ★기준일 = 서버 오늘(LocalDate.now()) 고정 (P2-D2 재작업, 2026-08-22 메인 세션 확정).
+            //    정답 누적(computeHireBasisAccrual)은 기준일 의존이라 미래 기준일이면 상한이 열린다 —
+            //    미래 기준일 부족분의 선지급은 실질 가불이며 P-1(재직 중 자동 보전 안함)·P-2(가불 레일
+            //    미지원)와 어긋난다. baseYmd 는 조회 EP(read-only 퇴직정산 참고)에서만 임의 기준일을
+            //    허용하고, 부여 상한은 오늘로 고정한다.
+            //    ★실제 부여 누적 = P-12 live 법정 부여 총량(사용·만료 무관) — 조회(getShortfallList)와
+            //    반드시 동일 축. 종전 selectStatutoryGrantAccrual(소멸 제외) 축은 소멸 월차가 부족분으로
+            //    부활해 최대 11일 과다 부여가 가능했다(P2R2-N1).
+            LocalDate serverToday = LocalDate.now();
+            String today = serverToday.format(DateTimeFormatter.BASIC_ISO_DATE);
+            BigDecimal hireBasis = leaveGrantEngineService.computeHireBasisAccrual(cmpnyCd, targetUserCd, serverToday);
+            BigDecimal actualAccrual = nz(
+                    leaveDashboardMapper.selectStatutoryGrantedLiveTotal(cmpnyCd, targetUserCd));
+            BigDecimal remainingShortfall = hireBasis.subtract(actualAccrual);
+            BigDecimal grantDaysScaled = grantDays.setScale(1, RoundingMode.HALF_UP);
+            if (grantDaysScaled.compareTo(remainingShortfall) > 0) {
+                log.warn("입사일 기준 차액 보전 부여 - 요청량 초과(오늘 기준). cmpnyCd={}, userCd={}, 요청={}, 남은부족분={}",
+                        cmpnyCd, targetUserCd, grantDaysScaled, remainingShortfall);
+                throw new ApiException(AttdErrorCode.ATTD_400_210);
+            }
+
+            // 5. AVAIL_FROM = 지급일(T-4, 부여 실행일=오늘) · 유효기간 = 정책 AXIS6.
+            String availFromDate = today;
+            String availToDate = fallbackAxis6AvailToDate(cmpnyCd, availFromDate);
+
+            // ★R-6 최우선 방어: 엔진 표준 멱등키 형식을 쓰지 않는다 — 수동 부여 키 체계
+            //   ({userCd}_{hash8}_{window}_MANUAL)에서 접미사만 _COVER 로 교체해 격리한다.
+            long dedupWindow = System.currentTimeMillis() / 1000L / MANUAL_DEDUP_WINDOW_SEC;
+            String idempotencyKey = buildCoverGrantIdempotencyKey(
+                    targetUserCd, grantDaysScaled, availFromDate, command.reason(), dedupWindow);
+
+            if (leaveDashboardMapper.countLiveByIdempotencyKey(cmpnyCd, idempotencyKey) > 0) {
+                log.warn("입사일 기준 차액 보전 부여 - 동일 제출 단시간 중복 감지(차단). cmpnyCd={}, userCd={}, key={}",
+                        cmpnyCd, targetUserCd, idempotencyKey);
+                throw new ApiException(AttdErrorCode.ATTD_409_030);
+            }
+
+            String reasonText = COVER_GRANT_REASON_PREFIX + (command.reason() == null ? "" : command.reason());
+            if (reasonText.length() > MAX_REASON_LENGTH) {
+                reasonText = reasonText.substring(0, MAX_REASON_LENGTH);
+            }
+
+            LeaveGrantInsertVO vo = new LeaveGrantInsertVO();
+            vo.setGrantId(leaveDashboardMapper.selectNextGrantId(cmpnyCd));
+            vo.setCmpnyCd(cmpnyCd);
+            vo.setUserCd(targetUserCd);
+            vo.setLeaveCd(LEAVE_CD_STATUTORY_ANNUAL);
+            vo.setGrantType(GRANT_TYPE_STATUTORY_ANNUAL);
+            vo.setGrantDays(grantDaysScaled);
+            vo.setUsedDays(BigDecimal.ZERO.setScale(1, RoundingMode.HALF_UP));
+            vo.setGrantReason(reasonText);
+            vo.setGrantByType(GRANT_BY_TYPE_ADMIN);
+            vo.setPolicySeq(null);
+            vo.setGrantDate(today);
+            vo.setAvailFromDate(availFromDate);
+            vo.setAvailToDate(availToDate);
+            vo.setIdempotencyKey(idempotencyKey);
+            vo.setStatus(STATUS_ACTIVE);
+            vo.setInsertNo(operatorUserCd);
+
+            try {
+                leaveDashboardMapper.insertManualGrant(vo);
+            } catch (DuplicateKeyException e) {
+                // P2-D6 재작업: 유니크(UK_LEAVE_GRANT_IDEMPOTENCY) 충돌의 두 원인을 구분해 안내한다.
+                //   - live 행 0건 = 회수(CANCELED) 행이 같은 키를 점유(사전검사 countLiveByIdempotencyKey 는
+                //     CANCELED 제외라 통과) → "회수 직후 동일 내용 재부여" 상황. 30초 대기/내용 변경 안내(409_031).
+                //   - live 행 존재 = 동시 제출 경합(다른 트랜잭션이 방금 INSERT) → 기존 문구 유지(409_030).
+                boolean canceledKeyOccupied =
+                        leaveDashboardMapper.countLiveByIdempotencyKey(cmpnyCd, idempotencyKey) == 0;
+                log.warn("입사일 기준 차액 보전 부여 - 멱등키 충돌(차단). cmpnyCd={}, userCd={}, key={}, 회수행점유={}",
+                        cmpnyCd, targetUserCd, idempotencyKey, canceledKeyOccupied);
+                throw new ApiException(canceledKeyOccupied
+                        ? AttdErrorCode.ATTD_409_031
+                        : AttdErrorCode.ATTD_409_030);
+            }
+
+            log.info("입사일 기준 차액 보전 부여 완료. cmpnyCd={}, userCd={}, 일수={}, 남은부족분(부여후)={}, 수행자={}",
+                    cmpnyCd, targetUserCd, grantDaysScaled, remainingShortfall.subtract(grantDaysScaled), operatorUserCd);
+
+            return CoverGrantResultVO.builder()
+                    .grantId(vo.getGrantId())
+                    .grantedDays(grantDaysScaled)
+                    // P2-D7: 같은 DTO 안 grantedDays(setScale 1)와 소수 자릿수 통일(API 계약 일관성).
+                    .remainingShortfallAfter(
+                            remainingShortfall.subtract(grantDaysScaled).setScale(1, RoundingMode.HALF_UP))
+                    .build();
+        } finally {
+            // afterCompletion 등록 성공 시 여기서 해제하지 않는다(이중 해제 방지) — 커밋/롤백 직후
+            //   같은 커넥션에서 해제된다. 등록 실패(동기화 비활성) 시에만 폴백(기존 락 지점 관례 미러).
+            if (!lockDeferred) {
+                releaseCoverGrantLock(lockKey);
+            }
+        }
+    }
+
+    /**
+     * SEC-P2-1: 보전 부여 advisory lock 획득 — 타임아웃/오류면 동시 처리 중으로 보고 재시도 안내
+     * (LeaveRemnantCoverServiceImpl/LeaveHourlyResettleServiceImpl 관례 미러).
+     */
+    private void acquireCoverGrantLock(String lockKey) {
+        Integer got = leaveDashboardMapper.getAdvisoryLock(lockKey, COVER_GRANT_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("입사일 기준 차액 보전 부여 - advisory lock 미획득. lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_409_071);
+        }
+    }
+
+    /** advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseCoverGrantLock(String lockKey) {
+        try {
+            leaveDashboardMapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("입사일 기준 차액 보전 부여 - advisory lock 해제 실패(무시). lockKey={}", lockKey, e);
+        }
+    }
+
+    /**
+     * 보전 부여 일수 유효성: 0 초과 · 0.5일 단위(prafta-com-013-08-5 스타일과 별개, 지시서 §2-3 상한값 기준).
+     */
+    private boolean isValidCoverGrantDays(BigDecimal days) {
+        if (days == null || days.compareTo(BigDecimal.ZERO) <= 0) {
+            return false;
+        }
+        // 0.5 단위 검증: (일수 / 0.5) 가 정수인지.
+        BigDecimal divided = days.divide(COVER_GRANT_UNIT, 4, RoundingMode.HALF_UP);
+        return divided.stripTrailingZeros().scale() <= 0;
+    }
+
+    /**
+     * _COVER 전용 멱등키 (★R-6 방어 — buildIdempotencyKey 수동부여 키 체계와 동일한 해시 산식을 재사용하되
+     * 접미사만 {@code _MANUAL} → {@code _COVER}로 교체해 엔진 표준키 네임스페이스와 완전히 분리한다).
+     */
+    private String buildCoverGrantIdempotencyKey(String userCd, BigDecimal grantDays, String availFromDate,
+                                                 String reason, long window) {
+        String payload = LEAVE_CD_STATUTORY_ANNUAL + "|" + grantDays.toPlainString() + "|" + availFromDate
+                + "|" + (reason == null ? "" : reason);
+        String hash8 = sha256Hex8(payload);
+        return userCd + "_" + hash8 + "_" + window + COVER_KEY_SUFFIX;
+    }
+
+    /** null 이면 기본값. (기존 nvl 유틸 미보유 클래스라 로컬 헬퍼 — leave 패키지 타 서비스의 nvl과 동일 의미) */
+    private String nvlStr(String v, String defaultValue) {
+        return (v == null || v.isBlank()) ? defaultValue : v;
     }
 
     // ============================================================

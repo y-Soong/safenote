@@ -33,6 +33,7 @@ import com.prafta.common.cmm.leave.service.LeavePolicyService;
 import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
+import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.exception.ApiException;
 
 /**
@@ -67,8 +68,10 @@ class LeaveDashboardManualAvailTermTest {
         policy = mock(LeavePolicyService.class);
         engine = mock(LeaveGrantEngineService.class);
         // LC-07: 표기용 환산시간 의존성 추가(본 테스트 경로(수동부여)와 무관 — mock 주입만)
+        // 경력인정 이원화 Phase 2 §2-2: 차액 조회 게이트 의존성 추가(본 테스트 경로(수동부여)와 무관 — mock 주입만)
         svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper(),
-                mock(LeaveConversionPolicyService.class));
+                mock(LeaveConversionPolicyService.class),
+                mock(SiteAccessService.class));
 
         // "오늘" 고정 (idempotency key / GRANT_DATE 산출 결정화)
         localDateMock = mockStatic(LocalDate.class, Mockito.CALLS_REAL_METHODS);

@@ -1,5 +1,6 @@
 package com.prafta.web.attd.attd09.service;
 
+import com.prafta.web.attd.attd09.application.param.CoverGrantParam;
 import com.prafta.web.attd.attd09.application.param.HireDateGrantParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDashboardListParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDetailParam;
@@ -10,6 +11,8 @@ import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
+import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
+import com.prafta.web.attd.attd09.dto.response.CoverGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDetailResponse;
@@ -21,6 +24,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
+import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
 
 /**
  * attd09 — 연차 현황 대시보드/상세/수동 부여 (PRAFTA-017-2, 정책서 §8.5).
@@ -66,4 +70,10 @@ public interface Attd09Service {
 
     /** PC-07(D9-③·N2): 소멸 임박 짜투리 리포트(절사 끝수 구분 포함). 관리자(MASTER/HR) 전용. */
     RemnantReportResponse getRemnantReport(RemnantReportParam param);
+
+    /** 경력인정 이원화 Phase 2 §2-2: 입사일 기준 차액 조회 목록(read-only). */
+    ShortfallListResponse getShortfallList(ShortfallListParam param);
+
+    /** 경력인정 이원화 Phase 2 §2-3: 입사일 기준 차액 보전(법정 수기부여, {@code _COVER}) 실행. */
+    CoverGrantResponse coverGrant(CoverGrantParam param);
 }

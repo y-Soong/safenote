@@ -1,12 +1,15 @@
 package com.prafta.common.cmm.leave.service;
 
+import com.prafta.common.cmm.leave.command.CoverGrantCommand;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
+import com.prafta.common.cmm.leave.vo.CoverGrantResultVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
+import com.prafta.common.cmm.leave.vo.ShortfallListResultVO;
 
 import java.util.List;
 
@@ -74,7 +77,8 @@ public interface LeaveDashboardService {
      * 관리자 수동 부여 연차 회수(soft cancel, PRAFTA-031). @Transactional, 권한 MASTER/HR.
      *
      * <p>정책서 §8.5.7(권한) / §8.5.8(소프트 취소·사용 이력 불변). 회수 대상은 관리자 수동 부여건
-     * (GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02')이며, 사용 전(STATUS='ACTIVE' AND
+     * (GRANT_BY_TYPE='02', GRANT_TYPE 무관 — 경력인정 이원화 Phase 2 §2-3, 2026-08-21로 MANUAL_% 접두
+     * 제한 제거, 법정 수기부여(_COVER)도 포함)이며, 사용 전(STATUS='ACTIVE' AND
      * USED_DAYS=0 AND DEL_YN='N')일 때만 가능하다. 회수 = STATUS='CANCELED' 전환 + 회수 메타 기록.
      * <b>USED_DAYS는 절대 갱신하지 않는다.</b> 회수 성공 시 알림 outbox에 1건 적재(발송은 추후).
      *
@@ -104,4 +108,44 @@ public interface LeaveDashboardService {
      * @param userCd  수행자 사용자 코드 (INSERT_NO 기록용)
      */
     HireDateGrantResultVO hireDateGrant(String cmpnyCd, List<String> userCds, String authCd, String userCd);
+
+    /**
+     * 입사일 기준 차액 조회 목록 (경력인정 이원화 Phase 2 §2-2, read-only). 권한 = master/hr 전용
+     * ({@code ensureManager} — P-13, Attd_09 본문과 동일 게이트. safe·부서 관리자는 403) +
+     * 사업장 필터 지정 시 {@code assertSiteAccess} 방어선 유지.
+     *
+     * <p>AXIS1=FISCAL_YEAR 회사가 아니면 rows 없이 {@code fiscalYearYn='N'}만 반환한다(에러 아님 — 탭
+     * 비노출 판정용). 정답 누적/실제 부여 누적/기보전 합은 사용자별 산정(엔진 computeHireBasisAccrual +
+     * P-12 live 법정 부여 총량 selectStatutoryGrantedLiveTotal + selectCoverGrantTotal).
+     *
+     * @param cmpnyCd      회사 코드 (JWT)
+     * @param authCd       수행자 권한 코드 (JWT)
+     * @param gvUserCd     수행자 사용자 코드 (JWT) — assertSiteAccess 판정용
+     * @param gvSiteCd     수행자 토큰 사업장 코드 (JWT) — assertSiteAccess 판정용
+     * @param siteCd       사업장 필터 (NULL/빈값=전체)
+     * @param nodeCd       소속부서 필터 (NULL/빈값=전체)
+     * @param incSubNodeYn 하위부서 포함 여부 Y/N
+     * @param userNm       사용자명 검색어
+     * @param baseYmd      조회 기준일 (YYYYMMDD, 필수 — 퇴사(예정)일 입력 시 퇴직정산 참고 조회)
+     * @param page         페이지(1-based)
+     * @param size         페이지 크기
+     */
+    ShortfallListResultVO getShortfallList(String cmpnyCd, String authCd, String gvUserCd, String gvSiteCd,
+                                           String siteCd, String nodeCd, String incSubNodeYn, String userNm,
+                                           String baseYmd, int page, int size);
+
+    /**
+     * 입사일 기준 차액 보전(법정 수기부여, {@code _COVER}) 실행 (경력인정 이원화 Phase 2 §2-3).
+     * {@code @Transactional}, 권한 AUTH_MASTER OR AUTH_HR_MANAGER(기존 수동 부여 관례).
+     *
+     * <p>{@code GRANT_TYPE='STATUTORY_ANNUAL'}, {@code GRANT_BY_TYPE='02'}, 멱등키는 수동 부여 키 체계
+     * ({@code PAYLOAD_HASH8+WINDOW}) + 전용 접미사 {@code _COVER}(★R-6 — 엔진 표준키 형식 절대 금지).
+     * 상한(요청량 ≤ 서버 재계산 남은 부족분)·소정-05(법정 자동부여 OFF) 게이트를 서버가 강제한다.
+     *
+     * @param cmpnyCd        회사 코드 (JWT)
+     * @param command        부여 입력 (userCd/grantDays/reason/baseYmd)
+     * @param authCd         수행자 권한 코드 (JWT)
+     * @param operatorUserCd 수행자 사용자 코드 (INSERT_NO 기록용)
+     */
+    CoverGrantResultVO coverGrant(String cmpnyCd, CoverGrantCommand command, String authCd, String operatorUserCd);
 }

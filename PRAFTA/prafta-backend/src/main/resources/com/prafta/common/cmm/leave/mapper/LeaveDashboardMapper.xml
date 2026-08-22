@@ -364,12 +364,14 @@
         , G.USED_DAYS    AS usedDays
         , G.GRANT_BY_TYPE AS grantByType
         <!-- PRAFTA-031: 회수(soft cancel) 가능 여부를 SQL에서 산출(0/1 → boolean 매핑).
-             수동 부여(MANUAL_ + GRANT_BY_TYPE='02') + 미사용(USED_DAYS=0) + ACTIVE + 미삭제일 때만 회수 가능.
+             관리자 수동(GRANT_BY_TYPE='02') + 미사용(USED_DAYS=0) + ACTIVE + 미삭제일 때만 회수 가능.
              P-11(2026-08-21, 경력인정 이원화 D-2): GRANT_TYPE='MANUAL_CAREER' 는 GRANT_BY_TYPE='01'(자동)
              이어도 회수 가능 — 오입력 복구 안전망. 서비스 계층 재검증(LeaveDashboardServiceImpl.recallGrant)과
-             동일 조건으로 맞춘다. 다른 자동 부여 타입(STATUTORY_* 등)은 미적용. -->
-        , CASE WHEN G.GRANT_TYPE LIKE 'MANUAL\_%'
-                AND (G.GRANT_BY_TYPE = '02'
+             동일 조건으로 맞춘다. 다른 자동 부여 타입(STATUTORY_* 등)은 미적용.
+             ★Phase 2 §2-3(2026-08-21): GRANT_TYPE 접두(MANUAL_%) 제한을 제거했다 — 법정 수기부여(_COVER,
+             GRANT_TYPE='STATUTORY_ANNUAL', GRANT_BY_TYPE='02')도 미사용 시 회수 가능해야 하기 때문
+             (전수 grep 결과 GRANT_BY_TYPE='02' INSERT 지점은 관리자 수동부여 1곳뿐 — plan §H-2 참조). -->
+        , CASE WHEN (G.GRANT_BY_TYPE = '02'
                      OR (G.GRANT_TYPE = 'MANUAL_CAREER' AND G.GRANT_BY_TYPE = '01'))
                 AND G.STATUS = 'ACTIVE'
                 AND G.USED_DAYS = 0
@@ -884,6 +886,87 @@
        AND U.USE_UNIT_TYPE IN ('02', '03', '04')
        AND U.LEAVE_STATUS  = 'CONFIRMED'
        AND U.DEL_YN        = 'N'
+    </select>
+
+    <!-- ============ 경력인정 이원화 Phase 2 §2-2: 입사일 기준 차액 조회 후보 목록 ============
+      selectDashboardList 와 동일한 사업장/부서/이름 필터(dashboardWhere/nodeTreeCte)를 재사용하되,
+      입사일 미입력자는 "정답"(입사일 기준) 누적 계산이 불가하므로 제외한다.
+      정답/실제 누적/기보전 합은 서비스 계층에서 사용자별로 산정한다(SQL 집계 불가 — computeHireBasisAccrual
+      은 다년 반복 계산이라 단일 SQL로 표현할 수 없다). 정렬은 대시보드와 동일(이름순). -->
+    <select id="selectShortfallCandidateList" resultType="com.prafta.common.cmm.leave.vo.ShortfallCandidateVO">
+    /* LeaveDashboardMapper.selectShortfallCandidateList */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+      <include refid="nodeTreeCte" />
+    </if>
+    SELECT
+          U.USER_CD   AS userCd
+        , U.USER_NM   AS userNm
+        , U.HIRE_DATE AS hireDate
+      FROM TB_USER U
+    <include refid="dashboardWhere" />
+       AND U.HIRE_DATE IS NOT NULL
+     ORDER BY U.USER_NM ASC, U.USER_CD ASC
+     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countShortfallCandidateList" resultType="long">
+    /* LeaveDashboardMapper.countShortfallCandidateList */
+    <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
+      <include refid="nodeTreeCte" />
+    </if>
+    SELECT COUNT(*)
+      FROM TB_USER U
+    <include refid="dashboardWhere" />
+       AND U.HIRE_DATE IS NOT NULL
+    </select>
+
+    <!-- ============ 경력인정 이원화 Phase 2 §2-3: 법정 수기부여(_COVER) 합계 ============
+      ★R-6 방어: _COVER 는 엔진 표준 멱등키(userCd_periodLabel_STATUTORY_ANNUAL...) 형식을 절대 쓰지 않고,
+      수동부여 키 체계(PAYLOAD_HASH8+WINDOW) + 전용 접미사 '_COVER' 로 격리한다(LeaveDashboardServiceImpl
+      buildCoverGrantIdempotencyKey 참조). 식별은 GRANT_BY_TYPE='02' + IDEMPOTENCY_KEY 접미사(언더스코어
+      이스케이프, 기존 패턴 동일)로 한다. live(STATUS!='CANCELED' AND DEL_YN='N') 합계. -->
+    <select id="selectCoverGrantTotal" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectCoverGrantTotal */
+    SELECT IFNULL(SUM(G.GRANT_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD        = #{cmpnyCd}
+       AND G.USER_CD         = #{userCd}
+       AND G.GRANT_BY_TYPE   = '02'
+       AND G.IDEMPOTENCY_KEY LIKE '%\_COVER'
+       AND G.STATUS         != 'CANCELED'
+       AND G.DEL_YN          = 'N'
+    </select>
+
+    <!-- ============ 경력인정 이원화 Phase 2 최종수정 P-12: live 법정 부여 총량 ============
+      차액(부족분)의 "실제 부여 누적" 축 = 부여 총량 vs 부여 총량 대칭(사용·만료 무관, 회수/삭제만 제외).
+      ★selectStatutoryGrantAccrual(소멸 제외+사용 포함)과 축이 다름 — 그쪽은 입사일 변경 보전 전용 무수정.
+      ★LeaveGrantEngineMapper.selectActiveStatutoryGrantedTotal(STATUS='ACTIVE')을 재사용하지 않은 이유:
+        만료 배치가 ACTIVE→EXPIRED, 전량 사용이 EXHAUSTED 로 STATUS 를 전이시키므로 ACTIVE 한정이면
+        소멸 월차가 다시 빠져 P2R2-N1(소멸 연차 부활 부여)이 재발한다. STATUS != 'CANCELED' 가 정합.
+      LIKE 'STATUTORY\_%'는 언더스코어를 '\'로 이스케이프(기존 패턴 동일). -->
+    <select id="selectStatutoryGrantedLiveTotal" resultType="java.math.BigDecimal">
+    /* LeaveDashboardMapper.selectStatutoryGrantedLiveTotal */
+    SELECT IFNULL(SUM(G.GRANT_DAYS), 0)
+      FROM TB_USER_LEAVE_GRANT G
+     WHERE G.CMPNY_CD   = #{cmpnyCd}
+       AND G.USER_CD    = #{userCd}
+       AND G.GRANT_TYPE LIKE 'STATUTORY\_%'
+       AND G.STATUS    != 'CANCELED'
+       AND G.DEL_YN     = 'N'
+    </select>
+
+    <!-- SEC-P2-1: 보전 부여 상한 재계산~INSERT 구간을 사용자 단위 advisory lock 으로 직렬화.
+         세션 단위 → 호출부가 트랜잭션 완료(afterCompletion) 시점에 releaseAdvisoryLock
+         (등록 불가 시 finally 폴백). (LeaveRemnantCoverMapper.getAdvisoryLock 미러) -->
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveDashboardMapper.getAdvisoryLock */
+    <!-- 락 이름 64자 제한(MySQL) 대응: MD5 해시로 32자 고정 — 셀프가입 20자 회사코드 조합 키가 제한 초과(2026-08-17 운영 실증). acquire/release 쌍 동일 적용 필수. -->
+    SELECT GET_LOCK(MD5(#{lockKey}), #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* LeaveDashboardMapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(MD5(#{lockKey}))
     </select>
 
 </mapper>

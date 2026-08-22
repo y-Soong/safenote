@@ -32,4 +32,11 @@ public class LeaveGrantRecallRowVO {
 
     /** 사용 가능 종료일 = 소멸일 (YYYYMMDD) */
     private String availToDate;
+
+    /**
+     * 멱등키 (경력인정 이원화 Phase 2 §2-3 P2-6 ③). 입사일 변경 회수 스냅샷에서 법정 수기부여(_COVER,
+     * GRANT_TYPE='STATUTORY_ANNUAL'과 동일해 grantType만으로는 구분 불가)를 식별하기 위한 구분 필드.
+     * {@code IDEMPOTENCY_KEY LIKE '%_COVER'} 이면 보전 부여.
+     */
+    private String idempotencyKey;
 }

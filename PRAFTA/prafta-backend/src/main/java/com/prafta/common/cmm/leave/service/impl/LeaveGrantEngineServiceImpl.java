@@ -100,6 +100,12 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     private static final int MAX_GRANT_USER_COUNT = 500;
     /** 자동 정기부여(prafta-023 E) 수행자(INSERT_NO) 시스템 식별자. */
     private static final String SYSTEM_OPERATOR = "SYSTEM";
+    /**
+     * 법정 수기부여(_COVER) 멱등키 전용 접미사 미러(경력인정 이원화 Phase 2 §2-3 — 원본 정의는
+     * {@code LeaveDashboardServiceImpl.COVER_KEY_SUFFIX}). 본 클래스는 회수 스냅샷에서 _COVER 식별에만 참조한다
+     * (엔진이 _COVER 를 직접 생성하지 않음 — R-6 격리 원칙상 엔진 표준키 경로와 별개).
+     */
+    private static final String COVER_KEY_SUFFIX = "_COVER";
 
     // ===== AXIS1 (SYS036) =====
     private static final String AXIS1_HIRE_DATE = "HIRE_DATE";
@@ -1143,7 +1149,7 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                     withdrawnTotal = withdrawnTotal.add(take);
                     remaining = remaining.subtract(take);
                     snapshot.add(recallSnapshotRow("CANCELED", g.getGrantId(), g.getGrantType(), take, grantDays,
-                            usedDays, g.getAvailToDate()));
+                            usedDays, g.getAvailToDate(), g.getIdempotencyKey()));
                 }
                 // updated==0(경합)이면 다음 행으로 — 트랜잭션 일관성은 최종 합계 검증에서 방어.
             } else {
@@ -1155,7 +1161,7 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                     withdrawnTotal = withdrawnTotal.add(take);
                     remaining = remaining.subtract(take);
                     snapshot.add(recallSnapshotRow("REDUCED", g.getGrantId(), g.getGrantType(), take, grantDays,
-                            usedDays, g.getAvailToDate()));
+                            usedDays, g.getAvailToDate(), g.getIdempotencyKey()));
                 }
             }
         }
@@ -1351,7 +1357,8 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     }
 
     private Map<String, Object> recallSnapshotRow(String action, String grantId, String grantType, BigDecimal take,
-                                                  BigDecimal beforeGrantDays, BigDecimal usedDays, String availTo) {
+                                                  BigDecimal beforeGrantDays, BigDecimal usedDays, String availTo,
+                                                  String idempotencyKey) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("action", action);
         m.put("grantId", grantId);
@@ -1363,6 +1370,9 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
                 : beforeGrantDays.subtract(take).stripTrailingZeros().toPlainString());
         m.put("usedDays", usedDays.stripTrailingZeros().toPlainString());
         m.put("availTo", availTo);
+        // 경력인정 이원화 Phase 2 §2-3 P2-6 ③: grantType(STATUTORY_ANNUAL)만으로는 법정 수기부여(_COVER)를
+        //   일반 본연차 grant와 구분할 수 없어 신설한 구분 필드(멱등키 접미사 기반).
+        m.put("coverGrant", (idempotencyKey != null && idempotencyKey.endsWith(COVER_KEY_SUFFIX)) ? "Y" : "N");
         return m;
     }
 
@@ -1780,6 +1790,77 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
     /** GRANT_TYPE이 본연차/근속가산(차액 대상)인지. 월차(STATUTORY_MONTHLY)는 false. */
     private boolean isAnnualOrTenure(String grantType) {
         return GRANT_TYPE_ANNUAL.equals(grantType) || GRANT_TYPE_TENURE.equals(grantType);
+    }
+
+    // ============================================================
+    // 입사일 기준 "정답" 누적 계산기 (경력인정 이원화 Phase 2 §2-1, read-only)
+    // ============================================================
+
+    /**
+     * {@inheritDoc}
+     *
+     * <p>★설계 메모(2026-08-21): {@code resolveEntitlement}/{@code resolveHireDateEntitlement}는 회사의
+     * 실제 AXIS1 정책을 분기하고 "그 시점의 오늘"만 산정하는 단일회차 함수라, FISCAL_YEAR 회사에서 순수
+     * HIRE_DATE 트랙 다년 누적을 뽑아내려면 그대로 호출할 수 없다({@code computeBackfillPeriods}도 FISCAL_YEAR면
+     * 빈 목록을 반환 — HIRE_DATE 백필 전용). 대신 그 메서드들이 실제로 쓰는 동일 상수/함수
+     * ({@link #BASE_ANNUAL_DAYS}, {@link #tenureBonusDays})를 매 입사기념일마다 재호출·누적한다 — 이는
+     * {@code computeBackfillPeriods}(HIRE_DATE 분기, 1827~1857행 부근)·{@link #projectAnnualEntitlementAt}이
+     * 이미 쓰고 있는 선례와 동일한 재사용 방식이다(산식 자체는 tenureBonusDays 1곳, 정책 변경에 자동 추종).
+     */
+    @Override
+    public BigDecimal computeHireBasisAccrual(String cmpnyCd, String userCd, LocalDate baseDate) {
+        if (cmpnyCd == null || userCd == null || baseDate == null) {
+            return BigDecimal.ZERO;
+        }
+        String hireDate = leaveDashboardMapper.selectUserHireDate(cmpnyCd, userCd);
+        LocalDate hire = parseYyyymmdd(hireDate);
+        if (hire == null || hire.isAfter(baseDate)) {
+            return BigDecimal.ZERO;
+        }
+
+        LeavePolicyVO policy = leavePolicyService.findActivePolicy(cmpnyCd);
+        // 반영 모드(LEAVE_CALC_YN='Y') 개월수만 산정근속 가산 — selectCreditMonths가 이미 필터링(P1-2).
+        // 일수 모드는 약정이라 "정답" 트랙에 미포함(지시서 §2-1 경력인정 모드 인지).
+        int creditMonths = Math.max(0, leaveDashboardMapper.selectCreditMonths(cmpnyCd, userCd));
+
+        int actualMonthsAtBase = (int) Math.max(0, ChronoUnit.MONTHS.between(hire, baseDate));
+        int creditedMonthsAtBase = actualMonthsAtBase + creditMonths;
+
+        BigDecimal total = BigDecimal.ZERO;
+
+        // 1) 1년 미만 법정 월차(§8.5.4) — ★월 단위 누적 판정 (P2-D1 재작업, 2026-08-22).
+        //    k번째 월차(발생일 = 입사 + k개월)는 "그 발생 시점"의 산정근속(k + creditMonths)이 12개월
+        //    미만이었을 때만 발생한 것으로 본다 — 실제 부여 엔진(computeMonthlyPeriods의 월별 루프 +
+        //    isCreditDoubleDip 게이트)이 월별로 동작하는 것과 동일한 의미.
+        //    k + creditMonths < 12  ⇔  k ≤ 11 − creditMonths  이므로
+        //    발생 개월수 = max(0, min(실근속개월, 11, 11 − creditMonths)).
+        //    ※종전 구현("baseDate 시점 creditedMonths<12 일 때만 min(실근속,11) 일괄 합산")은 경력인정 0인
+        //      일반 근로자도 입사 1주년(creditedMonths>=12 도달) 순간 기발생 월차 11일이 정답 트랙에서
+        //      통째로 사라지는 결함(QA P2-D1, High)이었다. 정답 누적은 "발생했어야 할" 이력의 합이므로
+        //      기발생분은 1년 경과 후에도 누적에 남는다(경력 0 → 1주년 정답 = 월차 11 + 본연차 15 = 26).
+        //    ※반영 모드 경력인정 보유자의 이중계상 차단은 유지된다 — 예: credit 6개월이면 k=1..5(발생 시점
+        //      산정근속 7..11)만 발생, k=6부터(산정근속 12 도달) 중단 = 엔진 실부여와 동일.
+        int monthlyAccrued = Math.max(0,
+                Math.min(Math.min(actualMonthsAtBase, MONTHLY_MAX), MONTHLY_MAX - creditMonths));
+        total = total.add(BigDecimal.valueOf(monthlyAccrued));
+
+        // 2) 본연차+근속가산 누적 — 타임라인 §3.1 "n번째 입사기념일에 15+floor((n-1)/2)"를 AXIS5
+        //    정책(tenureBonusDays)으로 일반화.
+        //    ★반영 모드 경력인정 가산 주의: 크레딧이 있으면 n번째 "귀속연차"가 도래하는 실제 시점은
+        //    creditedMonths(=actualMonths+creditMonths)가 12*n을 넘는 시점이지, 실제 달력상 n번째
+        //    기념일이 아니다(예: 크레딧 18개월 보유자는 실근속 6개월 만에 creditedMonths=24가 되어
+        //    "2년차분"까지 이미 귀속). 따라서 귀속된 연차 수(vestedYears) = floor(creditedMonthsAtBase/12)
+        //    이며, y번째 귀속분의 근속가산 tier는 y 그 자체다(크레딧은 이미 creditedMonths에 녹아있으므로
+        //    y에 creditYears를 추가로 더하면 이중 가산이 된다).
+        int vestedYears = creditedMonthsAtBase / 12;
+        for (int y = 1; y <= vestedYears; y++) {
+            total = total.add(BigDecimal.valueOf(BASE_ANNUAL_DAYS));
+            int bonus = tenureBonusDays(policy, y);
+            if (bonus > 0) {
+                total = total.add(BigDecimal.valueOf(bonus));
+            }
+        }
+        return total;
     }
 
     private BigDecimal nvlZero(BigDecimal v) {

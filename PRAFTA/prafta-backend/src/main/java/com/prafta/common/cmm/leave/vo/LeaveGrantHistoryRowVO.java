@@ -52,7 +52,8 @@ public class LeaveGrantHistoryRowVO {
 
     /**
      * 회수(soft cancel) 가능 여부 (PRAFTA-031). SQL에서 산출:
-     * {@code GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02' AND STATUS='ACTIVE' AND USED_DAYS=0 AND DEL_YN='N'}.
+     * {@code GRANT_BY_TYPE='02' AND STATUS='ACTIVE' AND USED_DAYS=0 AND DEL_YN='N'}(GRANT_TYPE 무관 —
+     * Phase 2 §2-3, 2026-08-21로 MANUAL_% 접두 제한 제거) + MANUAL_CAREER/GRANT_BY_TYPE='01' 특례(P-11).
      */
     private boolean canRecall;
 }

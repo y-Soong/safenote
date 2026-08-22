@@ -9,6 +9,26 @@
       @excel="fnExcel"
     />
 
+    <!-- ============ 경력인정 이원화 Phase 2 §2-3(E-2): 차액 조회 탭바 ============
+         AXIS1=FISCAL_YEAR 회사만 렌더(HIRE_DATE 회사는 탭바 자체 미노출 = 무회귀 축). -->
+    <div v-if="isFiscalCompany" class="a09-tab-bar">
+      <button
+        type="button"
+        :class="['a09-tab-btn', { active: activeTab === 'dashboard' }]"
+        @click="activeTab = 'dashboard'"
+      >
+        연차 현황
+      </button>
+      <button
+        type="button"
+        :class="['a09-tab-btn', { active: activeTab === 'shortfall' }]"
+        @click="activeTab = 'shortfall'"
+      >
+        입사일 기준 차액 조회
+      </button>
+    </div>
+
+    <div v-show="activeTab === 'dashboard'">
     <!-- ============ 조회 영역 (Attd_08 viewSearch 스타일) ============ -->
     <div class="viewSearch">
       <div>
@@ -385,6 +405,12 @@
         </table>
       </div>
     </div>
+    </div>
+    <!-- ============ 경력인정 이원화 Phase 2 §2-2(E-3): 차액 조회 탭 본문 ============ -->
+    <Attd_09_Shortfall
+      v-if="isFiscalCompany"
+      v-show="activeTab === 'shortfall'"
+    />
   </div>
 </template>
 
@@ -419,6 +445,7 @@ import LeaveDetailPop from "./popup/LeaveDetailPop.vue";
 import ManualGrantPop from "./popup/ManualGrantPop.vue";
 import RemnantReportPop from "./popup/RemnantReportPop.vue";
 import PolicyGrantPreviewPop from "@/views/attd/popup/PolicyGrantPreviewPop.vue";
+import Attd_09_Shortfall from "./Attd_09_Shortfall.vue";
 
 // ================ Options ================
 defineOptions({ name: "Attd_09" });
@@ -523,7 +550,14 @@ const isLoading = ref(false);
 const prorateFallback = ref(false);
 const policyNoticeText = ref("");
 
+// 경력인정 이원화 Phase 2 §2-3(E-2): 차액 조회 탭 노출 판정.
+//   활성 정책 AXIS1(grantBase)을 fnLoadPolicyInfo가 함께 조회해 채운다(신규 API 호출 없음 — 기존
+//   policy-info 응답 필드 재사용). HIRE_DATE 회사/정책 없음이면 탭 자체 미노출(잠정 결정 §H-5).
+const axis1GrantBase = ref(null);
+const activeTab = ref("dashboard");
+
 // ================ Computed ================
+const isFiscalCompany = computed(() => axis1GrantBase.value === "FISCAL_YEAR");
 // 전체 선택 여부 (현재 페이지 기준)
 const isAllSelected = computed(
   () =>
@@ -627,9 +661,12 @@ const fnLoadPolicyInfo = async () => {
     const d = res.data || {};
     prorateFallback.value = d.prorateFallback === true;
     policyNoticeText.value = d.noticeText || "";
+    // 경력인정 이원화 Phase 2 §2-3: 차액 조회 탭 노출 판정(AXIS1). 실패 시 비노출로 안전측 폴백.
+    axis1GrantBase.value = d.grantBase || null;
   } catch (err) {
     prorateFallback.value = false;
     policyNoticeText.value = "";
+    axis1GrantBase.value = null;
     console.warn("연차정책 안내 정보 조회 실패", err);
   }
 };
@@ -1129,6 +1166,33 @@ const fnCsvCell = (v) => {
 </script>
 
 <style scoped>
+/* ===== 경력인정 이원화 Phase 2 §2-3(E-2): 차액 조회 탭바 (Attd_01 표준 밑줄형 14px 미러) ===== */
+.a09-tab-bar {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.5rem 0 0;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid var(--color-border);
+}
+.a09-tab-btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  background: none;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.a09-tab-btn:hover {
+  color: var(--color-text);
+}
+.a09-tab-btn.active {
+  font-weight: 600;
+  color: var(--color-primary);
+  border-bottom-color: var(--color-primary);
+}
+
 .leave-dashboard {
   display: flex;
   flex-direction: column;

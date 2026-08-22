@@ -31,6 +31,7 @@ import com.prafta.common.cmm.leave.service.LeavePolicyService;
 import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
+import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 
@@ -57,8 +58,10 @@ class LeaveDashboardRecallGrantTest {
         dash = mock(LeaveDashboardMapper.class);
         LeavePolicyService policy = mock(LeavePolicyService.class);
         LeaveGrantEngineService engine = mock(LeaveGrantEngineService.class);
+        // 경력인정 이원화 Phase 2 §2-2: 차액 조회 게이트 의존성 추가(본 테스트 경로(회수)와 무관 — mock 주입만)
         svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper(),
-                mock(LeaveConversionPolicyService.class));
+                mock(LeaveConversionPolicyService.class),
+                mock(SiteAccessService.class));
 
         when(dash.recallGrant(anyString(), anyString(), anyString(), anyString())).thenReturn(1);
         when(dash.selectNextNotiId(anyString())).thenReturn("N202608210001");

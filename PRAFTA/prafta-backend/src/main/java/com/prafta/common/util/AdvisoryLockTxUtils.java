@@ -29,6 +29,19 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
  * 패턴은 커밋 후 PUSH 훅(common.cmm.push.impl.*, Tbm01ServiceImpl 등) 다수에서 이미
  * 검증된 방식이다. 단, 커밋 후 훅(afterCommit)과 달리 락 해제는 롤백 시에도 필요하므로
  * afterCompletion 을 사용한다.
+ *
+ * <p><b>★★재발 방지 — 이 헬퍼만으로는 직렬화가 완성되지 않는다 (프로젝트 2회차 재발 실증):</b>
+ * <b>락 획득 전에 동일 트랜잭션에서 테이블을 읽으면 REPEATABLE READ 스냅샷(read view)이 그
+ * 시점에 고정되어 락이 실효를 잃는다</b> — GET_LOCK 은 테이블을 읽지 않아 read view 를
+ * 재생성하지 않으므로, 락 대기 후의 재검사가 경쟁 트랜잭션의 커밋을 못 보는 stale 읽기가 된다
+ * (본 헬퍼가 닫는 것은 "해제~커밋" 창뿐이고, "스냅샷 고정~락 획득" 창은 별개 결함이다).
+ * <b>락 사용 트랜잭션은 {@code isolation = Isolation.READ_COMMITTED} 필수, 또는 락 획득을
+ * 트랜잭션의 첫 읽기보다 앞세울 것.</b>
+ * 실증 사례: ① SMS 뿌리오 3차 qa R-1 / sec T-1 【High】 — 선검사({@code selectPolicyNoLock})가
+ * FOR UPDATE 앞에서 스냅샷을 고정해 잠금 안 4축·전역 카운트가 전원 stale → 전원 통과·전원 INSERT
+ * (해법: {@code SmsRateLimitGuard} 의 READ_COMMITTED). ② 경력인정 Phase 2 3차 qa P2R3-N1
+ * 【Medium】 — {@code coverGrant} 의 {@code countActiveUser} 가 GET_LOCK 앞에서 스냅샷을 고정해
+ * 락 안 상한 재계산이 stale → 상이 사유 동시 2요청의 합산 상한 초과 부여 성립.
  */
 public final class AdvisoryLockTxUtils {
 

@@ -11,7 +11,9 @@ import lombok.Setter;
  * <p>정책서: {@code .claude/context/policies/attd/08-leave.md} §8.5.7 / §8.5.8
  *
  * <p>서버 재검증용 최소 컬럼만 담는다. 회수 가능 조건:
- * {@code GRANT_TYPE LIKE 'MANUAL_%' AND GRANT_BY_TYPE='02' AND STATUS='ACTIVE' AND USED_DAYS=0 AND DEL_YN='N'}.
+ * {@code GRANT_BY_TYPE='02' AND STATUS='ACTIVE' AND USED_DAYS=0 AND DEL_YN='N'} (GRANT_TYPE 무관 —
+ * Phase 2 §2-3, 2026-08-21로 MANUAL_% 접두 제한 제거. 법정 수기부여(_COVER, GRANT_TYPE='STATUTORY_ANNUAL')도
+ * GRANT_BY_TYPE='02'로 적재되므로 대상에 포함된다).
  * (P-11, 2026-08-21 경력인정 이원화 D-2) 단, {@code GRANT_TYPE='MANUAL_CAREER'} 는
  * {@code GRANT_BY_TYPE='01'}(자동)이어도 회수 가능 — 오입력 복구 안전망 특례. 다른 자동 부여 타입은 미적용.
  * 회수는 STATUS='CANCELED' 소프트 처리이며 USED_DAYS는 절대 갱신하지 않는다(§8.5.8 #2).

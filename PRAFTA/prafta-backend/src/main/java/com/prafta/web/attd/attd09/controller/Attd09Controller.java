@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.attd.attd09.application.param.CoverGrantParam;
 import com.prafta.web.attd.attd09.application.param.HireDateGrantParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDashboardListParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDetailParam;
@@ -23,12 +24,16 @@ import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
+import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
 import com.prafta.web.attd.attd09.dto.request.BulkManualGrantRequest;
+import com.prafta.web.attd.attd09.dto.request.CoverGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.HireDateGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.LeaveDashboardListRequest;
 import com.prafta.web.attd.attd09.dto.request.LeaveRecallRequest;
 import com.prafta.web.attd.attd09.dto.request.ManualGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.PolicyGrantRequest;
+import com.prafta.web.attd.attd09.dto.request.ShortfallListRequest;
+import com.prafta.web.attd.attd09.dto.response.CoverGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDetailResponse;
@@ -40,6 +45,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
+import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -249,6 +255,37 @@ public class Attd09Controller {
 
         PolicyGrantPolicyInfoResponse response = attd09Service.getPolicyInfo(
                 PolicyInfoParam.from(jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 경력인정 이원화 Phase 2 §2-2: 입사일 기준 차액 조회 목록(read-only).
+     * 게이트: ensureManager(master/hr 전용 — P-13, Attd_09 본문과 동일. 서비스 진입부에서 강제) +
+     * 사업장 필터 지정 시 assertSiteAccess 방어선 유지.
+     */
+    @GetMapping("/leave-dashboard/shortfall/list")
+    public ResponseEntity<?> getShortfallList(
+            @ModelAttribute ShortfallListRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        ShortfallListResponse response = attd09Service.getShortfallList(
+                ShortfallListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 경력인정 이원화 Phase 2 §2-3: 입사일 기준 차액 보전(법정 수기부여, {@code _COVER}) 실행.
+     * 정책서 §8.5.7: AUTH_MASTER OR AUTH_HR_MANAGER 필요(기존 수동 부여 관례, 서비스 진입부에서 강제).
+     */
+    @PostMapping("/leave-grant/cover-grant")
+    public ResponseEntity<?> coverGrant(
+            @RequestBody CoverGrantRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        CoverGrantResponse response = attd09Service.coverGrant(
+                CoverGrantParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

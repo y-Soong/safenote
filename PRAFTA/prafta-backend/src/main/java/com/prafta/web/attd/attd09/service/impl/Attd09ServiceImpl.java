@@ -8,6 +8,7 @@ import com.prafta.common.cmm.leave.service.LeaveDashboardService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
 import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
+import com.prafta.common.cmm.leave.vo.CoverGrantResultVO;
 import com.prafta.common.cmm.leave.vo.HireDateGrantResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDashboardResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailResultVO;
@@ -18,9 +19,12 @@ import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewRowVO;
 import com.prafta.common.cmm.leave.vo.PolicyGrantPreviewVO;
 import com.prafta.common.cmm.leave.vo.RemnantCoverSummaryVO;
 import com.prafta.common.cmm.leave.vo.RemnantReportVO;
+import com.prafta.common.cmm.leave.vo.ShortfallListResultVO;
+import com.prafta.common.cmm.leave.vo.ShortfallRowVO;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.web.attd.attd09.application.param.CoverGrantParam;
 import com.prafta.web.attd.attd09.application.param.HireDateGrantParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDashboardListParam;
 import com.prafta.web.attd.attd09.application.param.LeaveDetailParam;
@@ -31,6 +35,8 @@ import com.prafta.web.attd.attd09.application.param.PolicyGrantParam;
 import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
+import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
+import com.prafta.web.attd.attd09.dto.response.CoverGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDetailResponse;
@@ -42,6 +48,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantPreviewResponse;
 import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
+import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -261,6 +268,60 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .userCd(vo.getUserCd())
                 .addDays(vo.getAddDays())
                 .note(vo.getNote())
+                .build();
+    }
+
+    @Override
+    public ShortfallListResponse getShortfallList(ShortfallListParam param) {
+        ShortfallListResultVO result = leaveDashboardService.getShortfallList(
+                param.gvCmpnyCd(),
+                param.gvAuthCd(),
+                param.gvUserCd(),
+                param.gvSiteCd(),
+                param.siteCd(),
+                param.nodeCd(),
+                param.incSubNodeYn(),
+                param.userNm(),
+                param.baseYmd(),
+                param.page(),
+                param.size());
+
+        List<ShortfallListResponse.Row> rows = result.getRows().stream()
+                .map(Attd09ServiceImpl::toShortfallRow)
+                .toList();
+
+        return ShortfallListResponse.builder()
+                .fiscalYearYn(result.getFiscalYearYn())
+                .baseYmd(result.getBaseYmd())
+                .rows(rows)
+                .totalCount(result.getTotalCount())
+                .build();
+    }
+
+    private static ShortfallListResponse.Row toShortfallRow(ShortfallRowVO vo) {
+        return ShortfallListResponse.Row.builder()
+                .userCd(vo.getUserCd())
+                .userNm(vo.getUserNm())
+                .hireDate(vo.getHireDate())
+                .hireBasisAccrual(vo.getHireBasisAccrual())
+                .actualAccrual(vo.getActualAccrual())
+                .diff(vo.getDiff())
+                .coveredTotal(vo.getCoveredTotal())
+                .remainingShortfall(vo.getRemainingShortfall())
+                .build();
+    }
+
+    @Override
+    public CoverGrantResponse coverGrant(CoverGrantParam param) {
+        CoverGrantResultVO result = leaveDashboardService.coverGrant(
+                param.gvCmpnyCd(),
+                param.command(),
+                param.gvAuthCd(),
+                param.gvUserCd());
+        return CoverGrantResponse.builder()
+                .grantId(result.getGrantId())
+                .grantedDays(result.getGrantedDays())
+                .remainingShortfallAfter(result.getRemainingShortfallAfter())
                 .build();
     }
 }
