@@ -38,6 +38,15 @@
             <strong class="cg-summary-value">{{ remainingShortfall }}일</strong>
           </div>
 
+          <!-- §7-보충 B-3(2026-08-22, §7-① 확정 부수 지시): 지급일 기산 안내 강화 —
+               부여 실행 전 관리자가 반드시 인지하도록 입력 영역 바로 위에 경고톤 박스로 노출.
+               confirm 모달 추가는 지시로 금지(문구 강화 수준). -->
+          <div class="cg-callout">
+            <strong>부여 전 확인</strong> — 부여분의 사용기간은
+            <strong>지급일부터 1년</strong>입니다(회사 연차 유효기간 정책 기준).
+            원래 발생 시점으로 <strong>소급되지 않습니다</strong>.
+          </div>
+
           <div class="cg-field">
             <label class="cg-label"
               >부여 일수<span class="cg-required">*</span></label
@@ -243,6 +252,18 @@ const fnClose = () => {
 
 .cg-summary-value {
   font-size: 0.9375rem;
+  color: var(--color-warning-text);
+}
+
+/* B-3(2026-08-22): 지급일 기산 사전 인지용 경고 박스 — cg-summary(warning 톤)와 동일 계열이되
+   테두리로 구분해 시선을 끈다. 하단 cg-notice(참고용 소자)와 달리 본문 크기 유지. */
+.cg-callout {
+  padding: 0.625rem 0.875rem;
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning-text);
+  border-radius: var(--input-radius);
+  font-size: 0.75rem;
+  line-height: 1.5;
   color: var(--color-warning-text);
 }
 

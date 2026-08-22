@@ -28,7 +28,10 @@
       </button>
     </div>
 
-    <div v-show="activeTab === 'dashboard'">
+    <!-- §7-보충 B-2(2026-08-22): 탭 래퍼가 viewComm(flex column)과 viewBody(flex:1) 사이에
+         무클래스 block 으로 끼면서 flex 높이 체인이 끊겨 내부 종방향 스크롤이 죽던 회귀 수정
+         — a09-tab-pane 이 체인을 승계한다(하단 style 참조). -->
+    <div v-show="activeTab === 'dashboard'" class="a09-tab-pane">
     <!-- ============ 조회 영역 (Attd_08 viewSearch 스타일) ============ -->
     <div class="viewSearch">
       <div>
@@ -322,18 +325,11 @@
                   @change="fnToggleSelect(row.userCd)"
                 />
               </td>
+              <!-- §7-보충 B-1(2026-08-22): 고용형태 배지 제거 — 계약직/임원 구분은 폐지된 개념
+                   (PRAFTA_COM_003-B·F-13·08-13 셀프가입 확정: REGULAR 고정, 일용직만 별도 축).
+                   응답 필드 employmentType 자체는 타 화면(일용직 판정 등)이 사용하므로 유지. -->
               <td>
-                <p class="ld-emp-name">
-                  {{ row.userNm }}
-                  <span
-                    class="ld-emp-badge"
-                    :class="{
-                      'is-contract': row.employmentType === 'CONTRACT',
-                    }"
-                  >
-                    {{ fnEmploymentLabel(row.employmentType) }}
-                  </span>
-                </p>
+                <p class="ld-emp-name">{{ row.userNm }}</p>
                 <p class="ld-emp-info">{{ row.deptNm }}</p>
               </td>
               <td class="is-center is-secondary">
@@ -723,7 +719,6 @@ const fnExcel = () => {
     "부서",
     "입사일",
     "근속",
-    "고용형태",
     "산정 반영 경력(개월)",
     "법정부여",
     "법정사용",
@@ -742,7 +737,6 @@ const fnExcel = () => {
     r.deptNm,
     fnFormatDate(r.hireDate),
     r.tenureText,
-    fnEmploymentLabel(r.employmentType),
     r.creditMonths,
     fnDays(r.legal?.granted),
     fnDays(r.legal?.used),
@@ -1103,17 +1097,6 @@ const fnBorrowedDays = (row) => {
   return n;
 };
 
-// --- 고용형태 라벨 ---
-const fnEmploymentLabel = (type) => {
-  const map = {
-    REGULAR: "정규직",
-    CONTRACT: "계약직",
-    DAILY: "일용직",
-    EXECUTIVE: "임원",
-  };
-  return map[type] || type || "-";
-};
-
 // ================ 내부 유틸 ================
 // 2026-08-09 규약: 일수 표기 — 일 단위 단독(formatLeaveDaysOnly, 2자리 반올림 trim).
 //   구 "N일 H시간 M분"(E4 행별 개인 분모 환산)은 실차감 분모(E1)와 편차가 있어 표기 폐지.
@@ -1191,6 +1174,20 @@ const fnCsvCell = (v) => {
   font-weight: 600;
   color: var(--color-primary);
   border-bottom-color: var(--color-primary);
+}
+
+/* §7-보충 B-2(2026-08-22): Phase 2 탭 래퍼 회귀 수정.
+   원인(실코드 확정): viewComm 은 flex column(height:100%), viewBody 는 flex:1 + overflow:auto 로
+   직계 부모-자식일 때만 높이 체인이 성립하는데, Phase 2 의 v-show 탭 래퍼(무클래스 div)가 둘 사이에
+   끼면서 래퍼가 display:block 콘텐츠 높이로 자라 viewBody 의 flex:1 이 무력화 → ld-table-wrap 내부
+   스크롤과 2단 sticky 헤더(1d6cbbe5 실측 오프셋)가 함께 죽었다.
+   해법: 래퍼 자신이 flex 컨테이너로 체인을 승계(flex:1 + min-height:0). display:contents 대안은
+   v-show 의 inline display 토글과의 상호작용이 덜 예측적이라 기각 — 판단 기록은 dev-notes 참조. */
+.a09-tab-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .leave-dashboard {
@@ -1454,7 +1451,7 @@ const fnCsvCell = (v) => {
 
 /* ===== 항목 그룹 배경 (연한 계통, 법정/법정외/전체 시각 구분) =====
    디자인 토큰에 파랑/주황 틴트가 없어 이 화면 한정으로 옅은 rgba 리터럴을 사용한다
-   (.ld-bulk-bar / .ld-emp-badge 등 기존 셀의 rgba 사용 패턴과 동일).
+   (.ld-bulk-bar 등 기존 셀의 rgba 사용 패턴과 동일).
    본문 셀은 매우 옅게, 헤더 셀은 약간 진하게 한다.
    hover/선택 행 배경(.ld-table tr:hover td, .ld-table tr.is-selected td)이 우선 적용되도록
    본문은 단일 클래스(.ld-grp-*) 선택자로만 지정한다. */
@@ -1561,20 +1558,6 @@ const fnCsvCell = (v) => {
   font-size: 0.6875rem;
   color: var(--color-text-muted);
   margin: 0;
-}
-
-.ld-emp-badge {
-  font-size: 0.625rem;
-  padding: 0.0625rem 0.375rem;
-  border-radius: var(--btn-radius);
-  background: rgba(22, 163, 74, 0.08);
-  color: var(--color-primary-pressed);
-  margin-left: 0.25rem;
-}
-
-.ld-emp-badge.is-contract {
-  background: var(--color-warning-bg);
-  color: var(--color-warning-text);
 }
 
 /* ===== progress ===== */

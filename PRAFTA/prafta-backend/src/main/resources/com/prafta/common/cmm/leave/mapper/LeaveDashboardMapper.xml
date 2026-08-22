@@ -123,6 +123,10 @@
           AND U.USE_YN = 'Y'
           AND U.WITHDRAWAL_DATE IS NULL
           AND U.ACCOUNT_STATUS IN ('01', '04')
+        /* B-1(2026-08-22): 일용직 명시 제외 — 일용직은 비활성(USE_YN='N'/계정상태 05) 유지 설계라
+           현재도 비노출이지만 데이터 상태 의존을 제거한다(개발 DB에 활성 DAILY 통합계정 실존 확인).
+           EMPLOYMENT_TYPE 이 NULL 인 활성 직원이 걸러지지 않도록 IS NULL 허용 형태를 유지할 것. */
+          AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE != 'DAILY')
         <if test="siteCd != null and siteCd != ''">
           AND U.SITE_CD = #{siteCd}
         </if>

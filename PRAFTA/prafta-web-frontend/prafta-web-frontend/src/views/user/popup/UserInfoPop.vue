@@ -406,7 +406,11 @@
           <div class="leave-section" v-if="isHrOrMaster">
             <div class="leave-section-title">경력 인정</div>
 
-            <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030, 경력인정 이원화 2026-08-21 갱신) -->
+            <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030, 경력인정 이원화 2026-08-21)
+                 §7-보충 B-4(2026-08-22) 재구성: 통짜 장문 안내(참고1.png 과밀)를 구조화 —
+                 상시 노출은 공통 1줄 + 처리 경로 축약 1줄만 남기고, 모드별 상세·회계연도 경고는
+                 각 인정 항목의 라디오 선택과 연동한 인라인 조건부 블록(credit-mode-detail)으로 이동.
+                 문구 자체는 보존(정보 소실 금지) — 노출 조건만 구조화. -->
             <div class="credit-notice">
               <p>
                 경력 인정은 <strong>반영 모드</strong> 또는
@@ -414,38 +418,9 @@
                 선택 — 동시 적용 불가).
               </p>
               <p>
-                <strong>반영 모드</strong>: 인정 개월수가
-                <strong>본연차·근속가산</strong> 산정에 그대로 반영됩니다.
-                <span class="credit-notice-mono"
-                  >산정 근속 = 실제 입사일 + 인정 경력</span
-                >
-                인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
-                시점부터는 실제 근무가 1년 미만이라도
-                <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong>(고용승계
-                등 — 재직자와 동일 대우). 예를 들어 경력 6개월을 인정하면 입사
-                6개월째부터 월차가 멈춥니다.
-              </p>
-              <p>
-                <strong>일수 모드</strong>: 인정 개월수는
-                <strong>기록·퇴직정산 참고용</strong>일 뿐 연차 산정에
-                반영되지 않아 <strong>1년 미만 월차가 실근속 기준으로 정상
-                발생</strong>합니다. 대신 매년 정기부여 시점에 입력한
-                <strong>연간 추가 일수만큼 약정 휴가가 자동 부여</strong>됩니다(사용촉진
-                비대상).
-              </p>
-              <p class="credit-notice-warn">
-                ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는
-                반영 모드 사용 시 본연차 부여일이 회계 기준일 하루뿐이라, 월차가
-                멈춘 시점과 첫 본연차 부여일 사이에
-                <strong>연차가 발생하지 않는 기간</strong>이 생길 수 있습니다.
-                해당 기간분은 노무 검토 후 별도 보전 예정이며, 필요하면
-                사용자 연차관리(Attd_09)에서 수동 부여로 처리하세요.
-              </p>
-              <p>
                 실제 연차 반영(소급·부여)은
-                <strong>사용자 연차관리(Attd_09)의 '정책 기준 부여'</strong>에서
-                처리됩니다. 입사일 자체를 변경하려면 입사일 수정 기능을
-                사용하세요.
+                <strong>사용자 연차관리(Attd_09)의 '정책 기준 부여'</strong>에서,
+                입사일 변경은 입사일 수정 기능에서 처리합니다.
               </p>
             </div>
 
@@ -492,20 +467,82 @@
                     <option value="OTHER">기타</option>
                   </select>
                 </div>
+                <!-- §7-보충 B-5(2026-08-22, 참고1.png 실증): 라디오○+라벨·힌트가 뒤섞여 세로로
+                     흩어지던 구조를 스택형으로 재편 — 라디오○+라벨은 한 줄 고정(radio-line),
+                     힌트는 라벨 아랫줄 작은 글씨. 두 라디오는 가로 배치, 좁은 폭 세로 폴백(wrap). -->
                 <div class="form-row-max">
                   <label>연차 반영</label>
                   <div class="credit-mode-group">
                     <label class="credit-mode-radio">
-                      <input type="radio" value="Y" v-model="item.leaveCalcYn" />
-                      반영 모드
-                      <span class="credit-mode-hint">개월수를 연차 산식에 반영</span>
+                      <span class="credit-mode-radio-line">
+                        <input
+                          type="radio"
+                          value="Y"
+                          v-model="item.leaveCalcYn"
+                        />
+                        반영 모드
+                      </span>
+                      <span class="credit-mode-hint"
+                        >개월수를 연차 산식에 반영</span
+                      >
                     </label>
                     <label class="credit-mode-radio">
-                      <input type="radio" value="N" v-model="item.leaveCalcYn" />
-                      일수 모드
-                      <span class="credit-mode-hint">기록용 + 매년 N일 추가 부여</span>
+                      <span class="credit-mode-radio-line">
+                        <input
+                          type="radio"
+                          value="N"
+                          v-model="item.leaveCalcYn"
+                        />
+                        일수 모드
+                      </span>
+                      <span class="credit-mode-hint"
+                        >기록용 + 매년 N일 추가 부여</span
+                      >
                     </label>
                   </div>
+                </div>
+
+                <!-- §7-보충 B-4(2026-08-22): 선택된 모드의 상세 설명만 항목 인라인으로 표시
+                     (라디오 선택과 연동 — 항목별 인라인 방식 채택, 판단 기록은 dev-notes 참조).
+                     문구는 종전 상단 통짜 안내에서 이동·보존. -->
+                <div
+                  v-if="item.leaveCalcYn !== 'N'"
+                  class="credit-mode-detail"
+                >
+                  <p>
+                    <strong>반영 모드</strong>: 인정 개월수가
+                    <strong>본연차·근속가산</strong> 산정에 그대로 반영됩니다.
+                    <span class="credit-notice-mono"
+                      >산정 근속 = 실제 입사일 + 인정 경력</span
+                    >
+                    인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
+                    시점부터는 실제 근무가 1년 미만이라도
+                    <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong
+                    >(고용승계 등 — 재직자와 동일 대우). 예를 들어 경력 6개월을
+                    인정하면 입사 6개월째부터 월차가 멈춥니다.
+                  </p>
+                  <!-- 회계연도 경고는 반영 모드 관련 내용이므로 반영 모드 표시 시에만 노출(B-4). -->
+                  <p class="credit-notice-warn">
+                    ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는
+                    반영 모드 사용 시 본연차 부여일이 회계 기준일 하루뿐이라,
+                    월차가 멈춘 시점과 첫 본연차 부여일 사이에
+                    <strong>연차가 발생하지 않는 기간</strong>이 생길 수
+                    있습니다. 해당 기간분은 노무 검토 후 별도 보전 예정이며,
+                    필요하면 사용자 연차관리(Attd_09)에서 수동 부여로
+                    처리하세요.
+                  </p>
+                </div>
+                <div v-else class="credit-mode-detail">
+                  <p>
+                    <strong>일수 모드</strong>: 인정 개월수는
+                    <strong>기록·퇴직정산 참고용</strong>일 뿐 연차 산정에
+                    반영되지 않아
+                    <strong
+                      >1년 미만 월차가 실근속 기준으로 정상 발생</strong
+                    >합니다. 대신 매년 정기부여 시점에 입력한
+                    <strong>연간 추가 일수만큼 약정 휴가가 자동 부여</strong
+                    >됩니다(사용촉진 비대상).
+                  </p>
                 </div>
                 <div class="form-row-max" v-if="item.leaveCalcYn === 'N'">
                   <label>연간 추가 일수</label>
@@ -1896,32 +1933,60 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   color: var(--color-text-muted, #4b5563);
 }
 
-/* 경력인정 이원화(2026-08-21) — 반영/일수 모드 선택 */
+/* 경력인정 이원화(2026-08-21) — 반영/일수 모드 선택.
+   §7-보충 B-5(2026-08-22) 재편: 참고1.png 실증(라디오 원·라벨·힌트가 뒤섞여 세로로 흩어짐)에 따라
+   구조 자체를 스택형으로 변경 — 라디오당 [라디오○+라벨 한 줄(radio-line, nowrap = 구 D-3 취지 유지)]
+   + [힌트 아랫줄(정상 줄바꿈 = 구 N-2 취지 유지)] 세로 스택, 두 라디오는 가로 배치·좁은 폭 세로 폴백. */
 .credit-mode-group {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  flex-wrap: wrap; /* 좁은 폭에서 라디오 단위로 세로 폴백 */
+  gap: 0.5rem 1.25rem;
   align-items: flex-start;
 }
 
 .credit-mode-radio {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-  align-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
   max-width: 100%;
   font-size: 0.8125rem;
   color: var(--color-text, #374151);
   cursor: pointer;
-  white-space: nowrap;
+}
+
+.credit-mode-radio-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  white-space: nowrap; /* 라디오○+라벨 한 줄 고정 */
 }
 
 .credit-mode-hint {
-  /* N-2(2차 QA 재검증): 라벨(.credit-mode-radio)의 white-space:nowrap이 상속되어
-     힌트 문구가 줄바꿈 없이 부모 폭을 넘어서던 결함 수정 — 힌트만 명시적으로 정상 줄바꿈 허용. */
-  white-space: normal;
+  white-space: normal; /* 힌트는 정상 줄바꿈 (N-2 취지 유지) */
   font-size: 0.6875rem;
   color: var(--color-text-muted, #4b5563);
+}
+
+/* §7-보충 B-4(2026-08-22): 선택된 모드의 상세 설명 인라인 박스 —
+   상단 credit-notice 와 동일 info 톤, 항목 카드 안이므로 한 단계 작게. */
+.credit-mode-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  background: var(--color-info-bg, #eff6ff);
+  border-radius: var(--input-radius, 10px);
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--color-info-text, #1d4ed8);
+}
+
+.credit-mode-detail p {
+  margin: 0;
+}
+
+.credit-mode-detail strong {
+  font-weight: 600;
 }
 
 .add-credit-btn {

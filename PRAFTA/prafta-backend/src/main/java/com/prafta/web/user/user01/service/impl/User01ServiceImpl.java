@@ -777,11 +777,14 @@ public class User01ServiceImpl implements User01Service{
 	// 정책서 공통 §3.1·§3.5·§8·§11.1, plan §1 D1~D7.
 	// ====================================================================
 
-	// 고용형태 [SYS041] 허용 코드 (REGULAR/CONTRACT/EXECUTIVE).
+	// 고용형태 [SYS041] 허용 코드 — REGULAR 단독.
+	// §7-보충 B-1(2026-08-22): CONTRACT/EXECUTIVE 는 폐지된 개념이라 허용 목록에서 제거
+	// (PRAFTA_COM_003-B 사용자 원문 "계약직, 임원 값 필요없음" · F-13 엑셀 고용형태 컬럼 제거 ·
+	//  08-13 셀프가입 REGULAR 고정 확정 — 고용형태 축은 REGULAR 고정, 일용직(DAILY)만 별도 축).
 	// 일용직(DAILY)은 QR/일용직 가입 별도 경로(dailyjoin) 전용 — 관리자 생성(단건/엑셀)에서는 거부한다(F-13 확장).
-	// 이 셋은 신규 생성(insertUserOne) 검증 전용이며 기존 DAILY 계정의 수정 경로에는 관여하지 않는다.
+	// 이 상수는 신규 생성(insertUserOne) 검증 전용이며 기존 DAILY 계정의 수정 경로에는 관여하지 않는다.
 	private static final java.util.Set<String> ALLOWED_EMPLOYMENT_TYPES =
-			java.util.Set.of("REGULAR", "CONTRACT", "EXECUTIVE");
+			java.util.Set.of("REGULAR");
 
 	// 경력 인정 사유 유형 [SYS042] 허용 코드.
 	private static final java.util.Set<String> ALLOWED_REASON_TYPES = java.util.Set.of(

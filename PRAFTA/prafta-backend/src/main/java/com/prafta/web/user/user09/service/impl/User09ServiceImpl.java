@@ -84,12 +84,16 @@ public class User09ServiceImpl implements User09Service {
     private static final String STD_WORK_TYPE_DIRECT = "DIRECT";
 
     /**
-     * 고용형태 [SYS041] 허용 코드.
+     * 고용형태 [SYS041] 허용 코드 — REGULAR 단독.
+     *
+     * <p>계약직(CONTRACT)/임원(EXECUTIVE) 구분은 폐지된 개념이다(PRAFTA_COM_003-B "계약직·임원 값
+     * 필요없음" 사용자 확정 + F-13 엑셀 컬럼 제거 + 2026-08-13 셀프가입 화면 미입력 확정 —
+     * 전 생성 경로 REGULAR 고정). 2026-08-22 잔재 정리 배치(B-1)에서 User01 과 함께 축소.
      *
      * <p>일용직(DAILY)은 QR/일용직 가입 별 계통이라 셀프가입 승인에서 부여할 수 없다
      * (부여되면 소정근로 이력 등록이 {@code STDWORK_403_001} 로 막혀 승인 자체가 실패한다).
      */
-    private static final Set<String> ALLOWED_EMPLOYMENT_TYPES = Set.of("REGULAR", "CONTRACT", "EXECUTIVE");
+    private static final Set<String> ALLOWED_EMPLOYMENT_TYPES = Set.of("REGULAR");
 
     /** 거부 사유 최대 길이(감사 로그 detailJson 적재 상한). */
     private static final int REJECT_REASON_MAX_LEN = 200;
