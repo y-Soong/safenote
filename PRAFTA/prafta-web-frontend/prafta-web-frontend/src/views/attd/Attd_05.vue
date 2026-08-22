@@ -285,7 +285,10 @@
                   }}
                 </span>
                 <!-- 부분 휴가(반차/시간차) 칩 — 근무 스케줄명 아래에 "시간차" 라벨을 얹는다(셀 값 미변경).
-                     클릭 시 등록된 건들을 팝업으로 표시. 드래그 선택/셀 핸들러와 충돌하지 않도록 전파 차단. -->
+                     클릭 시 등록된 건들을 팝업으로 표시. 드래그 선택/셀 핸들러와 충돌하지 않도록 전파 차단.
+                     [부분휴가진입점-03] 더블클릭 시 변경/삭제 동의요청 발의 진입(칩이 셀 표면 대부분을
+                     차지해 셀 dblclick 을 삼키므로 칩에서 직접 부분휴가 진입 핸들러를 연다. .stop 유지 —
+                     셀 핸들러와 이중 발화 방지). -->
                 <button
                   v-if="getPartialLeaves(user.userCd, d.workYmd).length"
                   type="button"
@@ -301,11 +304,13 @@
                       (p) => p.pending
                     )
                       ? '결재가 진행 중인 시간차/반차가 포함되어 있습니다. 클릭하면 등록된 정보를 볼 수 있습니다.'
-                      : '클릭하면 등록된 시간차/반차 정보를 볼 수 있습니다.'
+                      : '클릭하면 등록된 시간차/반차 정보를 볼 수 있습니다. 더블클릭하면 연차 변경/삭제 요청을 할 수 있습니다.'
                   "
                   @mousedown.stop.prevent
                   @mouseup.stop
-                  @dblclick.stop.prevent
+                  @dblclick.stop="
+                    fnOpenPartialLeaveChangeRequest(rowIdx, d.workYmd)
+                  "
                   @click.stop="fnOpenPartialLeaveInfo(rowIdx, d.workYmd)"
                 >
                   {{ partialLeaveLabel(user.userCd, d.workYmd) }}
@@ -433,7 +438,8 @@ const schedLabelMap = ref({});
 const leaveOverlay = ref({});
 
 // 부분 휴가(반차/시간차) 오버레이. key = `${userCd}_${workYmd}`,
-//   value = [{ useUnitType, useUnitNm, startTime, endTime, leaveMinutes, leaveCd }, ...] (셀당 다건 배열).
+//   value = [{ useUnitType, useUnitNm, startTime, endTime, leaveMinutes, leaveCd, pending, leaveId }, ...]
+//   (셀당 다건 배열). leaveId 는 칩 더블클릭 발의 진입 시 TARGET_LEAVE_ID([부분휴가진입점-03]).
 //   종일 연차(leaveOverlay)는 셀 값을 "연차"로 대체하지만, 반차/시간차는 그날 근무 스케줄이 살아있으므로
 //   셀 값을 덮지 않고 근무 스케줄명 아래 "시간차" 칩으로 표시하고, 칩 클릭 시 등록된 건들을 팝업으로 보여준다.
 //   ★ 같은 날 시간차 다건(예: 14:30~16:30 + 17:00~17:30) 대응 — 키 1개가 덮어쓰지 않도록 배열로 누적한다.
@@ -667,8 +673,12 @@ const fnOpenLeaveChangeRequest = (rowIdx, workYmd) => {
   const user = sortedUserList.value[rowIdx];
   if (!user) return;
   const overlay = leaveOverlay.value[`${user.userCd}_${workYmd}`];
-  // 연차 오버레이(leaveId) 없는 셀은 동의요청 대상이 아님(일반 스케줄 셀).
-  if (!overlay?.leaveId) return;
+  // [부분휴가진입점-03] 종일 오버레이 우선, 없으면 부분휴가 목록 검사(같은 날 상호배타 —
+  //   종일이면 셀 자체가 "연차"로 대체되므로 이 순서가 안전). 부분휴가도 없으면 무동작(일반 셀).
+  if (!overlay?.leaveId) {
+    fnOpenPartialLeaveChangeRequest(rowIdx, workYmd);
+    return;
+  }
   // 결재 진행 중인 연차는 변경/삭제 대상이 아니다(서버도 ATTD_400_135 로 차단).
   //   팝업을 띄웠다가 제출 시점에 실패하면 사유가 늦게 보이므로 진입 단계에서 안내한다.
   if (overlay.pending) {
@@ -695,6 +705,55 @@ const fnOpenLeaveChangeRequest = (rowIdx, workYmd) => {
     },
     // 동의요청 등록 성공 시 팝업을 닫고 그리드 재조회(오버레이/스케줄 최신화).
     //   LeaveChangeRequestPop 은 submitted 만 emit(자체 close 없음) → 부모가 close 후 재조회.
+    onSubmitted: () => {
+      closePop();
+      fnSearch();
+    },
+  });
+};
+
+// ── [부분휴가진입점-03] 부분휴가(반차/시간차) 셀 더블클릭 → 변경/삭제 동의요청 발의 ──
+//   종일 경로(fnOpenLeaveChangeRequest)와 동일 제스처·동일 팝업으로 부분휴가 발의를 연다.
+//   - 후보 전무 → 무동작(일반 셀과 동일).
+//   - 선택 가능한(비 pending) 후보 0건 → 종일 경로와 동일 문구로 안내 후 차단(서버 ATTD_400_135 도달 전).
+//   - 1건 → 팝업 즉시 진입(candidates=[해당 건] — 팝업이 자동 선택).
+//   - 다건 → candidates=전체(pending 포함) 전달, 목록 표시·pending 가드는 팝업 몫.
+const fnOpenPartialLeaveChangeRequest = (rowIdx, workYmd) => {
+  const user = sortedUserList.value[rowIdx];
+  if (!user) return;
+  const list = getPartialLeaves(user.userCd, workYmd);
+  if (!list.length) return;
+  if (!list.some((p) => !p.pending)) {
+    proxy.$alert(
+      "결재가 진행 중인 연차입니다.\n승인 전에는 변경·삭제할 수 없으며, 신청 취소 또는 결재 반려로 처리해 주세요."
+    );
+    return;
+  }
+  // YYYYMMDD → "YYYY.MM.DD" (팝업 표시용 — 종일 경로 관례와 동일).
+  const startDateDisplay =
+    workYmd && workYmd.length === 8 ? formatYmdDot(workYmd) : workYmd;
+  // 휴가 종류명(leaveNm)은 leaveTypeList 에서 leaveCd 해석(fnOpenPartialLeaveInfo 관례 재사용).
+  const candidates = list.map((p) => {
+    const leave = leaveTypeList.value.find((l) => l.leaveCd === p.leaveCd);
+    return {
+      leaveId: p.leaveId,
+      userCd: user.userCd,
+      userNm: user.userNm,
+      startDate: startDateDisplay,
+      leaveNm: leave ? leave.leaveNm : p.leaveCd,
+      useUnitType: p.useUnitType,
+      useUnitNm: p.useUnitNm,
+      startTime: p.startTime,
+      endTime: p.endTime,
+      leaveMinutes: p.leaveMinutes,
+      pending: p.pending,
+      // 촉진단계명은 오버레이에 없음 → 팝업이 null 을 "비촉진"으로 표기(서버가 단계/권한 재검증).
+      promotionStageNm: null,
+    };
+  });
+  openPop(LeaveChangeRequestPop, {
+    candidates,
+    // 종일 경로와 동일 — submitted 수신 시 부모가 close 후 그리드 재조회.
     onSubmitted: () => {
       closePop();
       fnSearch();
@@ -1393,6 +1452,8 @@ const fnSearch = async () => {
           leaveCd: item.leaveCd,
           // 종일 오버레이와 동일 — 결재 대기 건은 칩을 시각적으로 구분한다.
           pending: item.pendingYn === "Y",
+          // [부분휴가진입점-03] 칩 발의 진입 시 TARGET_LEAVE_ID 로 사용(분할차감 dedupe 대표행).
+          leaveId: item.leaveId,
         });
       });
       // prafta-com-008-D-5: 교대 잠금 오버레이 적재(교대팀 소속 구간 SCH 셀 비활성/자물쇠 표시 단일출처).

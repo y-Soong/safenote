@@ -428,7 +428,7 @@
         , L.END_TIME                         AS endTime
         , L.LEAVE_MINUTES                    AS leaveMinutes
         <!-- 2026-08-14: 결재 대기 여부(종일 오버레이와 동일 술어·동일 목적 — 승인 전/후 구분 표시).
-             ★record(PartialLeaveOverlayResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+             ★record(PartialLeaveOverlayResult) 위치 기반 매핑 — record 필드 순서와 반드시 일치. -->
         , CASE WHEN EXISTS (
                     SELECT 1
                       FROM TB_USER_ATTD_REQ PR
@@ -437,6 +437,11 @@
                        AND PR.REQ_STATUS = '01'
                        AND PR.DEL_YN     = 'N'
                ) THEN 'Y' ELSE 'N' END       AS pendingYn
+        <!-- 2026-08-22: 부분휴가 칩 동의요청(attd13 발의) 진입용 leaveId 동반.
+             분할차감 dedupe 가 REQ 당 MIN(LEAVE_ID) 대표행만 반환하므로 그 행의 LEAVE_ID 를
+             TARGET_LEAVE_ID 로 그대로 사용한다(총량 보유 행 — 종일 오버레이 leaveId 관례와 동일).
+             ★record(PartialLeaveOverlayResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
+        , L.LEAVE_ID                         AS leaveId
     FROM date_range d
     INNER JOIN TB_USER_LEAVE_USE L
         ON L.CMPNY_CD      = #{gvCmpnyCd}

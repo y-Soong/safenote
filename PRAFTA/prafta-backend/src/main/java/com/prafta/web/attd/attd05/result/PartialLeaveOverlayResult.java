@@ -14,7 +14,11 @@ package com.prafta.web.attd.attd05.result;
  * <p>2026-08-14: {@code pendingYn}('Y'/'N') 동반 — 연결된 연차사용 요청이 결재 대기('01')인지.
  * 종일 오버레이({@code LeaveOverlayResult})와 동일 술어·동일 목적(승인 전/후 구분 표시).
  *
- * <p>⚠️ MyBatis 위치매핑 — record 필드 순서 = SELECT 컬럼 순서.
+ * <p>2026-08-22: {@code leaveId} 동반 — 부분휴가 칩에서 동의요청(attd13 발의) 진입 시
+ * TARGET_LEAVE_ID 로 사용(분할차감 dedupe 대표행 = MIN LEAVE_ID, 총량 보유 행).
+ * 종일 오버레이 {@code LeaveOverlayResult.leaveId} 와 동일 타입·동일 목적.
+ *
+ * <p>⚠️ MyBatis 위치매핑 — record 필드 순서 = SELECT 컬럼 순서(신규 필드는 반드시 말미 추가).
  */
 public record PartialLeaveOverlayResult(
         String userCd
@@ -26,5 +30,6 @@ public record PartialLeaveOverlayResult(
         , String endTime
         , Integer leaveMinutes
         , String pendingYn
+        , String leaveId
 ) {
 }

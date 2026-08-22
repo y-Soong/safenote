@@ -23,25 +23,83 @@
       </header>
 
       <div class="modal-body lcr-body">
-        <!-- 대상 연차일 정보 (읽기 전용) -->
+        <!-- [부분휴가진입점-02] 다건 대상 선택 — §5-2 확정: 팝업 상단 목록에서 1건 선택 후 진행.
+             pending 건은 비활성 톤+배지(사유 가시화)·클릭 시 안내(disabled 숨은차단 금지). -->
+        <section v-if="candidates && candidates.length > 1" class="lcr-section">
+          <h3 class="lcr-section__title">
+            대상 선택 <span class="lcr-req">*</span>
+          </h3>
+          <ul class="lcr-candidate-list">
+            <li
+              v-for="(c, i) in candidates"
+              :key="c.leaveId"
+              class="lcr-candidate"
+              :class="{
+                'is-selected': selectedCandidateIdx === i,
+                'is-pending': c.pending,
+              }"
+            >
+              <!-- 클릭 가드 — pending 이면 안내 후 미선택, 아니면 선택 적용 -->
+              <label
+                class="lcr-candidate__label"
+                @click.prevent="onSelectCandidate(i)"
+              >
+                <input
+                  type="radio"
+                  name="lcr-candidate"
+                  :value="i"
+                  :checked="selectedCandidateIdx === i"
+                  :disabled="c.pending"
+                />
+                <span class="lcr-candidate__main">
+                  {{ candidateMainLabel(c) }}
+                </span>
+                <span v-if="c.pending" class="lcr-badge-pending"
+                  >결재 진행 중</span
+                >
+              </label>
+              <p v-if="candidateTimeLabel(c)" class="lcr-candidate__sub">
+                {{ candidateTimeLabel(c) }}
+              </p>
+            </li>
+          </ul>
+        </section>
+
+        <!-- 대상 연차일 정보 (읽기 전용) — activeTarget: 종일 경로면 target 그대로(종전 렌더 동일),
+             부분휴가 경로면 선택된 후보([부분휴가진입점-02]). -->
         <section class="lcr-section">
           <h3 class="lcr-section__title">대상 연차</h3>
           <dl class="lcr-target">
             <div>
               <dt>사용자</dt>
-              <dd>{{ target?.userNm }}</dd>
+              <dd>{{ activeTarget?.userNm }}</dd>
             </div>
             <div>
               <dt>연차일</dt>
-              <dd>{{ target?.startDate }}</dd>
+              <dd>{{ activeTarget?.startDate }}</dd>
             </div>
             <div>
               <dt>연차종류</dt>
-              <dd>{{ target?.leaveNm }}</dd>
+              <dd>{{ activeTarget?.leaveNm }}</dd>
+            </div>
+            <!-- [부분휴가진입점-02] 사용단위·시각범위 — AttdDayDetailPop 카드 문구와 일치 -->
+            <div v-if="candidates && candidates.length">
+              <dt>사용단위</dt>
+              <dd>{{ unitLabel(activeTarget) }}</dd>
+            </div>
+            <div
+              v-if="
+                candidates &&
+                candidates.length &&
+                candidateTimeLabel(activeTarget)
+              "
+            >
+              <dt>시간</dt>
+              <dd>{{ candidateTimeLabel(activeTarget) }}</dd>
             </div>
             <div>
               <dt>촉진단계</dt>
-              <dd>{{ target?.promotionStageNm || "비촉진" }}</dd>
+              <dd>{{ activeTarget?.promotionStageNm || "비촉진" }}</dd>
             </div>
           </dl>
         </section>
@@ -69,6 +127,49 @@
           <p class="lcr-hint">
             연차 만료일 이내로만 이동할 수 있습니다. 대상일에 같은 법정연차가
             있으면 거부됩니다.
+          </p>
+        </section>
+
+        <!-- [부분휴가진입점-02] MOVE 위치선택 — 부분휴가 대상 + MOVE 일 때만(종일 무회귀).
+             기본 미지정=종전 자동 배치. 서버 ATTD_400_208 이 최종(클라는 형식만). -->
+        <section
+          v-if="reqType === 'MOVE' && (isHalfTarget || isTimedTarget)"
+          class="lcr-section"
+        >
+          <h3 class="lcr-section__title">이동 위치</h3>
+
+          <!-- 반차(01): 파트 3택. 라벨 = AttdDayDetailPop LC_MOVE_HALF_PART_NM 동일 문구 -->
+          <div v-if="isHalfTarget" class="lcr-radio-group">
+            <label class="lcr-radio">
+              <input type="radio" value="" v-model="moveHalfPart" />
+              미지정(자동)
+            </label>
+            <label class="lcr-radio">
+              <input type="radio" value="START" v-model="moveHalfPart" />
+              시작 기준(늦게 출근)
+            </label>
+            <label class="lcr-radio">
+              <input type="radio" value="END" v-model="moveHalfPart" />
+              종료 기준(일찍 퇴근)
+            </label>
+          </div>
+
+          <!-- 시간차(02/03/04): 시작 시각 HHMM. 빈값=미지정 -->
+          <div v-if="isTimedTarget" class="lcr-time-row">
+            <span class="lcr-time-lab">시작 시각</span>
+            <input
+              v-model="moveStartTime"
+              type="text"
+              class="lcr-time-input"
+              inputmode="numeric"
+              maxlength="4"
+              placeholder="HHMM"
+            />
+          </div>
+
+          <p class="lcr-hint">
+            미지정 시 자동으로 배치됩니다. 근무시간 범위·기존 휴가와의 겹침은
+            서버에서 최종 확인됩니다.
           </p>
         </section>
 
@@ -111,10 +212,15 @@ import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
+import { formatLeaveMinutes } from "@/utils/leaveFormat";
 
+// [부분휴가진입점-02] props 확장 — target(종일, 종전 계약 불변) + candidates(부분휴가 경로).
+//   candidates 항목: { leaveId, userCd, userNm, startDate, leaveNm, useUnitType, useUnitNm,
+//                      startTime, endTime, leaveMinutes, pending, promotionStageNm }
 const props = defineProps({
-  // { leaveId, userCd, userNm, startDate, leaveNm, promotionStageNm }
+  // 종일 경로: { leaveId, userCd, userNm, startDate, leaveNm, promotionStageNm }
   target: { type: Object, default: null },
+  candidates: { type: Array, default: null },
 });
 const emit = defineEmits(["close", "submitted"]);
 
@@ -126,10 +232,110 @@ const moveTargetDate = ref("");
 const reason = ref("");
 const submitting = ref(false);
 
-// 단순 입력 검증(필수값)만 화면에서 처리. 만료일/마감/충돌은 서버 강제.
+// ── 부분휴가 확장 상태 ([부분휴가진입점-02]) ─────────────────────────────
+// 다건 선택 인덱스. 후보 1건이면 자동 선택(선택 목록 미표시), 다건이면 사용자가 1건 선택.
+const selectedCandidateIdx = ref(
+  props.candidates && props.candidates.length === 1 ? 0 : null
+);
+const moveHalfPart = ref(""); // 반차 MOVE 파트: ''=미지정 / 'START' / 'END'
+const moveStartTime = ref(""); // 시간차 MOVE 시작 시각 HHMM: ''=미지정
+
+// 실제 발의 대상 — 종일 경로면 target 그대로(종전 동작 불변), 부분휴가 경로면 선택된 후보.
+const activeTarget = computed(() => {
+  if (!props.candidates || !props.candidates.length) return props.target;
+  return selectedCandidateIdx.value != null
+    ? props.candidates[selectedCandidateIdx.value]
+    : null;
+});
+
+// 시간차(02/03/04) 여부 — 종일 target 은 useUnitType 미보유 → 항상 false(무회귀).
+const isTimedUnit = (t) => ["02", "03", "04"].includes(t?.useUnitType);
+const isHalfTarget = computed(() => activeTarget.value?.useUnitType === "01");
+const isTimedTarget = computed(() => isTimedUnit(activeTarget.value));
+
+// pending 후보 클릭 가드 — Attd_05 종일 진입 차단과 동일 문구(단일 출처, 신조어 금지).
+const onSelectCandidate = (i) => {
+  const c = props.candidates?.[i];
+  if (!c) return;
+  if (c.pending) {
+    proxy.$alert(
+      "결재가 진행 중인 연차입니다.\n승인 전에는 변경·삭제할 수 없으며, 신청 취소 또는 결재 반려로 처리해 주세요."
+    );
+    return;
+  }
+  if (selectedCandidateIdx.value !== i) {
+    selectedCandidateIdx.value = i;
+    // 대상이 바뀌면 위치선택 입력 초기화(단위가 달라질 수 있음 — 미지정=종전 자동 배치).
+    moveHalfPart.value = "";
+    moveStartTime.value = "";
+  }
+};
+
+// ── 표기 헬퍼 — AttdDayDetailPop 카드 문구 규칙과 일치(표류 금지) ────────
+// "0930" → "09:30"
+const fmtTime = (hhmm) => {
+  if (!hhmm) return "";
+  const v = String(hhmm);
+  if (v.length < 4) return v;
+  return `${v.slice(0, 2)}:${v.slice(2, 4)}`;
+};
+
+// "HHmm" → 분 (00:00 기준). 잘못된 값이면 null.
+const hhmmToMin = (hhmm) => {
+  if (!hhmm || String(hhmm).length !== 4) return null;
+  const h = parseInt(String(hhmm).slice(0, 2), 10);
+  const m = parseInt(String(hhmm).slice(2, 4), 10);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+// 시간차 시각범위 병기 — "10:00~11:30 (1시간 30분)" (AttdDayDetailPop hourlyRangeLabel 규칙).
+const hourlyRangeLabel = (startTime, endTime) => {
+  const range = `${fmtTime(startTime)}~${fmtTime(endTime)}`;
+  const s = hhmmToMin(startTime);
+  const e = hhmmToMin(endTime);
+  if (s == null || e == null || e <= s) return range;
+  return `${range} (${formatLeaveMinutes(e - s)})`;
+};
+
+// 사용단위 라벨 — 시간차면 '시간차 ' 접두(이미 접두 보유 시 미중복. AttdDayDetailPop 접두 규칙).
+const unitLabel = (t) => {
+  if (!t) return "";
+  return t.useUnitNm
+    ? isTimedUnit(t) && !t.useUnitNm.startsWith("시간차")
+      ? `시간차 ${t.useUnitNm}`
+      : t.useUnitNm
+    : "연차";
+};
+
+// 시간 표기 — 시간차=시각범위(+사용 분), 반차=사용 분. 해당 없으면 ''(행/부제 미표시).
+const candidateTimeLabel = (t) => {
+  if (!t) return "";
+  if (isTimedUnit(t)) return hourlyRangeLabel(t.startTime, t.endTime);
+  if (t.useUnitType === "01" && t.leaveMinutes != null)
+    return formatLeaveMinutes(t.leaveMinutes);
+  return "";
+};
+
+// 선택 목록 항목 라벨 — "연차종류 · 단위"
+const candidateMainLabel = (c) => `${c.leaveNm} · ${unitLabel(c)}`;
+
+// 단순 입력 검증(필수값·형식)만 화면에서 처리. 만료일/마감/충돌은 서버 강제.
 const canSubmit = computed(() => {
   if (!reason.value.trim()) return false;
   if (reqType.value === "MOVE" && !moveTargetDate.value) return false;
+  // [부분휴가진입점-02] 다건 미선택 시 비활성(사유는 선택 목록 * 필수 표기로 가시화).
+  if (props.candidates && props.candidates.length && !activeTarget.value)
+    return false;
+  // 시간차 MOVE 시작 시각은 형식(숫자 4자리)만 클라 검사 — 겹침/범위는 서버 ATTD_400_208 최종.
+  if (
+    reqType.value === "MOVE" &&
+    isTimedTarget.value &&
+    moveStartTime.value &&
+    !/^\d{4}$/.test(moveStartTime.value)
+  )
+    return false;
   return true;
 });
 
@@ -144,21 +350,34 @@ const toYmd8 = (v) =>
 const onClose = () => emit("close");
 
 // POST /webApi/attd13/change-requests
-//   body(대문자 키) = { TARGET_LEAVE_ID, REQ_TYPE, MOVE_TARGET_DATE(MOVE만), REQ_REASON }
+//   body(대문자 키) = { TARGET_LEAVE_ID, REQ_TYPE, MOVE_TARGET_DATE(MOVE만),
+//                      MOVE_TARGET_HALF_PART(반차 MOVE·미지정 null),
+//                      MOVE_TARGET_START_TIME(시간차 MOVE·미지정 null), REQ_REASON }
 //   식별/스코프/만료/충돌/마감/중복요청은 서버 JWT + 재검증(body 비신뢰).
 const onSubmit = async () => {
   if (!canSubmit.value || submitting.value) return;
-  if (!props.target?.leaveId) {
+  const t = activeTarget.value;
+  if (!t?.leaveId) {
     await proxy.$alert("대상 연차 정보가 없습니다.");
     return;
   }
   submitting.value = true;
   try {
     await axios.post("/webApi/attd13/change-requests", {
-      TARGET_LEAVE_ID: props.target.leaveId,
+      TARGET_LEAVE_ID: t.leaveId,
       REQ_TYPE: reqType.value,
       MOVE_TARGET_DATE:
         reqType.value === "MOVE" ? toYmd8(moveTargetDate.value) : null,
+      // [부분휴가진입점-02] MOVE 위치선택 — 미지정(null)=종전 자동 배치 경로.
+      //   종일·DELETE 는 항상 null(서버 blank→null 정규화 보유 — 구계약과 무해 정합).
+      MOVE_TARGET_HALF_PART:
+        reqType.value === "MOVE" && isHalfTarget.value && moveHalfPart.value
+          ? moveHalfPart.value
+          : null,
+      MOVE_TARGET_START_TIME:
+        reqType.value === "MOVE" && isTimedTarget.value && moveStartTime.value
+          ? moveStartTime.value
+          : null,
       REQ_REASON: reason.value.trim(),
     });
     await proxy.$alert("변경 요청이 등록되었습니다.");
@@ -261,5 +480,65 @@ const onSubmit = async () => {
   gap: var(--space-sm, 8px);
   padding: var(--space-sm, 8px) var(--card-padding, 20px);
   border-top: 1px solid var(--color-border);
+}
+
+/* [부분휴가진입점-02] 다건 대상 선택 목록 */
+.lcr-candidate-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-xs, 4px);
+}
+.lcr-candidate {
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+  padding: var(--space-sm, 8px);
+  background: var(--color-bg);
+}
+.lcr-candidate.is-selected {
+  border-color: var(--color-primary);
+}
+.lcr-candidate.is-pending {
+  opacity: 0.6; /* 비활성 톤 — 배지로 사유 병기(숨은 차단 금지) */
+}
+.lcr-candidate__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 4px);
+  font-size: var(--btn-font, 11px);
+  color: var(--color-text-strong);
+}
+.lcr-candidate__sub {
+  margin: var(--space-xs, 4px) 0 0;
+  font-size: var(--btn-font-sm, 11px);
+  color: var(--color-text-muted);
+}
+.lcr-badge-pending {
+  font-size: var(--btn-font-sm, 11px);
+  color: var(--color-warning-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+  padding: 0 var(--space-xs, 4px);
+}
+
+/* [부분휴가진입점-02] 시간차 MOVE 시작 시각 입력 */
+.lcr-time-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm, 8px);
+  margin-top: var(--space-sm, 8px);
+}
+.lcr-time-lab {
+  font-size: var(--btn-font, 11px);
+  color: var(--color-text-muted);
+}
+.lcr-time-input {
+  width: 72px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--input-radius);
+  padding: var(--space-xs, 4px) var(--space-sm, 8px);
+  font-size: var(--btn-font, 11px);
+  text-align: center;
 }
 </style>

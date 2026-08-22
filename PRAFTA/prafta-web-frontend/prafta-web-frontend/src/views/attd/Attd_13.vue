@@ -149,14 +149,6 @@
       </div>
     </div>
 
-    <!-- 변경/삭제 발의 팝업 (관리자가 특정 연차일에 대해 MOVE/DELETE 요청 생성) -->
-    <LeaveChangeRequestPop
-      v-if="showRequestPop"
-      :target="requestTarget"
-      @close="showRequestPop = false"
-      @submitted="fnAfterRequest"
-    />
-
     <!-- 관리자 최종 확인 팝업 (근로자 동의 후 실제 반영) -->
     <LeaveChangeConfirmPop
       v-if="showConfirmPop"
@@ -170,7 +162,6 @@
 <script setup>
 import { ref, computed, watch, getCurrentInstance, onMounted } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
-import LeaveChangeRequestPop from "./popup/LeaveChangeRequestPop.vue";
 import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
 import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
@@ -197,9 +188,9 @@ const nodeList = ref([]);
 const changeReqList = ref([]);
 
 // ── 팝업 토글 ────────────────────────────────────────────────────────────
-const showRequestPop = ref(false);
+// 발의(LeaveChangeRequestPop) 동선은 Attd_05 달력 셀로 일원화([부분휴가진입점-04] §5-1 확정)
+//   — 본 화면은 동의 관리(목록·확인) 전용.
 const showConfirmPop = ref(false);
-const requestTarget = ref(null);
 const selectedChangeReqId = ref("");
 
 // 헤더 버튼 — 권한 메뉴(tb_syst_auth_menu BTN_*)에서 주입된 props.buttons 사용(Attd_14 등과 동일 패턴).
@@ -370,11 +361,6 @@ const fnOpenConfirmPop = (item) => {
   // 모든 상태 상세 열람 가능. 확인/반려 활성 여부는 팝업이 상태로 게이팅.
   selectedChangeReqId.value = item.changeReqId;
   showConfirmPop.value = true;
-};
-
-const fnAfterRequest = () => {
-  showRequestPop.value = false;
-  fnSearch();
 };
 
 const fnAfterConfirm = () => {
