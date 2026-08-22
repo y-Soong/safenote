@@ -38,7 +38,7 @@
             >
               <option :value="''">-</option>
               <option
-                v-for="opt in schTypeOptions"
+                v-for="opt in filteredSchTypeOptions"
                 :key="opt.schCd"
                 :value="opt.schCd"
               >
@@ -68,7 +68,7 @@
 
 <script setup>
 /* eslint-disable */
-import { ref, onMounted, getCurrentInstance } from "vue";
+import { ref, computed, onMounted, getCurrentInstance } from "vue";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
@@ -86,6 +86,21 @@ const { proxy } = getCurrentInstance();
 const modalRef = ref(null);
 const defaultSchCd = ref("");
 const schTypeOptions = ref([]);
+// 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이 명일보다 미래인
+//   근무타입은 노출하지 않는다(2026-08-22, 최종 판정은 서버 isValidDefaultSch).
+const tomorrowYmd = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+})();
+const filteredSchTypeOptions = computed(() =>
+  schTypeOptions.value.filter(
+    (o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd
+  )
+);
 const isLoading = ref(false);
 const isSaving = ref(false);
 const errorMsg = ref("");

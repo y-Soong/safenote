@@ -209,7 +209,7 @@
               >
                 <option :value="''">-</option>
                 <option
-                  v-for="opt in schTypeOptions"
+                  v-for="opt in filteredSchTypeOptions"
                   :key="opt.schCd"
                   :value="opt.schCd"
                 >
@@ -325,7 +325,7 @@
               >
                 <option :value="''">-</option>
                 <option
-                  v-for="opt in schTypeOptions"
+                  v-for="opt in filteredSchTypeOptions"
                   :key="opt.schCd"
                   :value="opt.schCd"
                 >
@@ -811,6 +811,22 @@ const fnFmtSchTime = (t) => {
   if (!t || t.length < 4) return t || "";
   return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
 };
+
+// 기본 근무타입 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이
+//   명일보다 미래인 근무타입은 노출하지 않는다. 최종 판정은 서버(isValidDefaultSch, 2026-08-22 강화).
+const tomorrowYmd = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+})();
+const filteredSchTypeOptions = computed(() =>
+  schTypeOptions.value.filter(
+    (o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd
+  )
+);
 
 // 사업장 활성 근무타입 옵션 조회(siteCd 기준). 회사 스코프는 서버가 토큰에서 강제.
 const fnLoadSchTypeOptions = async (targetSiteCd) => {

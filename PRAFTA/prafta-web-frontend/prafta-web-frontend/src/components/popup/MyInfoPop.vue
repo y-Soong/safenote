@@ -95,7 +95,7 @@
               >
                 <option :value="''">-</option>
                 <option
-                  v-for="opt in defaultSchOptions"
+                  v-for="opt in filteredDefaultSchOptions"
                   :key="opt.schCd"
                   :value="opt.schCd"
                 >
@@ -230,7 +230,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, getCurrentInstance } from "vue";
+import { ref, computed, onMounted, getCurrentInstance } from "vue";
 import { useCenteredDraggable } from "@/composables/useCenteredDraggable";
 import { useModal } from "@/utils/useModal";
 import { useUserStore } from "@/stores/userStore";
@@ -272,6 +272,21 @@ const defaultSchCd = ref(""); // 현재 설정된 기본 근무타입 코드
 const defaultSchLabel = ref(""); // 현재값 표시용 라벨("주간조 (09:00~18:00)")
 const isEditingDefaultSch = ref(false);
 const defaultSchOptions = ref([]);
+// 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이 명일보다 미래인
+//   근무타입은 노출하지 않는다(2026-08-22, 최종 판정은 서버 isValidDefaultSch).
+const tomorrowYmd = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+})();
+const filteredDefaultSchOptions = computed(() =>
+  defaultSchOptions.value.filter(
+    (o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd
+  )
+);
 const isSchOptionsLoading = ref(false);
 const pendingDefaultSchCd = ref("");
 const isSavingDefaultSch = ref(false);

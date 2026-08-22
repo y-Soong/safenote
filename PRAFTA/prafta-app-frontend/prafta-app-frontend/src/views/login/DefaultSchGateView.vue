@@ -32,7 +32,7 @@
         :disabled="isLoading || isSaving"
       >
         <option :value="''">선택</option>
-        <option v-for="opt in schTypeOptions" :key="opt.schCd" :value="opt.schCd">
+        <option v-for="opt in filteredSchTypeOptions" :key="opt.schCd" :value="opt.schCd">
           {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{ fnFmtSchTime(opt.fstSchEndTime) }})
         </option>
       </select>
@@ -58,7 +58,7 @@
 // 설정 저장 성공 시 정식 LoginResponse 를 sessionStorage / userStore 에 적용 후 MainView 로 이동.
 // PhoneAuthView 패턴 미러(강제 게이트라 취소 경로는 로그인 화면 복귀).
 
-import { ref, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
 import axios from '@/api/axios'
 import { useUserStore } from '@/stores/userStore'
@@ -72,6 +72,19 @@ const userStore = useUserStore()
 const defaultSchToken = ref('')
 const defaultSchCd = ref('')
 const schTypeOptions = ref([])
+// 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이 명일보다 미래인
+//   근무타입은 노출하지 않는다(2026-08-22, 최종 판정은 서버 isValidDefaultSch).
+const tomorrowYmd = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}${m}${day}`
+})()
+const filteredSchTypeOptions = computed(() =>
+  schTypeOptions.value.filter((o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd)
+)
 const isLoading = ref(false)
 const isSaving = ref(false)
 const errorMsg = ref('')

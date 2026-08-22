@@ -78,11 +78,18 @@ public interface DefaultSchGenMapper {
 
     /**
      * prafta-com-008-E-5/E-8: 기본 근무타입 화이트리스트 검증용.
-     * 대상 사업장(siteCd)에 USE_YN='Y' 로 존재하는 schCd 면 1, 아니면 0. (클라 신뢰 금지)
+     * 대상 사업장(siteCd)에 USE_YN='Y' 로 존재하고, 현재본 또는 이력본 중 APPLY_DATE 가
+     * asOfDate 이하인 버전이 하나라도 있으면 1, 아니면 0. (클라 신뢰 금지)
+     *
+     * <p>2026-08-22: 적용일자 검증 추가 — 호출부(create/edit/self-change/login gate, 전 경로)가
+     * 전부 {@code applyDefaultSchChange} 의 "명일(오늘+1)부터 반영" 규칙을 따르므로 asOfDate 는
+     * 호출부에서 항상 명일을 넘긴다(소속이동의 임의 미래일 이동일과는 별개 — 그쪽은
+     * UserTransferMapper.selectSchUsableOnDate 로 분리).
      */
     int countActiveSchOnSite(@Param("cmpnyCd") String cmpnyCd,
                              @Param("siteCd") String siteCd,
-                             @Param("schCd") String schCd);
+                             @Param("schCd") String schCd,
+                             @Param("asOfDate") String asOfDate);
 
     /** prafta-com-008-E-8: 단건 사용자의 SITE_CD 조회(게이트 검증 스코프 도출). 없으면 null. */
     String selectUserSiteCd(@Param("cmpnyCd") String cmpnyCd,

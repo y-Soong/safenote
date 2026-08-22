@@ -15,12 +15,12 @@
       <p v-else-if="error" class="sch-edit__state sch-edit__state--err">
         선택 가능한 근무타입을 불러오지 못했어요. 다시 시도해 주세요.
       </p>
-      <p v-else-if="options.length === 0" class="sch-edit__state">
+      <p v-else-if="filteredOptions.length === 0" class="sch-edit__state">
         선택 가능한 근무타입이 없어요. 관리자에게 문의해 주세요.
       </p>
 
       <ul v-else class="sch-edit__list">
-        <li v-for="opt in options" :key="opt.schCd" class="sch-edit__item">
+        <li v-for="opt in filteredOptions" :key="opt.schCd" class="sch-edit__item">
           <label class="sch-edit__radio-label">
             <input
               type="radio"
@@ -54,7 +54,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
@@ -75,6 +75,19 @@ watch(open, (v) => emit('update:modelValue', v))
 const loading = ref(false)
 const error = ref(false)
 const options = ref([])
+// 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이 명일보다 미래인
+//   근무타입은 노출하지 않는다(2026-08-22, 최종 판정은 서버 isValidDefaultSch).
+const tomorrowYmd = (() => {
+  const d = new Date()
+  d.setDate(d.getDate() + 1)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}${m}${day}`
+})()
+const filteredOptions = computed(() =>
+  options.value.filter((o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd)
+)
 const selectedSchCd = ref(props.currentSchCd)
 const saving = ref(false)
 const saveError = ref('')

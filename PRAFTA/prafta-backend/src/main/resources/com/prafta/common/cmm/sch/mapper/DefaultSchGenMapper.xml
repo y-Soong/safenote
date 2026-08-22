@@ -207,7 +207,9 @@
 
     <!--
       prafta-com-008-E-5/E-8: 기본 근무타입 화이트리스트 검증.
-      대상 사업장에 USE_YN='Y' 로 존재하는 SCH_CD 면 1. (클라 제출값 신뢰 금지)
+      대상 사업장에 USE_YN='Y' 로 존재하고, 현재본/이력본 중 APPLY_DATE 가 asOfDate 이하인
+      버전이 있으면 1. (클라 제출값 신뢰 금지)
+      2026-08-22: UserTransferMapper.selectSchUsableOnDate 와 동일 판정 로직(적용일자 검증 추가).
     -->
     <select id="countActiveSchOnSite" resultType="int">
     /* DefaultSchGenMapper.countActiveSchOnSite */
@@ -217,6 +219,17 @@
        AND M.SITE_CD  = #{siteCd}
        AND M.SCH_CD   = #{schCd}
        AND M.USE_YN   = 'Y'
+       AND (
+             M.APPLY_DATE <![CDATA[ <= ]]> #{asOfDate}
+             OR EXISTS (
+                 SELECT 1
+                   FROM TB_SCH_MGMT_HIST H
+                  WHERE H.CMPNY_CD = M.CMPNY_CD
+                    AND H.SITE_CD  = M.SITE_CD
+                    AND H.SCH_CD   = M.SCH_CD
+                    AND H.APPLY_DATE <![CDATA[ <= ]]> #{asOfDate}
+             )
+           )
     </select>
 
     <!-- prafta-com-008-E-8: 단건 사용자 SITE_CD(게이트 검증 스코프). -->
