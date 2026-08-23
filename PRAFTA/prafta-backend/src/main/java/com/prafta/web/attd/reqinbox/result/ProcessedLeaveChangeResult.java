@@ -24,5 +24,7 @@ public record ProcessedLeaveChangeResult(
     , String moveTargetHalfPart  // 이동 대상 반차 파트 (START/END, NULL:원 파트 유지)
     , String moveTargetStartTime // 이동 대상 시간차 시작 시각 (HHMM, NULL:원 시각 유지)
     , Integer leaveMinutes       // 대상 use 대표행 분량(분) — 시간차 종료 파생용(시작+분량)
+    // 접수함다중사업장권한확장-002: "전체 사업장" 선택 시 행별 사업장 구분 표시용. 컬럼 순서상 항상 끝에 추가.
+    , String siteNm
 ) {
 }

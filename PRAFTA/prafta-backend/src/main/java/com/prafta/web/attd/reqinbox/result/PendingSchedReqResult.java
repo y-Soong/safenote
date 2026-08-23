@@ -48,5 +48,7 @@ public record PendingSchedReqResult(
     , String curPreFixedOtEndTime
     , String curFixedOtStrTime
     , String curFixedOtEndTime
+    // 접수함다중사업장권한확장-002: "전체 사업장" 선택 시 행별 사업장 구분 표시용. 컬럼 순서상 항상 끝에 추가.
+    , String siteNm
 ) {
 }

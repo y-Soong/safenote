@@ -1,5 +1,9 @@
 package com.prafta.common.cmm.siteauth.service;
 
+import java.util.List;
+
+import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
+
 /**
  * 사업장 접근 인가 공용 서비스.
  *
@@ -25,4 +29,14 @@ public interface SiteAccessService {
 
     /** 접근 불가 시 {@code COMMON_403_003} 을 던진다. */
     void assertSiteAccess(String gvCmpnyCd, String gvUserCd, String gvAuthCd, String gvSiteCd, String targetSiteCd);
+
+    /**
+     * 관리자가 접근 가능한 사업장 목록(접수함다중사업장권한확장-001).
+     *
+     * <p>{@link #hasSiteAccess} 의 role fast-path 와 동일하게 master/hr({@code isManager})
+     * 이면 원장 조회 없이 회사 전체 사업장을 반환하고, 그 외에는 TB_USER_SITE_AUTH 원장 목록을
+     * 반환한다. master/hr 의 원장 행이 항상 존재한다고 가정하지 않는다(§8.5 문구를 곧이곧대로
+     * 믿지 않는 방어 — hasSiteAccess 가 원장을 거치지 않는 이유와 동일).
+     */
+    List<AccessibleSiteResult> getAccessibleSites(String gvCmpnyCd, String gvUserCd, String gvAuthCd);
 }

@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
+import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -18,16 +20,18 @@ import com.prafta.web.attd.reqinbox.service.ReqInboxService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-/** {@link ReqInboxService} 구현 (prafta-019 후속). */
+/** {@link ReqInboxService} 구현 (prafta-019 후속, 접수함다중사업장권한확장-002). */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ReqInboxServiceImpl implements ReqInboxService {
 
     private final ReqInboxMapper reqInboxMapper;
+    private final SiteAccessService siteAccessService;
 
     @Override
-    public List<PendingReqResult> getPendingRequests(String cmpnyCd, String siteCd, String authCd, String reqTypeGroup) {
+    public List<PendingReqResult> getPendingRequests(String cmpnyCd, String siteCd, String userCd, String authCd,
+                                                      String reqTypeGroup, String reqSiteCd) {
         // 매니저 전용 게이트. JWT 기반 authCd를 사용하므로 body 위조로 권한 escalation 불가
         // (reject endpoint 와 동일 패턴). 일반 작업자의 대기요청·요청자명 열람 차단.
         if (!AuthRoleUtils.isManager(authCd)) {
@@ -49,23 +53,33 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             // 그 외 값은 미지원 — fail-closed.
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
-        return reqInboxMapper.selectPendingRequests(cmpnyCd, siteCd, reqTypes);
+        List<String> siteCds = resolveSiteCds(cmpnyCd, userCd, authCd, siteCd, reqSiteCd);
+        if (siteCds.isEmpty()) {
+            // 접근 가능 사업장 원장이 비어있는 극단 케이스 방어 — SQL IN() 빈 목록 오류 예방.
+            return List.of();
+        }
+        return reqInboxMapper.selectPendingRequests(cmpnyCd, siteCds, reqTypes);
     }
 
     @Override
-    public List<PendingSchedReqResult> getPendingSchedRequests(String cmpnyCd, String siteCd, String authCd) {
+    public List<PendingSchedReqResult> getPendingSchedRequests(String cmpnyCd, String siteCd, String userCd,
+                                                               String authCd, String reqSiteCd) {
         // 매니저 전용 게이트 — getPendingRequests 와 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
         if (!AuthRoleUtils.isManager(authCd)) {
             log.warn("reqinbox pending rejected - insufficient privilege. authCd={}", authCd);
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
+        List<String> siteCds = resolveSiteCds(cmpnyCd, userCd, authCd, siteCd, reqSiteCd);
+        if (siteCds.isEmpty()) {
+            return List.of();
+        }
         return reqInboxMapper.selectPendingSchedRequests(
-                cmpnyCd, siteCd, AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
+                cmpnyCd, siteCds, AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
     }
 
     @Override
     public ProcessedReqListResponse getProcessedRequests(String cmpnyCd, String siteCd, String userCd,
-                                                         String authCd, String reqTypeGroup) {
+                                                         String authCd, String reqTypeGroup, String reqSiteCd) {
         // 매니저 전용 게이트 — 대기 목록과 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
         // 조회 자체는 "처리자 = 본인" 스코프라 타인 데이터 열람이 성립하지 않지만,
         // 요청자명 노출 화면이므로 신규 조회 EP 게이트 원칙에 따라 동일하게 막는다.
@@ -74,12 +88,21 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
 
-        // 연차 탭: 결재라인 이력 + 연차 변경 확인 이력(보조 섹션)
+        List<String> siteCds = resolveSiteCds(cmpnyCd, userCd, authCd, siteCd, reqSiteCd);
+
+        // 연차 탭: 결재라인 이력(사업장 무관, §0.2-3 무수정) + 연차 변경 확인 이력(보조 섹션, 사업장 스코프 적용)
         if ("leave".equals(reqTypeGroup)) {
             return ProcessedReqListResponse.builder()
                     .processedList(reqInboxMapper.selectProcessedLeaveApprovals(cmpnyCd, userCd))
-                    .leaveChangeList(reqInboxMapper.selectProcessedLeaveChangeRequests(cmpnyCd, siteCd, userCd))
+                    .leaveChangeList(siteCds.isEmpty()
+                            ? List.of()
+                            : reqInboxMapper.selectProcessedLeaveChangeRequests(cmpnyCd, siteCds, userCd))
                     .build();
+        }
+
+        if (siteCds.isEmpty()) {
+            // 접근 가능 사업장 원장이 비어있는 극단 케이스 방어 — SQL IN() 빈 목록 오류 예방.
+            return ProcessedReqListResponse.builder().processedList(List.of()).leaveChangeList(List.of()).build();
         }
 
         List<String> reqTypes;
@@ -94,8 +117,37 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
         return ProcessedReqListResponse.builder()
-                .processedList(reqInboxMapper.selectProcessedRequests(cmpnyCd, siteCd, userCd, reqTypes))
+                .processedList(reqInboxMapper.selectProcessedRequests(cmpnyCd, siteCds, userCd, reqTypes))
                 .leaveChangeList(List.of())
                 .build();
+    }
+
+    @Override
+    public List<AccessibleSiteResult> getAccessibleSites(String cmpnyCd, String userCd, String authCd) {
+        // 매니저 전용 게이트 — 목록 조회 endpoint 와 동일 규칙(프론트 셀렉터 옵션도 요청자명과 같은 관리 정보로 취급).
+        if (!AuthRoleUtils.isManager(authCd)) {
+            log.warn("reqinbox accessible-sites rejected - insufficient privilege. authCd={}", authCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+        return siteAccessService.getAccessibleSites(cmpnyCd, userCd, authCd);
+    }
+
+    /**
+     * 목록 조회 사업장 스코프 해석(접수함다중사업장권한확장-002).
+     *
+     * <p>{@code reqSiteCd} 가 있으면 접근 가능 여부를 개별 검증(IDOR 가드, 실패 시
+     * {@code COMMON_403_003})한 후 그 1건으로 좁힌다 — {@code assertSiteAccess} 가 이미
+     * master/hr 전사 허용 → 토큰 사업장 fast path → 원장 순으로 판정하므로 "접근 가능 목록에
+     * 포함되는지" 검증과 동등하다. 없으면 접근 가능 사업장 전체를 사용한다.
+     */
+    private List<String> resolveSiteCds(String cmpnyCd, String userCd, String authCd, String gvSiteCd,
+                                         String reqSiteCd) {
+        if (reqSiteCd != null && !reqSiteCd.isBlank()) {
+            siteAccessService.assertSiteAccess(cmpnyCd, userCd, authCd, gvSiteCd, reqSiteCd);
+            return List.of(reqSiteCd);
+        }
+        return siteAccessService.getAccessibleSites(cmpnyCd, userCd, authCd).stream()
+                .map(AccessibleSiteResult::siteCd)
+                .toList();
     }
 }

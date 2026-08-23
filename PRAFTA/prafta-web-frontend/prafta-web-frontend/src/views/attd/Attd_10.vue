@@ -25,6 +25,14 @@
       </button>
     </div>
 
+    <!-- 접수함다중사업장권한확장-003: 접근 가능 사업장이 2개 이상일 때만 자체 노출(무회귀). 연차 탭 제외. -->
+    <ReqInboxSiteFilter
+      v-if="activeTab !== 'leave'"
+      v-model="selectedSiteCd"
+      :accessible-sites="accessibleSites"
+      :loading="accessibleSitesLoading"
+    />
+
     <ViewHeader
       class="commViewHeader"
       :title="props.title || '요청 승인 관리'"
@@ -507,6 +515,7 @@
 import {
   ref,
   computed,
+  watch,
   onMounted,
   getCurrentInstance,
   defineProps,
@@ -518,6 +527,7 @@ import LeaveChangeConfirmPop from "./popup/LeaveChangeConfirmPop.vue";
 import ReqProcessedHistoryPop from "./popup/ReqProcessedHistoryPop.vue";
 import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
 import AttdSchedCompareSection from "./popup/AttdSchedCompareSection.vue";
+import ReqInboxSiteFilter from "./popup/ReqInboxSiteFilter.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -546,6 +556,10 @@ const tabs = [
   { key: "leave", label: "연차 상신" },
 ];
 const activeTab = ref("leave");
+// 접수함다중사업장권한확장-003: 접근 가능 사업장 목록 + 선택값("" = 전체). 연차 탭은 필터 미적용(백엔드 스코프 밖).
+const accessibleSites = ref([]);
+const accessibleSitesLoading = ref(false);
+const selectedSiteCd = ref("");
 // 내 처리 이력 팝업 토글 — 팝업은 activeTab 을 그대로 받아 해당 유형 이력을 조회한다.
 const showHistoryPop = ref(false);
 const activeTabLabel = computed(
@@ -952,10 +966,28 @@ const fnAfterLeaveChangeConfirmed = () => {
   fnLoadCounts();
 };
 
+// 접수함다중사업장권한확장-002: 관리자가 접근 가능한 사업장 목록 조회(셀렉터 옵션용).
+//   실패해도 화면 흐름은 막지 않는다(카운트 로드와 동일한 보조 정보 취급) — 셀렉터가
+//   자체 v-if(accessibleSites.length > 1)로 숨어 단일 사업장 관리자와 동일하게 무회귀.
+const fnLoadAccessibleSites = async () => {
+  accessibleSitesLoading.value = true;
+  try {
+    const r = await axios.get("/webApi/reqinbox/accessible-sites");
+    accessibleSites.value = r.data?.accessibleSites ?? [];
+  } catch (e) {
+    console.warn("[Attd_10] 접근 가능 사업장 목록 조회 실패", e);
+  } finally {
+    accessibleSitesLoading.value = false;
+  }
+};
+
 const fnLoadReqInbox = async () => {
   try {
     const r = await axios.get("/webApi/reqinbox/pending", {
-      params: { reqTypeGroup: reqTypeGroupOf(activeTab.value) },
+      params: {
+        reqTypeGroup: reqTypeGroupOf(activeTab.value),
+        siteCd: selectedSiteCd.value || undefined,
+      },
     });
     reqList.value = r.data?.pendingList ?? [];
     if (
@@ -976,10 +1008,10 @@ const fnLoadCounts = async () => {
     const [leaveRes, corrRes, otRes] = await Promise.all([
       axios.get("/webApi/leaveflow/my-approvals"),
       axios.get("/webApi/reqinbox/pending", {
-        params: { reqTypeGroup: "correction" },
+        params: { reqTypeGroup: "correction", siteCd: selectedSiteCd.value || undefined },
       }),
       axios.get("/webApi/reqinbox/pending", {
-        params: { reqTypeGroup: "overtime" },
+        params: { reqTypeGroup: "overtime", siteCd: selectedSiteCd.value || undefined },
       }),
     ]);
     const approvalCnt = (leaveRes.data?.approvalList ?? []).length;
@@ -1001,7 +1033,7 @@ const fnLoadCounts = async () => {
     //   실패할 때 기존 3개 배지가 함께 죽는다(무회귀 최우선).
     try {
       const schedRes = await axios.get("/webApi/reqinbox/pending", {
-        params: { reqTypeGroup: "schedule" },
+        params: { reqTypeGroup: "schedule", siteCd: selectedSiteCd.value || undefined },
       });
       scheduleCount.value = (schedRes.data?.pendingList ?? []).length;
     } catch (e) {
@@ -1238,9 +1270,15 @@ const fnProcess = async () => {
   }
 };
 
+// 사업장 선택 변경 시 활성 탭 목록 + 배지 카운트 재조회(연차 탭은 필터 자체가 숨어있어 변경 불가).
+watch(selectedSiteCd, () => {
+  fnSearch();
+});
+
 onMounted(() => {
   fnLoad();
   fnLoadCounts();
+  fnLoadAccessibleSites();
 });
 </script>
 

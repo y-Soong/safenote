@@ -33,5 +33,8 @@ public record ProcessedReqResult(
     , String processDate
     , String processComment  // 처리 코멘트(반려 사유 등)
     , Integer approvalStep   // 연차 탭 전용(내가 처리한 결재 단계) — 그 외 NULL
+    // 접수함다중사업장권한확장-002: "전체 사업장" 선택 시 행별 사업장 구분 표시용. 컬럼 순서상 항상 끝에 추가
+    // (selectProcessedRequests / selectProcessedLeaveApprovals 두 statement 모두 동일 위치에 채운다).
+    , String siteNm
 ) {
 }

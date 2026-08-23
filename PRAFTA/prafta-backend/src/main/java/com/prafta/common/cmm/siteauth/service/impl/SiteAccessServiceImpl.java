@@ -1,8 +1,11 @@
 package com.prafta.common.cmm.siteauth.service.impl;
 
+import java.util.List;
+
 import org.springframework.stereotype.Service;
 
 import com.prafta.common.cmm.siteauth.mapper.SiteAccessMapper;
+import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -46,5 +49,15 @@ public class SiteAccessServiceImpl implements SiteAccessService {
                     gvCmpnyCd, gvUserCd, gvAuthCd, gvSiteCd, targetSiteCd);
             throw new ApiException(CommonErrorCode.COMMON_403_003);
         }
+    }
+
+    @Override
+    public List<AccessibleSiteResult> getAccessibleSites(String gvCmpnyCd, String gvUserCd, String gvAuthCd) {
+        // master/hr — hasSiteAccess 의 role fast-path 와 동일 원칙. 원장 미존재(§8.5 "기본 자동
+        // 매핑" 문구를 곧이곧대로 믿지 않음) 케이스를 방어하기 위해 원장을 거치지 않고 전사 목록을 바로 반환.
+        if (AuthRoleUtils.isManager(gvAuthCd)) {
+            return siteAccessMapper.selectAllCompanySites(gvCmpnyCd);
+        }
+        return siteAccessMapper.selectAccessibleSites(gvCmpnyCd, gvUserCd);
     }
 }

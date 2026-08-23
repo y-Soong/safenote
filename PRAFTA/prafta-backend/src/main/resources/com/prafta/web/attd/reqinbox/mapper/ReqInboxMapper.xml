@@ -3,9 +3,10 @@
 <mapper namespace="com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper">
 
     <!--
-      매니저 스코프(회사 + 사업장) 내 대기('01' 신청) 요청 목록.
+      매니저 스코프(회사 + 접근가능 사업장) 내 대기('01' 신청) 요청 목록.
       반려 시 기존 /attd07/reject-user-* 엔드포인트가 키필드 일치를 요구하므로 키필드를 함께 반환한다.
-      v1 스코프: CMPNY_CD(토큰) + SITE_CD(토큰). 다중 사업장 권한(§8.4) 확장은 후속.
+      SITE_CD IN(접근가능 목록) — 다중 사업장 권한(§8.4) 확장 완료(접수함다중사업장권한확장-002).
+      siteNm 은 "전체 사업장" 선택 시 행별 사업장 구분 표시용(신규).
     -->
     <select id="selectPendingRequests" resultType="com.prafta.web.attd.reqinbox.result.PendingReqResult">
     /* ReqInboxMapper.selectPendingRequests */
@@ -25,9 +26,16 @@
         , R.END_TIME                                                   AS endTime
         , R.REQ_REASON                                                 AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+        , S.SITE_NM                                                    AS siteNm
       FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
      WHERE R.CMPNY_CD   = #{cmpnyCd}
-       AND R.SITE_CD    = #{siteCd}
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
        AND R.REQ_STATUS = '01'
        AND R.DEL_YN     = 'N'
        AND R.REQ_TYPE IN
@@ -88,7 +96,11 @@
         , CSE.PRE_FIXED_OT_END_TIME                                    AS curPreFixedOtEndTime
         , CSE.FIXED_OT_STR_TIME                                        AS curFixedOtStrTime
         , CSE.FIXED_OT_END_TIME                                        AS curFixedOtEndTime
+        , S.SITE_NM                                                    AS siteNm
       FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
       <!-- 요청 스케줄: SCH_NO 는 이력본에 없는 비-versioned 컬럼이라 현재본(TS)에서, 시각은 유효버전(TSE)에서. -->
       LEFT JOIN TB_SCH_MGMT TS
         ON TS.CMPNY_CD = R.CMPNY_CD
@@ -133,7 +145,10 @@
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
            )
      WHERE R.CMPNY_CD   = #{cmpnyCd}
-       AND R.SITE_CD    = #{siteCd}
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
        AND R.REQ_STATUS = '01'
        AND R.DEL_YN     = 'N'
        AND R.REQ_TYPE   = #{reqType}
@@ -170,13 +185,20 @@
         , DATE_FORMAT(R.PROCESS_DATE, '%Y-%m-%dT%H:%i:%s')             AS processDate
         , R.PROCESS_COMMENT                                            AS processComment
         , NULL                                                         AS approvalStep
+        , S.SITE_NM                                                    AS siteNm
       FROM TB_USER_ATTD_REQ R
       LEFT JOIN TB_SCH_MGMT TS
         ON TS.CMPNY_CD = R.CMPNY_CD
        AND TS.SITE_CD  = R.SITE_CD
        AND TS.SCH_CD   = R.SCH_CD
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
      WHERE R.CMPNY_CD        = #{cmpnyCd}
-       AND R.SITE_CD         = #{siteCd}
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
        AND R.PROCESS_USER_CD = #{processUserCd}
        AND R.REQ_STATUS IN ('02', '03')
        AND R.DEL_YN          = 'N'
@@ -227,10 +249,14 @@
         , DATE_FORMAT(AP.APPROVAL_DATE, '%Y-%m-%dT%H:%i:%s')           AS processDate
         , AP.APPROVAL_COMMENT                                          AS processComment
         , AP.APPROVAL_STEP                                             AS approvalStep
+        , S.SITE_NM                                                    AS siteNm
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
        AND R.REQ_ID   = AP.REQ_ID
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
       LEFT JOIN TB_USER_LEAVE_USE U
         ON U.CMPNY_CD = R.CMPNY_CD
        AND U.DEL_YN   = 'N'
@@ -280,12 +306,19 @@
         , R.MOVE_TARGET_HALF_PART                                      AS moveTargetHalfPart
         , R.MOVE_TARGET_START_TIME                                     AS moveTargetStartTime
         , LU.LEAVE_MINUTES                                             AS leaveMinutes
+        , S.SITE_NM                                                    AS siteNm
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER_LEAVE_USE LU
         ON LU.CMPNY_CD = R.CMPNY_CD
        AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
      WHERE R.CMPNY_CD        = #{cmpnyCd}
-       AND R.SITE_CD         = #{siteCd}
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
        AND R.CONFIRM_USER_CD = #{confirmUserCd}
        AND R.REQ_STATUS IN ('CONFIRMED', 'REJECTED')
        AND R.DEL_YN          = 'N'

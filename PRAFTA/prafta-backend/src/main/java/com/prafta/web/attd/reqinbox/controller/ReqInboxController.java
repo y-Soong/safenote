@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.attd.reqinbox.dto.response.AccessibleSiteListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.PendingReqListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.PendingSchedReqListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
@@ -36,10 +37,14 @@ public class ReqInboxController {
      *
      * <p>schedule('10')은 현재→요청 스케줄 비교값을 함께 내려주어 컬럼 세트가 다르므로
      * 전용 서비스/응답으로 분기한다. 응답 필드명은 {@code pendingList} 로 동일하다.
+     *
+     * @param siteCd (접수함다중사업장권한확장-002) 프론트가 선택한 사업장(선택값). 빈 값이면
+     *               토큰 사용자가 접근 가능한 사업장 전체를 대상으로 조회한다.
      */
     @GetMapping("/pending")
     public ResponseEntity<?> pending(
             @RequestParam("reqTypeGroup") String reqTypeGroup,
+            @RequestParam(value = "siteCd", required = false) String siteCd,
             @RequestHeader(value = "Authorization", required = true) String authorization) {
 
         TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
@@ -47,7 +52,7 @@ public class ReqInboxController {
         if ("schedule".equals(reqTypeGroup)) {
             PendingSchedReqListResponse schedResponse = PendingSchedReqListResponse.builder()
                     .pendingList(reqInboxService.getPendingSchedRequests(
-                            token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_authCd()))
+                            token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(), siteCd))
                     .build();
 
             return ResponseEntity.status(HttpStatus.OK).body(schedResponse);
@@ -55,7 +60,8 @@ public class ReqInboxController {
 
         PendingReqListResponse response = PendingReqListResponse.builder()
                 .pendingList(reqInboxService.getPendingRequests(
-                        token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_authCd(), reqTypeGroup))
+                        token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(),
+                        reqTypeGroup, siteCd))
                 .build();
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
@@ -66,16 +72,38 @@ public class ReqInboxController {
      * (reqTypeGroup: correction | overtime | schedule | leave, 최근 300건).
      *
      * <p>처리자 필터는 토큰의 본인 userCd 로 서버가 강제한다(파라미터 비신뢰).
+     *
+     * @param siteCd (접수함다중사업장권한확장-002) 프론트가 선택한 사업장(선택값). 빈 값이면
+     *               토큰 사용자가 접근 가능한 사업장 전체를 대상으로 조회한다.
      */
     @GetMapping("/processed")
     public ResponseEntity<?> processed(
             @RequestParam("reqTypeGroup") String reqTypeGroup,
+            @RequestParam(value = "siteCd", required = false) String siteCd,
             @RequestHeader(value = "Authorization", required = true) String authorization) {
 
         TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
 
         ProcessedReqListResponse response = reqInboxService.getProcessedRequests(
-                token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(), reqTypeGroup);
+                token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(),
+                reqTypeGroup, siteCd);
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 관리자가 접근 가능한 사업장 목록 (접수함다중사업장권한확장-002, 프론트 셀렉터용).
+     */
+    @GetMapping("/accessible-sites")
+    public ResponseEntity<?> accessibleSites(
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
+
+        AccessibleSiteListResponse response = AccessibleSiteListResponse.builder()
+                .accessibleSites(reqInboxService.getAccessibleSites(
+                        token.gv_cmpnyCd(), token.gv_userCd(), token.gv_authCd()))
+                .build();
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
