@@ -86,6 +86,13 @@ public record DailyAttdDetailsResult(
     , String secBrkStrTime
     /** 2구간 휴게 종료(HHMM). */
     , String secBrkEndTime
+
+    /* [소속이동이력가시성-03] "현재 타 사업장 소속" 배지용(신규). TB_USER B(이미 조인) 의
+       B.SITE_CD 가 곧 "현재 소속" — 조회 사업장(siteCd)과 다르면 이동 전 이력을 보고 있는 것. */
+    /** 근로자의 현재 소속 사업장코드(TB_USER.SITE_CD). */
+    , String currentSiteCd
+    /** 근로자의 현재 소속 사업장명. */
+    , String currentSiteNm
 ) {
 
     /**
@@ -104,6 +111,7 @@ public record DailyAttdDetailsResult(
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
             , fstBrkStrTime, fstBrkEndTime, secBrkStrTime, secBrkEndTime
+            , currentSiteCd, currentSiteNm
         );
     }
 }

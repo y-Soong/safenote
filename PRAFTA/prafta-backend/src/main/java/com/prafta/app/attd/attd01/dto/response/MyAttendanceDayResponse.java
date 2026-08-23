@@ -95,4 +95,9 @@ public class MyAttendanceDayResponse {
      * ((일자,시각) 쌍 — 아이템 record 재사용). 고정연장 없는 근무타입/구 FE 는 빈 리스트/무시.
      */
     private final List<LeaveExemptWindowItem> fixedOtWindows;
+
+    // 작업지시서_소속이동-이력가시성-보정 T3: "당시 소속 사업장" 배지 데이터 소스(기존 siteName과 무관 — 그건 현재 사업장).
+    //   레코드 자체 SITE_CD 기준(실 근태 우선, 없으면 배정 스케줄). 둘 다 없으면 null(배지 미노출 신호).
+    private final String recordSiteCd;
+    private final String recordSiteName;
 }

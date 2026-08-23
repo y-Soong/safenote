@@ -48,7 +48,17 @@
         , SC.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
         , SC.FIXED_OT_STR_TIME      AS fixedOtStrTime
         , SC.FIXED_OT_END_TIME      AS fixedOtEndTime
+        <!-- 작업지시서_소속이동-이력가시성-보정: 그 근무일 배정 당시 사업장(WP 행 자체 SITE_CD). -->
+        , WP.SITE_CD                AS siteCd
+        , ST.SITE_NM                AS siteNm
+        <!-- 작업지시서_소속이동-이력가시성-보정(QA High 보정): 동일 WORK_YMD 에 SITE_CD 가 다른 WP 행이
+             공존할 때(소속이동 시 구 사업장 DEFAULT_SCH 행 잔존 등) 서비스 병합 타이브레이크용 기준시각.
+             위치매핑 마지막 컬럼. -->
+        , COALESCE(WP.UPDATE_DATE, WP.INSERT_DATE) AS effectiveDtime
       FROM TB_USER_WORK_PLAN WP
+      LEFT JOIN TB_SITE ST
+        ON  ST.CMPNY_CD = WP.CMPNY_CD
+        AND ST.SITE_CD  = WP.SITE_CD
       <!-- 근무일(WP.WORK_YMD) 기준 유효 스케줄(effective-dating). 범위 조회라 행별 WORK_YMD 로 상관.
            현재본 + 이력본 UNION 후 APPLY_DATE <![CDATA[ <= ]]> WORK_YMD 인 최신 버전. 과거 근무일을 현재본 시각으로 표시하던 문제 수정.
            SCH_NO/SCH_TYPE 는 이력본에 없는 비-versioned 컬럼이라 현재본(MT)에서 가져온다.
@@ -123,7 +133,6 @@
                   AND SE.SCH_CD      = WP.WORK_PLAN_CD
         )
      WHERE WP.CMPNY_CD = #{q.cmpnyCd}
-       AND WP.SITE_CD  = #{q.siteCd}
        AND WP.USER_CD  = #{q.userCd}
        AND WP.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
      ORDER BY WP.WORK_YMD
@@ -194,12 +203,14 @@
         , A.CHECK_OUT_DATE    AS checkOutDate
         , A.CHECK_OUT_TIME    AS checkOutTime
         , A.CHECK_OUT_METHOD  AS checkOutMethod
+        <!-- 작업지시서_소속이동-이력가시성-보정(QA High 보정): 동일 WORK_YMD+WORK_SEQ 에 SITE_CD 가
+             다른 행이 공존할 때 서비스 병합 타이브레이크용 기준시각. 위치매핑 마지막 컬럼. -->
+        , COALESCE(A.UPDATE_DATE, A.INSERT_DATE) AS effectiveDtime
       FROM TB_USER_ATTD_MGMT A
       LEFT JOIN TB_SITE S
         ON  S.CMPNY_CD = A.CMPNY_CD
         AND S.SITE_CD  = A.SITE_CD
      WHERE A.CMPNY_CD = #{q.cmpnyCd}
-       AND A.SITE_CD  = #{q.siteCd}
        AND A.USER_CD  = #{q.userCd}
        AND A.WORK_YMD BETWEEN #{q.fromYmd} AND #{q.toYmd}
        AND A.DEL_YN   = 'N'
@@ -291,7 +302,6 @@
         AND R.USER_CD  = U.USER_CD
         AND R.DEL_YN   = 'N'
      WHERE U.CMPNY_CD     = #{q.cmpnyCd}
-       AND U.SITE_CD      = #{q.siteCd}
        AND U.USER_CD      = #{q.userCd}
        AND U.LEAVE_STATUS = 'CONFIRMED'
        AND U.DEL_YN       = 'N'
@@ -320,7 +330,6 @@
             SELECT OM.WORK_YMD
               FROM TB_USER_OVERTIME_MGMT OM
              WHERE OM.CMPNY_CD = #{q.cmpnyCd}
-               AND OM.SITE_CD  = #{q.siteCd}
                AND OM.USER_CD  = #{q.userCd}
                AND OM.DEL_YN   = 'N'
                AND OM.OT_STATUS &lt;&gt; 'CANCELLED'
@@ -329,7 +338,6 @@
             SELECT RQ.WORK_YMD
               FROM TB_USER_ATTD_REQ RQ
              WHERE RQ.CMPNY_CD = #{q.cmpnyCd}
-               AND RQ.SITE_CD  = #{q.siteCd}
                AND RQ.USER_CD  = #{q.userCd}
                AND RQ.DEL_YN   = 'N'
                AND RQ.REQ_TYPE IN ('03', '04')
@@ -743,7 +751,6 @@
          , O.WORK_MINUTES       AS workMinutes
       FROM TB_USER_OVERTIME_MGMT O
      WHERE O.CMPNY_CD = #{q.cmpnyCd}
-       AND O.SITE_CD  = #{q.siteCd}
        AND O.USER_CD  = #{q.userCd}
        AND O.DEL_YN   = 'N'
        AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'

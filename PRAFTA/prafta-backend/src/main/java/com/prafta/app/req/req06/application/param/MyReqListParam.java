@@ -16,6 +16,9 @@ import com.prafta.common.exception.ApiException;
  * cross-site/cross-tenant IDOR 차단 — AppHome01 패턴 동일.
  *
  * <p>limit 는 서버 고정 20 — 클라이언트가 보내도 무시한다.
+ *
+ * <p>작업지시서_소속이동-이력가시성-보정: {@code siteCd} 는 더 이상 조회 필터에 쓰이지 않는다(소속이동 전
+ * 이력도 본인은 항상 조회 가능해야 함). IDOR 가드 원칙 유지 차원에서 JWT 파생값 자체는 계속 보존한다.
  */
 public record MyReqListParam(
         String cmpnyCd

@@ -16,6 +16,9 @@
     <!-- 컨텍스트 라인 -->
     <p class="aprv-detail__context">
       {{ item?.reqTypeDisplay }} · {{ item?.targetYmdDisplay }}
+      <span v-if="showSiteBadge" class="aprv-detail__site-badge"
+        >당시 소속: {{ item?.siteName }}</span
+      >
     </p>
 
     <!-- 로딩 -->
@@ -55,7 +58,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, watch, computed } from 'vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
@@ -63,9 +66,17 @@ import { resolveApiErrorMessage } from '@/utils/apiError'
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
   item: { type: Object, default: null }, // MyReqItemResponse (reqId 포함)
+  // 작업지시서_소속이동-이력가시성-보정 T3.
+  currentSiteCd: { type: String, default: '' },
 })
 
 const emit = defineEmits(['update:modelValue'])
+
+const showSiteBadge = computed(() => {
+  const itemSite = props.item?.siteCd
+  const current = props.currentSiteCd
+  return !!itemSite && !!current && itemSite !== current
+})
 
 // 반응형 상태
 const isLoading = ref(false)
@@ -141,6 +152,21 @@ const stepStatusClass = (code) => {
   font-size: 14px;
   font-weight: 500;
   color: var(--color-text-primary);
+}
+
+.aprv-detail__site-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--color-border-light);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  vertical-align: middle;
 }
 
 .aprv-detail__state {

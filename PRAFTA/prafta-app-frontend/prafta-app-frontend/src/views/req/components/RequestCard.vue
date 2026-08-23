@@ -15,7 +15,12 @@
   >
     <!-- 상단: 유형 + 상태 배지 -->
     <header class="req-card__top">
-      <span class="req-card__type">{{ item.reqTypeDisplay }}</span>
+      <span class="req-card__type-group">
+        <span class="req-card__type">{{ item.reqTypeDisplay }}</span>
+        <span v-if="showSiteBadge" class="req-card__site-badge"
+          >당시 소속: {{ item.siteName }}</span
+        >
+      </span>
       <span class="req-card__badge" :class="badgeClass">
         <span class="req-card__badge-dot" aria-hidden="true"></span>
         <span class="req-card__badge-label">{{ item.reqStatusDisplay }}</span>
@@ -79,12 +84,22 @@ import { computed } from 'vue'
 
 const props = defineProps({
   item: { type: Object, required: true },
+  // 작업지시서_소속이동-이력가시성-보정 T3: 현재 로그인 사업장 코드(빈 문자열=미주입/배지 판정 skip).
+  currentSiteCd: { type: String, default: '' },
 })
 
 const emit = defineEmits(['click'])
 
 // PRAFTA-내승인요청결재라인-3: LC_MOVE/LC_DELETE(연차 이동/삭제)는 결재라인 상세 진입 대상 아님.
 const hasDetailLink = computed(() => !String(props.item?.reqType || '').startsWith('LC_'))
+
+// item.siteCd(발의 당시 소속, T1 응답 확장) 가 현재 로그인 사업장과 다를 때만 배지 노출.
+//   둘 중 하나라도 없으면(구버전 응답/세션 미확보) 배지 미노출 — 과다 노출 방지(요건: "동일하면 미노출").
+const showSiteBadge = computed(() => {
+  const itemSite = props.item?.siteCd
+  const current = props.currentSiteCd
+  return !!itemSite && !!current && itemSite !== current
+})
 
 const onClick = () => {
   if (!hasDetailLink.value) return
@@ -130,10 +145,31 @@ const badgeClass = computed(() => {
   align-items: center;
 }
 
+.req-card__type-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .req-card__type {
   font-size: 13px;
   font-weight: 500;
   color: var(--color-text-secondary);
+}
+
+.req-card__site-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  background: var(--color-border-light);
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
 }
 
 .req-card__badge {

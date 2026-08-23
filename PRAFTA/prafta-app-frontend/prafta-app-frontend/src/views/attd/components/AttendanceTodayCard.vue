@@ -23,6 +23,7 @@
     <div class="sl">
       <span class="bd" :class="statusBadgeClass"> <span class="bd__dot" />{{ statusText }} </span>
       <strong>{{ detail.workPlanName }}</strong>
+      <span v-if="showSiteBadge" class="bd bd-site">{{ siteBadgeText }}</span>
     </div>
 
     <!-- 휴일(웹 휴일관리 TB_HOLIDAY) 1줄 표시 — 휴일명 있을 때만. -->
@@ -333,9 +334,24 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // 작업지시서_소속이동-이력가시성-보정 T3: 현재 로그인 사업장 코드.
+  currentSiteCd: {
+    type: String,
+    default: '',
+  },
 })
 
 const emit = defineEmits(['action'])
+
+// detail.recordSiteCd(T2 응답 확장 — 실 근태 우선/스케줄 폴백)가 현재 사업장과 다를 때만 배지 노출.
+const showSiteBadge = computed(() => {
+  const rc = props.detail && props.detail.recordSiteCd
+  return !!rc && !!props.currentSiteCd && rc !== props.currentSiteCd
+})
+const siteBadgeText = computed(() => {
+  const nm = props.detail && (props.detail.recordSiteName || props.detail.recordSiteCd)
+  return nm ? `당시 소속: ${nm}` : ''
+})
 
 // ───────────────────────────────────────────────────────────
 // 파생 값 (단순 포맷/표시 — 비즈니스 로직 아님)
@@ -803,6 +819,11 @@ const onSlotCheckIn = (workSeq) => {
 }
 .bd-i .bd__dot {
   background: var(--color-info);
+}
+.bd-site {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
 }
 
 /* 구분선 (slotCount>=2) */

@@ -12,7 +12,8 @@ import com.prafta.app.req.req06.result.MyReqItemResult;
 /**
  * prafta-app-006: 본인 요청 목록 mapper.
  *
- * <p>모든 SQL 은 회사/사업장/사용자 스코프(CMPNY_CD + SITE_CD + USER_CD) + DEL_YN='N' 을 고정 적용하며,
+ * <p>모든 SQL 은 회사/사용자 스코프(CMPNY_CD + USER_CD) + DEL_YN='N' 을 고정 적용하며(SITE_CD 는
+ * 소속이동 후 과거 이력도 조회 가능하도록 필터에서 제외됨 — 작업지시서_소속이동-이력가시성-보정),
  * TB_USER_ATTD_REQ(REQ_TYPE IN '01'~'06','10', 시스템 코드 07/08/09 응답 차단)와
  * TB_LEAVE_CHANGE_REQUEST(근로자 본인 발의 연차 이동/삭제, reqType 합성값 'LC_MOVE'/'LC_DELETE')를
  * UNION ALL 로 통합한 파생 테이블(myReqUnionSource) 위에서 필터/정렬/페이징한다(prafta-내승인요청연차통합-1).

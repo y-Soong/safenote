@@ -161,7 +161,8 @@ public class AppReq06ServiceImpl implements AppReq06Service {
                 summaryLines,
                 reqDatetimeIso, reqDateDisplay,
                 processedAtIso, processedDateDisplay,
-                rejectReason
+                rejectReason,
+                r.siteCd(), r.siteNm()
         );
     }
 

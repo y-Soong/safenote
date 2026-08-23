@@ -58,6 +58,7 @@
       <AttendanceTodayCard
         v-if="activeTab === 'today'"
         :detail="todayDetail"
+        :current-site-cd="currentSiteCd"
         @action="onTodayAction"
       />
 
@@ -65,6 +66,7 @@
       <AttendanceWeekList
         v-else-if="activeTab === 'week'"
         :week="weekData"
+        :current-site-cd="currentSiteCd"
         @prev-week="onPrevWeek"
         @next-week="onNextWeek"
         @select-day="onSelectWeekDay"
@@ -80,7 +82,11 @@
           @select-month="onSelectMonth"
           @select-date="onSelectDate"
         />
-        <AttendanceDayDetailCard :detail="dayDetail" @action="onDayDetailAction" />
+        <AttendanceDayDetailCard
+          :detail="dayDetail"
+          :current-site-cd="currentSiteCd"
+          @action="onDayDetailAction"
+        />
       </template>
 
       <!-- 표준 빈 상태 (로드 완료했으나 표시할 근태가 없을 때) -->
@@ -152,6 +158,7 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { requestGps } from '@/utils/gpsBridge'
 import { loadKakaoMapScript } from '@/utils/kakaoMap'
 import { isDailyWorker } from '@/utils/employment'
+import { getCurrentSiteCd } from '@/utils/currentSite'
 // 소정-12(UI-E): 연차 기능 노출 판정 — 액션시트 "연차 신청/변경" 게이트.
 import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leaveFeature'
 import { dateToYmd, ymdToDate } from './attdFormat'
@@ -173,6 +180,9 @@ const showAlert = (message) => {
   window.alert(message)
   return Promise.resolve()
 }
+
+// 작업지시서_소속이동-이력가시성-보정 T3: 화면 체류 중 불변(세션 값) — ref 불필요.
+const currentSiteCd = getCurrentSiteCd()
 
 // 공통: confirm 폴백 (앱 전역 $confirm 우선, 없으면 window.confirm) — MainView 패턴 동일
 const askConfirm = async (message) => {

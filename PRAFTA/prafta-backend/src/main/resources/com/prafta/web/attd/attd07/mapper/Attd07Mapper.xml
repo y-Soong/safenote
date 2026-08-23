@@ -53,11 +53,16 @@
 	        </if>
 	    ),
 	
-	    /* 2. 대상 사용자 */
+	    /* 2. 대상 사용자 — 분기 A(현재 이 사업장 소속) UNION ALL 분기 B(이동자·레코드 기준).
+	       [소속이동-이력가시성] 관리자는 인가된 사업장(siteCd)에서 발생한 레코드를 근로자의
+	       현재 소속과 무관하게 조회할 수 있어야 한다(공통정책 §8.4.2 "타 사업장 조회 범위=전 부서"
+	       원칙의 연장). SITE_CD 는 두 분기 모두 #{siteCd} 리터럴로 고정 — 다운스트림 WORK_PLAN/
+	       ATTD_MGMT 조인 기준을 "조회 사업장"으로 통일한다. */
 	    target_user AS (
+	        /* 분기 A(기존 로직 그대로 — 무회귀 축) */
 	        SELECT
 	              U.CMPNY_CD
-	            , U.SITE_CD
+	            , #{siteCd}                AS SITE_CD
 	            , U.USER_CD
 	            , U.USER_ID
 	            , U.USER_NM
@@ -65,6 +70,7 @@
 	            , U.AUTH_CD
 	            , U.EMPLOYMENT_TYPE
 	            , NT.NODE_NM
+	            , U.SITE_CD                AS CURRENT_SITE_CD
 	        FROM TB_USER U
 	        INNER JOIN node_tree NT
 	            ON  U.CMPNY_CD = NT.CMPNY_CD
@@ -78,6 +84,84 @@
 	          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
 	        </if>
 	        <!-- 고용형태 필터: 일용직(DAILY) / 정규직(REGULAR, 미지정 null 포함) 분리 조회 -->
+	        <if test='"DAILY".equals(employmentType)'>
+	          AND U.EMPLOYMENT_TYPE = 'DAILY'
+	        </if>
+	        <if test='"REGULAR".equals(employmentType)'>
+	          AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE <![CDATA[ <> ]]> 'DAILY')
+	        </if>
+
+	        UNION ALL
+
+	        /* 분기 B(신규) — 현재는 다른 사업장 소속이지만, 조회 사업장(siteCd)·조회 월(workYm)에
+	           발생한 근태 또는 초과근무 레코드가 있는 사용자. 부서 스코프는 레코드 자체의 NODE_CD
+	           스냅샷으로 판정한다(TB_USER 의 "현재" NODE_CD 는 다른 사업장 기준이라 신뢰 불가 —
+	           NODE_CD 는 사업장마다 코드가 중복 사용됨). 탈퇴/비활성 사용자의 과거 레코드도
+	           마감 처리 책임상 포함한다(요청서 §1 사용자 확정 정책 — USE_YN/WITHDRAWAL_DATE 필터 없음).
+	           ⚠️ TB_USER_WORK_PLAN 은 NODE_CD 컬럼이 없어 존재 판정에 쓰지 않는다 — 스케줄만 있고
+	           이 사업장에서 근태/초과근무 기록이 전혀 없는 이동자는 이번 설계의 범위 밖이다. */
+	        SELECT
+	              U.CMPNY_CD
+	            , #{siteCd}                AS SITE_CD
+	            , U.USER_CD
+	            , U.USER_ID
+	            , U.USER_NM
+	            , REC.NODE_CD
+	            , U.AUTH_CD
+	            , U.EMPLOYMENT_TYPE
+	            , NT2.NODE_NM
+	            , U.SITE_CD                AS CURRENT_SITE_CD
+	        FROM TB_USER U
+	        INNER JOIN (
+	            /* [QA 재작업] 사용자당 서로 다른 NODE_CD 레코드가 있으면(조회 월 중 부서 2회 이상
+	               이동) 종전 DISTINCT(USER_CD, NODE_CD) 방식은 여러 행을 만들어 target_user 가
+	               중복됐다(캘린더/목록 뷰 "이슈" 배지 수치 부풀림 결함). ROW_NUMBER() 로 "이 사업장
+	               스코프(node_tree) 내 가장 최근 근태/초과근무 레코드" 1건만 사용자당 대표로 남긴다
+	               - 아래 INNER JOIN 이 항상 정확히 1행만 매칭. */
+	            SELECT LATEST.USER_CD, LATEST.NODE_CD
+	            FROM (
+	                SELECT
+	                      R.USER_CD
+	                    , R.NODE_CD
+	                    , ROW_NUMBER() OVER (PARTITION BY R.USER_CD ORDER BY R.EVT_YMD DESC) AS RN
+	                FROM (
+	                    SELECT A.USER_CD, A.NODE_CD, A.WORK_YMD AS EVT_YMD
+	                    FROM TB_USER_ATTD_MGMT A
+	                    INNER JOIN node_tree NTA
+	                        ON  NTA.CMPNY_CD = A.CMPNY_CD
+	                        AND NTA.NODE_CD  = A.NODE_CD
+	                    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	                      AND A.SITE_CD  = #{siteCd}
+	                      AND A.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+	                      AND A.DEL_YN   = 'N'
+	                      AND A.NODE_CD IS NOT NULL
+
+	                    UNION ALL
+
+	                    SELECT O.USER_CD, O.NODE_CD, O.WORK_YMD AS EVT_YMD
+	                    FROM TB_USER_OVERTIME_MGMT O
+	                    INNER JOIN node_tree NTO
+	                        ON  NTO.CMPNY_CD = O.CMPNY_CD
+	                        AND NTO.NODE_CD  = O.NODE_CD
+	                    WHERE O.CMPNY_CD = #{gvCmpnyCd}
+	                      AND O.SITE_CD  = #{siteCd}
+	                      AND O.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
+	                      AND O.DEL_YN   = 'N'
+	                      AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+	                      AND O.NODE_CD IS NOT NULL
+	                ) R
+	            ) LATEST
+	            WHERE LATEST.RN = 1
+	        ) REC
+	            ON REC.USER_CD = U.USER_CD
+	        INNER JOIN node_tree NT2
+	            ON  NT2.CMPNY_CD = U.CMPNY_CD
+	            AND NT2.NODE_CD  = REC.NODE_CD
+	        WHERE U.CMPNY_CD = #{gvCmpnyCd}
+	          AND U.SITE_CD  <![CDATA[ <> ]]> #{siteCd}
+	        <if test="userNm != null and userNm != ''">
+	          AND U.USER_NM LIKE CONCAT('%', #{userNm}, '%')
+	        </if>
 	        <if test='"DAILY".equals(employmentType)'>
 	          AND U.EMPLOYMENT_TYPE = 'DAILY'
 	        </if>
@@ -211,6 +295,10 @@
 	          ) THEN 'Y' ELSE 'N' END                                          AS fixedOtExemptYn
 	        , CAST(NULL AS CHAR(1))                                            AS fixedOtUnfulfilledYn
 	        , CAST(NULL AS SIGNED)                                             AS fixedOtActMinutes
+
+	        <!-- [소속이동이력가시성-01] "현재 타 사업장 소속" 배지용(신규) — record/SELECT 끝 위치 고정 -->
+	        , U.CURRENT_SITE_CD                                                AS currentSiteCd
+	        , CS.SITE_NM                                                       AS currentSiteNm
 
 	    FROM target_user U
 	    CROSS JOIN month_days D
@@ -360,7 +448,12 @@
 	        AND A2.WORK_YMD = D.WORK_YMD
 	        AND A2.WORK_SEQ = 2
 	        AND A2.DEL_YN   = 'N'
-	
+
+	    <!-- [소속이동이력가시성-01] 현재 소속 사업장명(배지 표기용) -->
+	    LEFT JOIN TB_SITE CS
+	        ON  CS.CMPNY_CD = U.CMPNY_CD
+	        AND CS.SITE_CD  = U.CURRENT_SITE_CD
+
 	    ORDER BY U.USER_CD, D.WORK_YMD
     </select>
     
@@ -834,13 +927,21 @@
 	    , SCH.FST_BRK_END_TIME                                             AS fstBrkEndTime
 	    , SCH.SEC_BRK_STR_TIME                                             AS secBrkStrTime
 	    , SCH.SEC_BRK_END_TIME                                             AS secBrkEndTime
+	    <!-- [소속이동이력가시성-03] "현재 타 사업장 소속" 배지용(신규). B.SITE_CD 가 곧 "현재 소속"
+	         (TB_USER B 는 이미 조인돼 있어 별도 서브쿼리 불필요) — record 끝 위치 고정. -->
+	    , B.SITE_CD                                                        AS currentSiteCd
+	    , CS.SITE_NM                                                       AS currentSiteNm
 	FROM TB_USER_ATTD_MGMT A
 		 INNER JOIN TB_USER B
 			ON (
 				A.CMPNY_CD = B.CMPNY_CD
 			AND A.USER_CD = B.USER_CD
 	        )
-	
+
+		 LEFT JOIN TB_SITE CS
+			ON  CS.CMPNY_CD = B.CMPNY_CD
+			AND CS.SITE_CD  = B.SITE_CD
+
 		 LEFT JOIN TB_USER_WORK_PLAN WP
 			ON  WP.CMPNY_CD = A.CMPNY_CD
 			AND WP.SITE_CD  = A.SITE_CD
@@ -2260,6 +2361,51 @@
       AND U.USER_CD         = #{userCd}
       AND U.USE_YN          = 'Y'
       AND U.WITHDRAWAL_DATE IS NULL
+    </select>
+
+    <!-- [소속이동-이력가시성 보안보완] read 전용 존재확인 — selectUserExistInCmpnySite(위) 는
+         "현재 이 사업장 소속 재직자"만 통과시킨다. write 8곳(OT/근태 등록·수정·반려 등)은 이 fail-closed
+         가드를 그대로 쓰는 게 안전하다는 security 판단(2026-08-23)에 따라 절대 이 신규 select 로
+         교체하지 않는다 — Attd07ServiceImpl.getDailyAttdDetails() (일자상세 팝업, read 전용) 에서만
+         사용한다.
+         T1(selectMonthlyAttdList 분기B)로 캘린더/목록에 "이동자"가 노출되도록 확장했는데, 그 사람을
+         클릭해 일자상세 팝업을 열면 위 selectUserExistInCmpnySite 가 항상 거부(ATTD_404_011)해서
+         "캘린더엔 뜨는데 상세를 못 여는" 공백이 있었다 — 이를 메우는 read 전용 대체 가드.
+         분기 A(현재 이 사업장 소속·재직, 위 select 와 동일) OR 분기 B(이 사업장에 TB_USER_ATTD_MGMT
+         또는 TB_USER_OVERTIME_MGMT 레코드가 존재 — selectMonthlyAttdList 분기B 와 동일한 존재판정
+         원칙, USE_YN/WITHDRAWAL_DATE 무관하게 포함) — 둘 중 하나라도 만족하면 통과. -->
+    <select id="selectUserVisibleInCmpnySiteForDailyDetail" resultType="int">
+    /* Attd07Mapper.selectUserVisibleInCmpnySiteForDailyDetail - read 전용 존재확인(일자상세 팝업) */
+    SELECT
+        CASE WHEN
+            EXISTS (
+                SELECT 1
+                FROM TB_USER U
+                WHERE U.CMPNY_CD        = #{cmpnyCd}
+                  AND U.SITE_CD         = #{siteCd}
+                  AND U.USER_CD         = #{userCd}
+                  AND U.USE_YN          = 'Y'
+                  AND U.WITHDRAWAL_DATE IS NULL
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM TB_USER_ATTD_MGMT A
+                WHERE A.CMPNY_CD = #{cmpnyCd}
+                  AND A.SITE_CD  = #{siteCd}
+                  AND A.USER_CD  = #{userCd}
+                  AND A.DEL_YN   = 'N'
+            )
+            OR EXISTS (
+                SELECT 1
+                FROM TB_USER_OVERTIME_MGMT O
+                WHERE O.CMPNY_CD  = #{cmpnyCd}
+                  AND O.SITE_CD   = #{siteCd}
+                  AND O.USER_CD   = #{userCd}
+                  AND O.DEL_YN    = 'N'
+                  AND O.OT_STATUS <![CDATA[ <> ]]> 'CANCELLED'
+            )
+        THEN 1 ELSE 0 END AS visibleCount
+    FROM DUAL
     </select>
 
     <!-- 대상 사용자가 일용직(EMPLOYMENT_TYPE='DAILY')인지 — 일용직 초과근무 등록 차단용. -->

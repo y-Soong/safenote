@@ -24,5 +24,7 @@ public record MyReqItemResponse(
         , String processedAt
         , String processedDateDisplay
         , String rejectReason
+        , String siteCd     // 작업지시서_소속이동-이력가시성-보정: 발의 당시 소속 사업장 코드.
+        , String siteName   // 사업장명(없으면 null — TB_SITE 미매치/삭제된 사업장 등 방어).
 ) {
 }

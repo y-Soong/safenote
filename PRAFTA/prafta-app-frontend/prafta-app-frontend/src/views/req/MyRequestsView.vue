@@ -56,6 +56,7 @@
           v-for="item in items"
           :key="item.reqId"
           :item="item"
+          :current-site-cd="currentSiteCd"
           @click="onCardClick(item)"
         />
         <!-- 무한 스크롤 sentinel -->
@@ -84,7 +85,11 @@
     <RequestSortSheet v-model="sortSheetOpen" :selected="sort" @apply="onApplySort" />
 
     <!-- 결재라인 상세 (PRAFTA-내승인요청결재라인-2) -->
-    <ApprovalLineDetailSheet v-model="approvalSheetOpen" :item="selectedItem" />
+    <ApprovalLineDetailSheet
+      v-model="approvalSheetOpen"
+      :item="selectedItem"
+      :current-site-cd="currentSiteCd"
+    />
 
     <!-- 인라인 SVG sprite (본 화면 전용) -->
     <svg width="0" height="0" class="req-sprite" aria-hidden="true" focusable="false">
@@ -114,6 +119,7 @@ import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { isDailyWorker } from '@/utils/employment'
+import { getCurrentSiteCd } from '@/utils/currentSite'
 
 import RequestFilterBar from './components/RequestFilterBar.vue'
 import RequestCard from './components/RequestCard.vue'
@@ -126,6 +132,9 @@ import ApprovalLineDetailSheet from './components/ApprovalLineDetailSheet.vue'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 작업지시서_소속이동-이력가시성-보정 T3: 화면 체류 중 불변(세션 값) — ref 불필요.
+const currentSiteCd = getCurrentSiteCd()
 
 // 공통: alert 폴백 (MainView 패턴 동일)
 const showAlert = (message) => {

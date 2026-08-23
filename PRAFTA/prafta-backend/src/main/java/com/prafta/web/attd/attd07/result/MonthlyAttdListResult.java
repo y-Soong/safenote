@@ -82,6 +82,13 @@ public record MonthlyAttdListResult(
     , String fixedOtUnfulfilledYn
       /** 그날 고정연장 실적(분, 실근태 ∩ 고정연장 — FixedOtMinutesUtils 파생). 고정연장 없는 타입은 null. */
     , Integer fixedOtActMinutes
+
+      /* ── [소속이동이력가시성-01] "현재 타 사업장 소속" 배지용(신규) ──
+         조회 사업장(siteCd)과 근로자의 현재 소속이 다를 때(이동자)만 값이 다르다. */
+      /** 근로자의 현재 소속 사업장코드(TB_USER.SITE_CD). */
+    , String currentSiteCd
+      /** 근로자의 현재 소속 사업장명. */
+    , String currentSiteNm
 ) {
 
     /**
@@ -101,6 +108,7 @@ public record MonthlyAttdListResult(
             , attd1OutsideYn, attd2OutsideYn
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
+            , currentSiteCd, currentSiteNm
         );
     }
 }

@@ -29,5 +29,10 @@ public record Weekly52hListResult(
          * 포함되어 있어 "총량 가산"이 아니라 "연장 축 분류" 표시다(주 12h 축 관측용).
          */
         , long actualOtMinutes
+
+        /* [소속이동이력가시성-02] "현재 타 사업장 소속" 배지용(신규) — TargetUserResult 의 동명
+           필드를 서비스 계층이 그대로 전달한다(조회 사업장과 다를 때만 값이 다름). */
+        , String currentSiteCd
+        , String currentSiteNm
 ) {
 }

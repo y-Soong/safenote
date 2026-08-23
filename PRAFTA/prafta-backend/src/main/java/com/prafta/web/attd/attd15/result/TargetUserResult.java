@@ -17,5 +17,9 @@ public record TargetUserResult(
         , String userId
         , String userNm
         , String deptNm
+        /* [소속이동이력가시성-02] "현재 타 사업장 소속" 배지용(신규). 조회 사업장(siteCd)과
+           근로자의 현재 소속이 다를 때(이동자)만 값이 다르다. SELECT 끝과 동일 순서(위치 기반 매핑). */
+        , String currentSiteNm
+        , String currentSiteCd
 ) {
 }

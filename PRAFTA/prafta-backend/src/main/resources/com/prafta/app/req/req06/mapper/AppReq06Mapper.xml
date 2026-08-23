@@ -27,9 +27,10 @@
                  , A.PROCESS_COMMENT AS processComment
                  , A.PROCESS_DATE    AS processDate
                  , A.INSERT_DATE     AS insertDate
+                 <!-- 작업지시서_소속이동-이력가시성-보정: 발의 당시 소속 사업장(레코드 자체 SITE_CD). 위치매핑 14번째 컬럼. -->
+                 , A.SITE_CD         AS siteCd
               FROM TB_USER_ATTD_REQ A
              WHERE A.CMPNY_CD = #{cmpnyCd}
-               AND A.SITE_CD  = #{siteCd}
                AND A.USER_CD  = #{userCd}
                AND A.DEL_YN   = 'N'
                AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
@@ -55,12 +56,12 @@
                  , R.REJECT_REASON AS processComment
                  , R.CONFIRM_DATE  AS processDate
                  , R.INSERT_DATE   AS insertDate
+                 , R.SITE_CD       AS siteCd
               FROM TB_LEAVE_CHANGE_REQUEST R
               LEFT JOIN TB_USER_LEAVE_USE LU
                 ON LU.CMPNY_CD = R.CMPNY_CD
                AND LU.LEAVE_ID = R.TARGET_LEAVE_ID
              WHERE R.CMPNY_CD       = #{cmpnyCd}
-               AND R.SITE_CD        = #{siteCd}
                AND R.TARGET_USER_CD = #{userCd}
                AND R.INITIATOR_TYPE = 'WORKER'
                AND R.DEL_YN         = 'N'
@@ -128,7 +129,13 @@
         , U.processComment AS processComment
         , U.processDate    AS processDate
         , U.insertDate     AS insertDate
+        <!-- 작업지시서_소속이동-이력가시성-보정: 발의 당시 소속(레코드 SITE_CD) + 사업장명. 위치매핑 마지막 2컬럼. -->
+        , U.siteCd         AS siteCd
+        , ST.SITE_NM       AS siteNm
       FROM <include refid="myReqUnionSource"/>
+      LEFT JOIN TB_SITE ST
+        ON  ST.CMPNY_CD = #{cmpnyCd}
+        AND ST.SITE_CD  = U.siteCd
     <include refid="myReqWhere"/>
     <choose>
         <when test="sort == 'RECENT'">
@@ -168,7 +175,6 @@
     SELECT COUNT(1)
       FROM TB_USER_ATTD_REQ A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.REQ_ID   = #{reqId}
        AND A.DEL_YN   = 'N'

@@ -666,9 +666,12 @@ public class Attd07ServiceImpl implements Attd07Service {
 
         // SEC-019 - cross-user IDOR 재검증.
         // 사업장 인가는 위 assertSiteAccess 로 완료.
-        // 여기서는 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 차원에서 다시 확인한다
-        // (UpdateUserOvertimeRequestParam SEC-017 과 동일한 mapper 재사용).
-        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+        // 여기서는 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 차원에서 다시 확인한다.
+        // [소속이동-이력가시성 보안보완] 이 endpoint 는 read 전용(일자상세 팝업)이라, write 8곳이 쓰는
+        // selectUserExistInCmpnySite("현재 이 사업장 소속 재직자"만 허용) 대신 소속이동자까지 포함하는
+        // selectUserVisibleInCmpnySiteForDailyDetail 을 쓴다 — 그래야 T1(selectMonthlyAttdList 분기B)
+        // 로 캘린더에 노출된 이동자를 클릭해도 일자상세 팝업이 정상 진입된다(write 경로는 절대 미변경).
+        int userExists = attd07Mapper.selectUserVisibleInCmpnySiteForDailyDetail(
                 param.gvCmpnyCd(), param.siteCd(), param.userCd());
         if (userExists <= 0) {
             log.warn("daily-attd-details rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
@@ -714,8 +717,8 @@ public class Attd07ServiceImpl implements Attd07Service {
         List<DailyOvertimeResult> dailyOvertimeResultList = attd07Mapper.selectDailyOvertimeList(DailyAttdDetailsQuery.from(param));
 
         // PRAFTA-APP-018-F: 그날 확정 연차 사용내역(자동확정/직접 포함, 미처리 결재대기는 제외 — D 카드 소유).
-        //   진입부 2단 권한 가드(canManageNode + selectUserExistInCmpnySite) 통과 후 호출되므로
-        //   추가 권한 코드 불필요. 쿼리 WHERE 의 CMPNY/SITE/USER 스코프로 cross-site IDOR 이중 차단.
+        //   진입부 2단 권한 가드(canManageNode + selectUserVisibleInCmpnySiteForDailyDetail) 통과 후
+        //   호출되므로 추가 권한 코드 불필요. 쿼리 WHERE 의 CMPNY/SITE/USER 스코프로 cross-site IDOR 이중 차단.
         List<ConfirmedLeaveResult> confirmedLeaveResultList = attd07Mapper.selectDailyConfirmedLeave(DailyAttdDetailsQuery.from(param));
 
         // 그날 걸려 있는 연차 변경(이동/삭제) 활성 요청 — 출발일·이동대상일 양쪽에서 매칭.

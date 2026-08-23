@@ -153,6 +153,12 @@
                   <div class="m-user-name">
                     {{ u.name }}
                     <span v-if="u.isDaily" class="badge-daily">일일사용자</span>
+                    <span
+                      v-if="u.currentSiteCd && u.currentSiteCd !== siteCd"
+                      class="badge-other-site"
+                    >
+                      타 사업장 소속 · {{ u.currentSiteNm }}
+                    </span>
                   </div>
                   <div class="m-user-meta">
                     {{ u.userId }} · {{ u.dept }} · {{ u.role }}
@@ -257,6 +263,12 @@
               <div class="ui-top">
                 <span class="ui-name">{{ u.name }}</span>
                 <span v-if="u.isDaily" class="badge-daily">일일사용자</span>
+                <span
+                  v-if="u.currentSiteCd && u.currentSiteCd !== siteCd"
+                  class="badge-other-site"
+                >
+                  타 사업장 소속 · {{ u.currentSiteNm }}
+                </span>
                 <span v-if="u.issues > 0" class="ui-badge-issue">{{
                   u.issues
                 }}</span>
@@ -279,6 +291,15 @@
                   <span v-if="selectedUser.isDaily" class="badge-daily"
                     >일일사용자</span
                   >
+                  <span
+                    v-if="
+                      selectedUser.currentSiteCd &&
+                      selectedUser.currentSiteCd !== siteCd
+                    "
+                    class="badge-other-site"
+                  >
+                    타 사업장 소속 · {{ selectedUser.currentSiteNm }}
+                  </span>
                 </div>
                 <div class="a07-umeta">
                   {{ selectedUser.userId }} · {{ selectedUser.dept }} ·
@@ -1463,6 +1484,9 @@ const buildFallback = (user, record) => ({
   plan1End: record.plan1End ?? "",
   plan2Start: record.plan2Start ?? "",
   plan2End: record.plan2End ?? "",
+  // [소속이동이력가시성-03] 팝업 자체 조회 완료 전에도 배지가 바로 보이도록 선세팅
+  currentSiteCd: user.currentSiteCd ?? "",
+  currentSiteNm: user.currentSiteNm ?? "",
 });
 
 const fnOpenDayDetailPop = (user, d) => {
@@ -1546,6 +1570,9 @@ const fnBindResponse = (data) => {
         // 고용형태가 DAILY 인 경우 일일사용자(일용직)로 표시 구분
         isDaily: r.employmentType === "DAILY",
         issues: 0,
+        // [소속이동이력가시성-03] 현재 소속(이동자면 조회 사업장과 다름) — "타 사업장 소속" 배지 판정용
+        currentSiteCd: r.currentSiteCd,
+        currentSiteNm: r.currentSiteNm,
       });
     }
 
@@ -1892,6 +1919,23 @@ table.a07-matrix th.sticky-left.sticky-top {
   color: var(--color-text-muted, #6b7280);
   background: var(--color-bg-muted, #f3f4f6);
   border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  vertical-align: middle;
+}
+
+/* [소속이동이력가시성-03] "현재 타 사업장 소속" 배지 — CSS 변수만 사용(.badge-daily 패턴 재사용).
+   조회 사업장과 근로자의 "현재" 소속이 다를 때만(이동 전 이력을 보고 있음을 알림). */
+.badge-other-site {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 5px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: 4px;
   vertical-align: middle;
 }

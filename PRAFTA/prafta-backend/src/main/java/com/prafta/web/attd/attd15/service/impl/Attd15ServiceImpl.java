@@ -224,6 +224,8 @@ public class Attd15ServiceImpl implements Attd15Service {
                     , classifyStatus(actualMinutes)
                     , allMonthsClosed ? "N" : "Y"
                     , actualOtMinutes
+                    , u.currentSiteCd()
+                    , u.currentSiteNm()
             ));
         }
 

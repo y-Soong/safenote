@@ -12,7 +12,11 @@
     <!-- 본체: 오늘 카드 컴포넌트 재사용 (3행 정보 구조 동일).
          본체의 "수정 요청" emit('action', {type:'requestModify'}) 가 그대로 상위로 전달되어
          MyAttendanceView.onDayDetailAction 에서 4액션 시트를 연다. -->
-    <AttendanceTodayCard :detail="detail" @action="emit('action', $event)" />
+    <AttendanceTodayCard
+      :detail="detail"
+      :current-site-cd="currentSiteCd"
+      @action="emit('action', $event)"
+    />
   </div>
 </template>
 
@@ -24,6 +28,11 @@ defineProps({
   detail: {
     type: Object,
     default: null,
+  },
+  // 작업지시서_소속이동-이력가시성-보정 T3: MyAttendanceView → 본 컴포넌트 → AttendanceTodayCard 그대로 전달.
+  currentSiteCd: {
+    type: String,
+    default: '',
   },
 })
 

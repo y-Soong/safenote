@@ -362,6 +362,20 @@ public interface Attd07Mapper {
             @Param("userCd") String userCd);
 
     /**
+     * [소속이동-이력가시성 보안보완] read 전용 존재확인 — {@link #selectUserExistInCmpnySite} 는
+     * "현재 이 사업장 소속 재직자"만 통과시켜, T1({@code selectMonthlyAttdList} 분기B)로 캘린더에
+     * 노출되는 소속이동자를 일자상세 팝업(read 전용, {@code getDailyAttdDetails})에서 열면 항상
+     * 거부되는 공백이 있었다. write 경로 8곳은 여전히 {@link #selectUserExistInCmpnySite}를 그대로
+     * 쓴다(fail-closed 유지가 안전하다는 security 판단 — 이 메서드로 교체 금지).
+     * <p>분기 A(현재 이 사업장 소속·재직) OR 분기 B(이 사업장 TB_USER_ATTD_MGMT/TB_USER_OVERTIME_MGMT
+     * 레코드 존재 — USE_YN/WITHDRAWAL_DATE 무관) 중 하나라도 만족하면 1, 아니면 0을 반환한다.
+     */
+    int selectUserVisibleInCmpnySiteForDailyDetail(
+            @Param("cmpnyCd") String cmpnyCd,
+            @Param("siteCd") String siteCd,
+            @Param("userCd") String userCd);
+
+    /**
      * 대상 사용자가 일용직(EMPLOYMENT_TYPE='DAILY')인지 여부 — 일치 시 1 이상 반환.
      * 초과근무 등록 경로(updateUserOvertimeRequests)에서 일용직 OT 등록을 fail-closed 로 차단하는 데 사용한다.
      */

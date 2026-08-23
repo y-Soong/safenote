@@ -204,7 +204,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         List<AppliedOvertimeItem> appliedOvertimes =
                 toOvertimeItems(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
 
-        ScheduleResult sched = schedules.isEmpty() ? null : schedules.get(0);
+        // 작업지시서_소속이동-이력가시성-보정(QA High 보정): 동일 targetYmd 에 SITE_CD 가 다른 WP 행이
+        //   공존할 수 있어(소속이동 시 구 사업장 DEFAULT_SCH 행 잔존 등) 첫 행을 그대로 채택하면 실행계획에
+        //   따라 비결정적으로 소실된다. indexSchedule 과 동일한 우선순위 규칙으로 결정론적으로 선택한다.
+        ScheduleResult sched = indexSchedule(schedules, siteCd).get(targetYmd);
         // prafta-com-008-E-2: 연차일 판정을 work_plan(LEAVE_CD) → leave_use(종일 확정) 로 전환.
         boolean isLeaveDay = isFullDayLeave(dayLeave);
         // 작업지시서_연차변경화면_진입버튼: 연차 이동 가능 여부(부분연차 포함, isLeaveDay 무관).
@@ -218,10 +221,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         boolean hasScheduleDay = sched != null && sched.schCd() != null && !isLeaveDay;
 
         // workSeq -> 근태레코드 매핑.
-        Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
-        for (AttdRecordResult a : attds) {
-            attdBySeq.putIfAbsent(a.workSeq(), a);
-        }
+        // 작업지시서_소속이동-이력가시성-보정(QA High 보정): 동일 targetYmd+workSeq 에 SITE_CD 가
+        //   다른 근태행이 공존할 수 있어 putIfAbsent(선착순)면 실행계획에 따라 비결정적으로 소실된다.
+        //   세션 SITE_CD 일치 우선 → 동률이면 최신 갱신시각 우선(mergeAttdBySeq)으로 결정론화한다.
+        Map<Integer, AttdRecordResult> attdBySeq = mergeAttdBySeq(attds, siteCd);
 
         // prafta-app-014: 화면/상태/액션의 단일 기준 = effectiveSlotCount(1~2).
         //   연차일은 슬롯 비대상(0). 스케줄도 출근기록도 없는 순수 휴무일도 0(종전과 동일하게 슬롯 미생성).
@@ -308,6 +311,19 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             dayType = DAY_OFF;
         }
 
+        // 작업지시서_소속이동-이력가시성-보정 T3 데이터 소스: 그 날짜의 "당시 소속" — 실 근태기록(SITE_CD)이
+        // 있으면 그 값을 우선(1구간 없으면 2구간), 없으면 그 날 배정 스케줄(WP.SITE_CD)로 폴백. 둘 다 없으면 null(배지 미노출).
+        AttdRecordResult primaryAttdForSite = attdBySeq.get(1) != null ? attdBySeq.get(1) : attdBySeq.get(2);
+        String recordSiteCd = null;
+        String recordSiteName = null;
+        if (primaryAttdForSite != null && StringUtils.hasText(primaryAttdForSite.siteCd())) {
+            recordSiteCd = primaryAttdForSite.siteCd();
+            recordSiteName = primaryAttdForSite.siteNm();
+        } else if (sched != null && StringUtils.hasText(sched.siteCd())) {
+            recordSiteCd = sched.siteCd();
+            recordSiteName = sched.siteNm();
+        }
+
         return MyAttendanceDayResponse.builder()
                 .workDate(targetYmd)
                 .siteName(siteName)
@@ -345,6 +361,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .fixedOtWindows(toFixedOtWindows(targetYmd, sched))
                 // prafta-app-030 후속: 그날 적용(승인) 초과근무 목록(없으면 빈 리스트).
                 .appliedOvertimes(appliedOvertimes)
+                // 작업지시서_소속이동-이력가시성-보정 T3: "당시 소속" 배지 데이터 소스.
+                .recordSiteCd(recordSiteCd)
+                .recordSiteName(recordSiteName)
                 .build();
     }
 
@@ -557,7 +576,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         AttdRangeQuery q = new AttdRangeQuery(param.cmpnyCd(), param.siteCd(), param.userCd(), startYmd, endYmd);
 
-        Map<String, ScheduleResult> schByYmd = indexSchedule(nullSafe(appAttd01Mapper.selectScheduleByRange(q)));
+        // 작업지시서_소속이동-이력가시성-보정(QA High 보정): 세션 SITE_CD 를 넘겨 동일 WORK_YMD 다건
+        //   공존 시 결정론적으로 병합한다(indexSchedule 참조).
+        Map<String, ScheduleResult> schByYmd =
+                indexSchedule(nullSafe(appAttd01Mapper.selectScheduleByRange(q)), param.siteCd());
         Map<String, List<AttdRecordResult>> attdByYmd = indexAttd(nullSafe(appAttd01Mapper.selectAttdByRange(q)));
         Map<String, HolidayResult> holidayByYmd = indexHoliday(nullSafe(appAttd01Mapper.selectHolidaysByRange(q)));
         List<LeaveUseResult> weekLeaves = nullSafe(appAttd01Mapper.selectLeaveUseByRange(q));
@@ -602,8 +624,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             boolean hasSchCd = sched != null && sched.schCd() != null && !isLeaveDay;
 
             List<AttdRecordResult> dayAttds = attdByYmd.getOrDefault(ymd, Collections.emptyList());
-            Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
-            for (AttdRecordResult a : dayAttds) attdBySeq.putIfAbsent(a.workSeq(), a);
+            // 작업지시서_소속이동-이력가시성-보정(QA High 보정): mergeAttdBySeq 로 결정론화(day 상세와 동일 규칙).
+            Map<Integer, AttdRecordResult> attdBySeq = mergeAttdBySeq(dayAttds, param.siteCd());
 
             // prafta-app-014: 주간 요약/합계/상태도 effective 기준으로 일관화(1구간 2회 출근 반영).
             int slotCount = isLeaveDay ? 0 : effectiveSlotCount(isTwoSlot, hasSchCd, attdBySeq);
@@ -631,6 +653,18 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
             // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계/목록(표시 전용). 없으면 0/빈 리스트.
             List<RangeOvertimeResult> dayOvertimes = overtimeByYmd.get(ymd);
+
+            // 작업지시서_소속이동-이력가시성-보정 T3 데이터 소스: buildDayResponse 와 동일 규칙(실 근태 우선/스케줄 폴백).
+            AttdRecordResult primaryAttdForSite = attdBySeq.get(1) != null ? attdBySeq.get(1) : attdBySeq.get(2);
+            String recordSiteCd = null;
+            String recordSiteName = null;
+            if (primaryAttdForSite != null && StringUtils.hasText(primaryAttdForSite.siteCd())) {
+                recordSiteCd = primaryAttdForSite.siteCd();
+                recordSiteName = primaryAttdForSite.siteNm();
+            } else if (sched != null && StringUtils.hasText(sched.siteCd())) {
+                recordSiteCd = sched.siteCd();
+                recordSiteName = sched.siteNm();
+            }
 
             days.add(WeekDayResponse.builder()
                     .workYmd(ymd)
@@ -662,6 +696,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                     // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분 + 항목 목록.
                     .overtimeMinutes(sumOvertimeMinutes(dayOvertimes))
                     .overtimes(toOvertimeItems(dayOvertimes))
+                    // 작업지시서_소속이동-이력가시성-보정 T3: "당시 소속" 배지 데이터 소스.
+                    .recordSiteCd(recordSiteCd)
+                    .recordSiteName(recordSiteName)
                     .build());
         }
 
@@ -888,7 +925,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         AttdRangeQuery q = new AttdRangeQuery(param.cmpnyCd(), param.siteCd(), param.userCd(), fromYmd, toYmd);
 
-        Map<String, ScheduleResult> schByYmd = indexSchedule(nullSafe(appAttd01Mapper.selectScheduleByRange(q)));
+        // 작업지시서_소속이동-이력가시성-보정(QA High 보정): 세션 SITE_CD 를 넘겨 동일 WORK_YMD 다건
+        //   공존 시 결정론적으로 병합한다(indexSchedule 참조).
+        Map<String, ScheduleResult> schByYmd =
+                indexSchedule(nullSafe(appAttd01Mapper.selectScheduleByRange(q)), param.siteCd());
         Map<String, List<AttdRecordResult>> attdByYmd = indexAttd(nullSafe(appAttd01Mapper.selectAttdByRange(q)));
         Map<String, HolidayResult> holidayByYmd = indexHoliday(nullSafe(appAttd01Mapper.selectHolidaysByRange(q)));
         Map<String, LeaveUseResult> leaveByYmd = expandLeave(nullSafe(appAttd01Mapper.selectLeaveUseByRange(q)), fromYmd, toYmd);
@@ -925,8 +965,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             boolean hasSchCd = sched != null && sched.schCd() != null && !isLeaveDay;
 
             List<AttdRecordResult> dayAttds = attdByYmd.getOrDefault(ymd, Collections.emptyList());
-            Map<Integer, AttdRecordResult> attdBySeq = new HashMap<>();
-            for (AttdRecordResult a : dayAttds) attdBySeq.putIfAbsent(a.workSeq(), a);
+            // 작업지시서_소속이동-이력가시성-보정(QA High 보정): mergeAttdBySeq 로 결정론화(day/week 와 동일 규칙).
+            Map<Integer, AttdRecordResult> attdBySeq = mergeAttdBySeq(dayAttds, param.siteCd());
 
             // prafta-app-014: 월간도 effective 기준(처리필요/합계에 1구간 2회 출근 반영).
             int slotCount = isLeaveDay ? 0 : effectiveSlotCount(isTwoSlot, hasSchCd, attdBySeq);
@@ -1742,10 +1782,72 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         }
     }
 
-    private Map<String, ScheduleResult> indexSchedule(List<ScheduleResult> list) {
+    /**
+     * WORK_YMD -> 스케줄(근무계획) 매핑.
+     *
+     * <p>작업지시서_소속이동-이력가시성-보정(QA High 보정): TB_USER_WORK_PLAN 은 (CMPNY_CD, SITE_CD,
+     *   USER_CD, WORK_YMD) 복합 PK 라 소속이동 시 구 사업장 DEFAULT_SCH 행이 정리되지 않으면 동일
+     *   WORK_YMD 에 SITE_CD 가 다른 행이 공존할 수 있다(실측: 개발 DB 확인). 종전 putIfAbsent(선착순,
+     *   ORDER BY WORK_YMD 뿐인 SQL 반환 순서 의존)는 실행계획에 따라 비결정적으로 한쪽을 조용히 버렸다.
+     *   {@code sessionSiteCd}(JWT 캐노니컬라이즈된 현재 소속) 와 일치하는 행을 최우선으로 선택하고,
+     *   둘 다 일치/불일치가 같으면 {@link ScheduleResult#effectiveDtime()}(최신 갱신시각) 이 큰 쪽을
+     *   선택해 결과를 결정론적으로 고정한다.
+     */
+    private Map<String, ScheduleResult> indexSchedule(List<ScheduleResult> list, String sessionSiteCd) {
         Map<String, ScheduleResult> map = new HashMap<>();
-        for (ScheduleResult s : list) map.putIfAbsent(s.workYmd(), s);
+        for (ScheduleResult s : list) {
+            ScheduleResult current = map.get(s.workYmd());
+            if (current == null || prefersCandidate(
+                    s.siteCd(), s.effectiveDtime(), current.siteCd(), current.effectiveDtime(), sessionSiteCd)) {
+                map.put(s.workYmd(), s);
+            }
+        }
         return map;
+    }
+
+    /**
+     * WORK_SEQ -> 근태레코드 매핑(하루치 리스트 대상).
+     *
+     * <p>작업지시서_소속이동-이력가시성-보정(QA High 보정): TB_USER_ATTD_MGMT 는 ATTD_ID 가 PK 라
+     *   SITE_CD 가 아니므로, 동일 WORK_YMD+WORK_SEQ 에 SITE_CD 가 다른 행이 공존할 수 있다(실측:
+     *   개발 DB 확인). indexSchedule 과 동일한 우선순위 규칙(세션 SITE_CD 일치 우선 → 최신 갱신시각)
+     *   으로 결정론적으로 병합한다.
+     */
+    private Map<Integer, AttdRecordResult> mergeAttdBySeq(List<AttdRecordResult> list, String sessionSiteCd) {
+        Map<Integer, AttdRecordResult> map = new HashMap<>();
+        for (AttdRecordResult a : list) {
+            AttdRecordResult current = map.get(a.workSeq());
+            if (current == null || prefersCandidate(
+                    a.siteCd(), a.effectiveDtime(), current.siteCd(), current.effectiveDtime(), sessionSiteCd)) {
+                map.put(a.workSeq(), a);
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 동일 키(WORK_YMD 또는 WORK_YMD+WORK_SEQ)에 SITE_CD 가 다른 후보가 공존할 때의 결정론적 우선순위.
+     *
+     * <p>① 세션 SITE_CD(sessionSiteCd)와 일치하는 후보를 우선(현재 소속 기준 표시가 자연스럽다).
+     *   ② 일치 여부가 같으면(둘 다 일치 또는 둘 다 불일치) {@code effectiveDtime}(UPDATE_DATE 우선,
+     *   없으면 INSERT_DATE) 이 더 최신인 후보를 우선(더 최근에 반영된 값이 실제에 더 가깝다고 본다).
+     *   ③ effectiveDtime 까지 동률(또는 둘 다 null)이면 기존 선택을 유지(안정적 선입 유지, 회귀 최소화).
+     */
+    private boolean prefersCandidate(
+            String candidateSiteCd, java.time.LocalDateTime candidateDtime,
+            String currentSiteCd, java.time.LocalDateTime currentDtime, String sessionSiteCd) {
+        boolean candidateMatches = sessionSiteCd != null && sessionSiteCd.equals(candidateSiteCd);
+        boolean currentMatches = sessionSiteCd != null && sessionSiteCd.equals(currentSiteCd);
+        if (candidateMatches != currentMatches) {
+            return candidateMatches;
+        }
+        if (candidateDtime == null) {
+            return false;
+        }
+        if (currentDtime == null) {
+            return true;
+        }
+        return candidateDtime.isAfter(currentDtime);
     }
 
     private Map<String, List<AttdRecordResult>> indexAttd(List<AttdRecordResult> list) {

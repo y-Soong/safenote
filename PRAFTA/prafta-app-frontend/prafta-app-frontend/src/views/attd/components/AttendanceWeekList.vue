@@ -46,6 +46,7 @@
           <span v-else-if="isLeave(day)" class="bd bd-w">연차</span>
           <span v-else-if="isWorkDay(day)" class="bd bd-n">{{ planShortCode(day) }}</span>
           <span v-if="day.holidayName" class="bd bd-h">{{ day.holidayName }}</span>
+          <span v-if="showSiteBadge(day)" class="bd bd-site">{{ siteBadgeText(day) }}</span>
           <!-- 초과근무 있는 날 작은 배지(info 톤). overtimeMinutes>0 일 때만. -->
           <span v-if="hasOvertime(day)" class="bd bd-ot">초과</span>
           <span class="db__name" :class="{ 'db__name--muted': isOffDay(day) }">{{
@@ -136,9 +137,24 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // 작업지시서_소속이동-이력가시성-보정 T3.
+  currentSiteCd: {
+    type: String,
+    default: '',
+  },
 })
 
 defineEmits(['prev-week', 'next-week', 'select-day'])
+
+// day.recordSiteCd(T2 응답 확장)가 현재 사업장과 다를 때만 배지 노출.
+const showSiteBadge = (day) => {
+  const rc = day && day.recordSiteCd
+  return !!rc && !!props.currentSiteCd && rc !== props.currentSiteCd
+}
+const siteBadgeText = (day) => {
+  const nm = day && (day.recordSiteName || day.recordSiteCd)
+  return nm ? `당시 소속: ${nm}` : ''
+}
 
 const days = computed(() => (props.week && props.week.days) || [])
 const summary = computed(() => (props.week && props.week.summary) || {})
@@ -424,6 +440,11 @@ const actualText = computed(() => minutesToHhMm(summary.value.actualWorkMinutes)
 .bd-ot {
   background: var(--color-info-tint);
   color: var(--color-info);
+}
+.bd-site {
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
 }
 /* PRAFTA_COM_002-B-1: 연차 마커 옆 "요청중" 배지(기존 .bd .bd-w 톤 재사용). 마커 텍스트와 간격/정렬. */
 .lv-pending-bd {

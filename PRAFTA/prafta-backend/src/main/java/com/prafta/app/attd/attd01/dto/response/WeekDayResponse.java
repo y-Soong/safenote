@@ -63,4 +63,8 @@ public class WeekDayResponse {
     // prafta-app-030 후속: 그날 적용(승인) 초과근무 합계 분(없으면 0) + 항목 목록(없으면 빈 리스트). 표시 전용.
     private final int overtimeMinutes;
     private final List<AppliedOvertimeItem> overtimes;
+
+    // 작업지시서_소속이동-이력가시성-보정 T3: 동일 계약(MyAttendanceDayResponse.recordSiteCd/recordSiteName 참조).
+    private final String recordSiteCd;
+    private final String recordSiteName;
 }

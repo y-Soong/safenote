@@ -126,7 +126,15 @@
               <tr v-for="r in rows" :key="r.userCd">
                 <td>{{ r.siteNm }}</td>
                 <td>{{ r.nodeNm }}</td>
-                <td>{{ r.userNm }} ({{ r.userId }})</td>
+                <td>
+                  {{ r.userNm }} ({{ r.userId }})
+                  <span
+                    v-if="r.currentSiteCd && r.currentSiteCd !== siteCd"
+                    class="a15-other-site-badge"
+                  >
+                    타 사업장 소속 · {{ r.currentSiteNm }}
+                  </span>
+                </td>
                 <td>
                   {{ fmtYmdDisplay(r.weekStartYmd) }} ~
                   {{ fmtYmdDisplay(r.weekEndYmd) }}
@@ -680,6 +688,20 @@ onMounted(() => {
 
 /* 잠정치 보조 뱃지 — 중립색(마감 전 데이터임을 알리는 정보성 표식, 위험도색과 무관) */
 .a15-provisional {
+  display: inline-block;
+  margin-left: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border-strong);
+}
+
+/* [소속이동이력가시성-04] "현재 타 사업장 소속" 배지 — .a15-provisional 과 동일한
+   중립 정보성 톤(CSS 변수만 사용). */
+.a15-other-site-badge {
   display: inline-block;
   margin-left: 0.3rem;
   padding: 0.1rem 0.4rem;

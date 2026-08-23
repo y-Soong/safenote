@@ -12,6 +12,9 @@
             <div class="a07pop-uline1">
               {{ headerUser.name }}
               <span class="a07pop-track">{{ headerUser.track }}</span>
+              <span v-if="headerUser.otherSiteNm" class="a07pop-other-site">
+                타 사업장 소속 · {{ headerUser.otherSiteNm }}
+              </span>
               <span class="a07pop-meta">{{ headerUser.deptRole }}</span>
             </div>
             <div class="a07pop-uline2">{{ headerDate }}</div>
@@ -1433,10 +1436,13 @@ const isDailyWorker = computed(
 const headerUser = computed(() => {
   const u = userInfo.value || {};
   const role = u.authNm || u.authCd || u.role || "";
+  // [소속이동이력가시성-03] 조회 중인 사업장(siteCd_p)과 현재 소속이 다를 때만 배지 노출
+  const isOtherSite = !!u.currentSiteCd && u.currentSiteCd !== props.siteCd_p;
   return {
     name: u.userNm || u.name || "—",
     track: isDailyWorker.value ? "일용" : "정규",
     deptRole: role ? `· ${role}` : "",
+    otherSiteNm: isOtherSite ? u.currentSiteNm : null,
   };
 });
 
@@ -3458,6 +3464,9 @@ const fnSearch = async () => {
     authCd: f.authCd ?? "",
     authNm: f.authNm ?? "",
     employmentType: f.employmentType ?? "",
+    // [소속이동이력가시성-03] 현재 소속(이동자면 조회 사업장과 다름) — "타 사업장 소속" 배지 판정용
+    currentSiteCd: f.currentSiteCd ?? "",
+    currentSiteNm: f.currentSiteNm ?? "",
   };
   record.value = {
     plan1Start: f.plan1Start ?? "",
@@ -3502,6 +3511,11 @@ const fnSearch = async () => {
             authNm: d.authNm ?? userInfo.value.authNm,
             employmentType:
               d.employmentType ?? userInfo.value.employmentType ?? "",
+            // [소속이동이력가시성-03] 현재 소속(이동자면 조회 사업장과 다름)
+            currentSiteCd:
+              d.currentSiteCd ?? userInfo.value.currentSiteCd ?? "",
+            currentSiteNm:
+              d.currentSiteNm ?? userInfo.value.currentSiteNm ?? "",
           };
         }
         record.value = {
@@ -3618,6 +3632,19 @@ onMounted(() => {
   font-weight: 700;
   background: #dcfce7;
   color: #15803d;
+}
+/* [소속이동이력가시성-03] "현재 타 사업장 소속" 배지 — CSS 변수만 사용
+   (.a07pop-track 은 원본이 하드코딩 hex 라 참조하지 않음, 톤은 인접 배치만 재사용). */
+.a07pop-other-site {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-muted, #6b7280);
+  border: 1px solid var(--color-border-strong, #d1d5db);
 }
 .a07pop-close {
   width: 36px;

@@ -1,5 +1,7 @@
 package com.prafta.app.attd.attd01.result;
 
+import java.time.LocalDateTime;
+
 /**
  * prafta-app-002: 사용자 근무계획 + 스케줄 정의 조인 결과.
  *
@@ -33,5 +35,15 @@ public record ScheduleResult(
     , String preFixedOtEndTime
     , String fixedOtStrTime
     , String fixedOtEndTime
+
+    // 작업지시서_소속이동-이력가시성-보정: 그 근무일 배정 당시 사업장.
+    , String siteCd
+    , String siteNm
+
+    // 작업지시서_소속이동-이력가시성-보정(QA High 보정): 동일 WORK_YMD 에 SITE_CD 가 다른
+    //   TB_USER_WORK_PLAN 행이 공존할 때(소속이동 시 구 사업장 DEFAULT_SCH 행 잔존 등) 결정론적
+    //   선택을 위한 타이브레이크 기준시각(WP.UPDATE_DATE 우선, 없으면 WP.INSERT_DATE). 표시 비대상,
+    //   병합 로직 전용. 반드시 마지막 필드(위치매핑).
+    , LocalDateTime effectiveDtime
 ) {
 }

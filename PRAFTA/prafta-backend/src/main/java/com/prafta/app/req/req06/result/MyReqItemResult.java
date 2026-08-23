@@ -23,5 +23,7 @@ public record MyReqItemResult(
         , String processComment
         , LocalDateTime processDate
         , LocalDateTime insertDate
+        , String siteCd    // 작업지시서_소속이동-이력가시성-보정: 발의 당시 소속 사업장 코드. 위치매핑 14번째(마지막 직전).
+        , String siteNm    // 사업장명(TB_SITE JOIN). 위치매핑 마지막(15번째).
 ) {
 }
