@@ -239,6 +239,18 @@ public interface AppAttd01Mapper {
             , @Param("yesterdayYmd") String yesterdayYmd
     );
 
+    /**
+     * (작업지시서_소속이동중_출퇴근-사업장필터-근본수정 재작업 — qa 권고) 직전일(WORK_YMD = yesterdayYmd)
+     * 열린(미퇴근) 근태 중 1건의 실제 SITE_CD 조회. {@link #countPastOpenAttd} 는 건수만 반환하므로,
+     * D+1 출근 게이트에서 그 D-1 레코드가 실귀속된 사업장 기준으로 마감 판정을 하기 위해 사용한다.
+     * 없으면 null. (WORK_SEQ DESC LIMIT 1 — 여러 건이면 최신 구간 대표값.)
+     */
+    OpenAttdResult selectPastOpenAttd(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("yesterdayYmd") String yesterdayYmd
+    );
+
     /** 출근 레코드 INSERT (TB_USER_ATTD_MGMT, CHECK_OUT_* 는 NULL). */
     int insertCheckIn(@Param("c") CheckInCommand command);
 

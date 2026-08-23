@@ -197,7 +197,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         loadGps(cmpnyCd, attds, gpsByCheckIn, gpsByCheckOut);
 
         // 마감 여부(해당 월) — 액션 활성도 산출에 사용.
-        boolean closed = isMonthClosed(cmpnyCd, siteCd, userCd, targetYmd.substring(0, 6));
+        boolean closed = isMonthClosed(cmpnyCd, siteCd, resolveNodeCdForClose(cmpnyCd, siteCd, userCd), targetYmd.substring(0, 6));
         // 초과근무(등록 or 신청) 보유 여부 — 스케줄 수정 요청 게이팅(보유일은 스케줄 변경 차단). 단일일 조회.
         boolean hasOvertime = !nullSafe(appAttd01Mapper.selectOvertimeYmds(q)).isEmpty();
         // prafta-app-030 후속: 그날 적용(승인) 초과근무 실적(표시 전용). 단일일이라 그룹 불필요 — 전체가 targetYmd.
@@ -592,11 +592,13 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         Map<String, List<RangeOvertimeResult>> overtimeByYmd =
                 groupOvertimeByYmd(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
 
-        boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), startYmd.substring(0, 6));
+        // (재작업: qa High) isMonthClosed 시그니처 변경 — nodeCd 는 여기서 1회만 조회해 재사용(같은 siteCd).
+        String weekNodeCd = resolveNodeCdForClose(param.cmpnyCd(), param.siteCd(), param.userCd());
+        boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(), weekNodeCd, startYmd.substring(0, 6));
         // 주가 월 경계를 넘으면 종료일 월의 마감도 확인.
         boolean closedEnd = endYmd.substring(0, 6).equals(startYmd.substring(0, 6))
                 ? closed
-                : isMonthClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), endYmd.substring(0, 6));
+                : isMonthClosed(param.cmpnyCd(), param.siteCd(), weekNodeCd, endYmd.substring(0, 6));
 
         List<WeekDayResponse> days = new ArrayList<>();
         int plannedSum = 0;
@@ -940,7 +942,8 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         attdByYmd.values().forEach(allMonthAttds::addAll);
         loadGps(param.cmpnyCd(), allMonthAttds, gpsByCheckIn, gpsByCheckOut);
 
-        boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(), param.userCd(), ym);
+        boolean closed = isMonthClosed(param.cmpnyCd(), param.siteCd(),
+                resolveNodeCdForClose(param.cmpnyCd(), param.siteCd(), param.userCd()), ym);
         // prafta-app-030 후속: 월 범위 1회 호출 후 workYmd 별 분 합계(표시 전용·N+1 회피).
         Map<String, List<RangeOvertimeResult>> overtimeByYmd =
                 groupOvertimeByYmd(nullSafe(appAttd01Mapper.selectAppliedOvertimesByRange(q)));
@@ -1030,7 +1033,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *     <li>퇴근 시각 = 서버 NOW() 기준 raw 실제 시각(표준화 미적용). CHECK_OUT_METHOD='01'.</li>
      *     <li>Low-1: workYmd 가 주어지면 그 일자의 열린건만 대상. 미전달이면 최신 1건 폴백.</li>
      *     <li>D+1 윈도우: WORK_YMD 가 today 또는 today-1 인 열린 근태만. 초과분은 거부(처리필요로 잔존).</li>
-     *     <li>사업장 동일성: 출근 레코드 SITE_CD != 세션 siteCd 면 거부(IDOR/스코프 가드).</li>
+     *     <li>(작업지시서_소속이동중_출퇴근-사업장필터-근본수정) 세션 siteCd 와 출근 레코드 SITE_CD 동일성
+     *         검증은 제거했다 — 근무는 "시작된 사업장"(open.siteCd())에 귀속되며 이후 로직도 전부
+     *         open.siteCd() 를 쓴다. 스코프 가드는 updateCheckOut/updateReCheckOut 의
+     *         ATTD_ID+CMPNY_CD+USER_CD+DEL_YN='N' WHERE 절로 유지된다.</li>
      *     <li>월마감(prafta-028): 해당 월 마감이면 쓰기 차단(거부).</li>
      *   </ul>
      */
@@ -1068,12 +1074,11 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             throw new ApiException(AttdErrorCode.ATTD_404_010);
         }
 
-        // 3) 사업장 동일성 검증 (세션 siteCd 와 레코드 SITE_CD 비교 — 스코프/IDOR 가드).
-        if (!siteCd.equals(open.siteCd())) {
-            log.info("[attd01] 셀프 퇴근 거부: 사업장 불일치 (userCd={}, sessionSite={}, recordSite={})",
-                    userCd, siteCd, open.siteCd());
-            throw new ApiException(AttdErrorCode.ATTD_400_005);
-        }
+        // 3) (작업지시서_소속이동중_출퇴근-사업장필터-근본수정) 세션 siteCd 와 레코드 open.siteCd() 비교 가드를
+        //    제거했다. 근무일 도중 소속이동이 발생해도(오버나이트+자정배치) 그 근무는 "시작된 사업장"
+        //    (open.siteCd())에 통째로 귀속되며, 이후 로직(3-1/5/5-2/7 등)은 애초에 전부 open.siteCd()를
+        //    쓰고 세션 siteCd 는 쓰지 않는다 — 이 가드만 이질적으로 세션 값을 기준 삼아 정당한 퇴근을 막고 있었다.
+        //    스코프 가드는 updateCheckOut/updateReCheckOut 의 WHERE ATTD_ID+CMPNY_CD+USER_CD+DEL_YN='N' 로 유지된다.
 
         // 3-1) prafta-com-008-B: 노무수령거부 차단 가드(CHECK_OUT, 보수적). 퇴근 대상 근무일 기준.
         //   설계 §5-4: 정상 경로에선 체크인이 막혀 그날 열린 근태가 없어 본 가드에 도달하지 않는다.
@@ -1084,7 +1089,13 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 LeaveRefusalConst.ATTEMPT_CHECK_OUT, userCd);
 
         // 4) 월마감 검증 (prafta-028 부서단위 마감이면 쓰기 차단).
-        if (isMonthClosed(cmpnyCd, siteCd, userCd, open.workYmd().substring(0, 6))) {
+        //    (재작업: qa High) 세션 siteCd 가 아니라 open.siteCd()(근태 행 실귀속 사업장) 기준으로 판정한다.
+        //    TB_ATTD_CLOSE 는 사업장별 마감상태가 독립적이라, 세션 siteCd 로 판정하면 근태 행이 속한
+        //    사업장이 이미 마감됐어도 세션의 다른(마감 전) 사업장 기준으로 마감 잠금을 우회할 수 있었다.
+        //    (재작업 2차: qa High) nodeCd 도 세션 siteCd 로 TB_USER 를 재조회하지 않고, open.nodeCd()
+        //    (이 근태 행에 스냅샷된 실귀속 부서)를 그대로 쓴다 — 이동한 사용자는 TB_USER 의 "현재" SITE_CD 가
+        //    open.siteCd() 와 달라 재조회가 0건이 되어 nodeCd 가 '*' 로 폴백, 부서단위 마감을 놓쳤다.
+        if (isMonthClosed(cmpnyCd, open.siteCd(), open.nodeCd(), open.workYmd().substring(0, 6))) {
             log.info("[attd01] 셀프 퇴근 거부: 마감된 기간 (userCd={}, closeYm={})",
                     userCd, open.workYmd().substring(0, 6));
             throw new ApiException(AttdErrorCode.ATTD_400_042);
@@ -1261,7 +1272,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
      *     <li>② 대상일자: workYmd 미전달이면 서버 today(출근은 통상 당일).</li>
      *     <li>③ 월마감(prafta-028): 해당 월 마감이면 쓰기 차단(거부).</li>
      *     <li>④ 다음날 게이트(사용자 확정): 과거(WORK_YMD&lt;today) 열린 근태가 있으면 차단
-     *         ("전날 퇴근을 먼저 등록하세요").</li>
+     *         ("전날 퇴근을 먼저 등록하세요"). 마감 예외 판정은 그 D-1 근태가 실귀속된 사업장
+     *         (selectPastOpenAttd 의 siteCd) 기준이며, 세션의 현재 siteCd 를 쓰지 않는다
+     *         (작업지시서_소속이동중_출퇴근-사업장필터-근본수정 재작업 — qa 권고).</li>
      *     <li>⑤ 스케줄 조회: 연차일(LEAVE)이면 출근 차단(§8.3 노무수령거부).</li>
      *     <li>⑥ 출근횟수/구간 제한(§5.1~§5.4) + 2구간 스케줄 구간 명시 선택(prafta-app-015, 구 §5.5 정정):
      *         하루 최대 2회(prafta-app-014). 2구간 스케줄은 사용자가 출근 구간(targetWorkSeq=1|2)을
@@ -1314,7 +1327,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         appAttd01Mapper.lockUserForCheckIn(cmpnyCd, siteCd, userCd);
 
         // 3) 월마감 검증 (prafta-028 부서단위 마감이면 쓰기 차단).
-        if (isMonthClosed(cmpnyCd, siteCd, userCd, workYmd.substring(0, 6))) {
+        //    (재작업: qa High) isMonthClosed 시그니처 변경 — 이 시점은 신규 출근(아직 근태 행 없음)이라
+        //    "지금 이 siteCd(체크인 대상=세션 현재 사업장) 기준 현재 소속"을 재조회해서 넘긴다.
+        if (isMonthClosed(cmpnyCd, siteCd, resolveNodeCdForClose(cmpnyCd, siteCd, userCd), workYmd.substring(0, 6))) {
             log.info("[attd01] 셀프 출근 거부: 마감된 기간 (userCd={}, closeYm={})", userCd, workYmd.substring(0, 6));
             throw new ApiException(AttdErrorCode.ATTD_400_042);
         }
@@ -1326,13 +1341,24 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //    마감된 월의 직전일 미퇴근은 게이트 예외(보정 대상)로 두고 당월 출근을 허용한다.
         String yesterday = LocalDate.parse(today, YMD).minusDays(1).format(YMD);
         int pastOpen = appAttd01Mapper.countPastOpenAttd(cmpnyCd, siteCd, userCd, yesterday);
-        if (pastOpen > 0 && !isMonthClosed(cmpnyCd, siteCd, userCd, yesterday.substring(0, 6))) {
-            log.info("[attd01] 셀프 출근 거부: 직전일(today-1) 미퇴근 근태 존재 → 전날 퇴근 등록 안내 (userCd={}, yesterday={}, count={})", userCd, yesterday, pastOpen);
-            throw new ApiException(AttdErrorCode.ATTD_400_082);
-        }
         if (pastOpen > 0) {
+            // (재작업: qa 권고) 마감 예외 판정은 세션 siteCd(현재)가 아니라 D-1 열린 근태가 실귀속된
+            // 사업장 기준이어야 한다(TB_ATTD_CLOSE 는 사업장별 독립 마감). 실제 SITE_CD 를 별도 조회.
+            OpenAttdResult pastOpenAttd = appAttd01Mapper.selectPastOpenAttd(cmpnyCd, userCd, yesterday);
+            String pastOpenSiteCd = (pastOpenAttd != null) ? pastOpenAttd.siteCd() : siteCd;
+            // (재작업: qa High) nodeCd 도 pastOpenSiteCd 와 짝을 맞춘다 — 근태 행이 있으면 그 행에
+            // 스냅샷된 실귀속 부서(pastOpenAttd.nodeCd())를 그대로 쓰고(TB_USER 재조회 시 이동한
+            // 사용자는 0건→'*' 폴백되어 부서단위 마감을 놓침), 행이 없는 예외 상황만 세션 siteCd 기준
+            // 현재 소속으로 재조회한다(종전 폴백과 동일).
+            String pastOpenNodeCd = (pastOpenAttd != null)
+                    ? pastOpenAttd.nodeCd()
+                    : resolveNodeCdForClose(cmpnyCd, siteCd, userCd);
+            if (!isMonthClosed(cmpnyCd, pastOpenSiteCd, pastOpenNodeCd, yesterday.substring(0, 6))) {
+                log.info("[attd01] 셀프 출근 거부: 직전일(today-1) 미퇴근 근태 존재 → 전날 퇴근 등록 안내 (userCd={}, yesterday={}, count={}, pastOpenSiteCd={})", userCd, yesterday, pastOpen, pastOpenSiteCd);
+                throw new ApiException(AttdErrorCode.ATTD_400_082);
+            }
             // 마감된 월의 직전일 미퇴근은 게이트 예외(보정 대상) — prafta-app-021-6.
-            log.info("[attd01] 셀프 출근 게이트 예외: 직전일이 마감된 월이라 퇴근으로 닫을 수 없음 → 출근 허용(보정 대상) (userCd={}, yesterday={}, count={})", userCd, yesterday, pastOpen);
+            log.info("[attd01] 셀프 출근 게이트 예외: 직전일이 마감된 월이라 퇴근으로 닫을 수 없음 → 출근 허용(보정 대상) (userCd={}, yesterday={}, count={}, pastOpenSiteCd={})", userCd, yesterday, pastOpen, pastOpenSiteCd);
         }
 
         // 5) 스케줄 조회(그 일자). 연차일이면 출근 차단(§8.3).
@@ -1949,15 +1975,33 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         return null;
     }
 
-    /** 해당 월(YYYYMM)이 본인 부서를 덮는 마감으로 닫혀있는지. */
-    private boolean isMonthClosed(String cmpnyCd, String siteCd, String userCd, String closeYm) {
-        String nodeCd = appAttd01Mapper.selectUserNodeCd(cmpnyCd, siteCd, userCd);
-        if (!StringUtils.hasText(nodeCd)) {
-            // 소속부서 미상이면 '*'(전체 사업장) 마감만으로 판정.
-            nodeCd = "*";
-        }
-        int covering = appAttd01Mapper.countCoveringClose(cmpnyCd, siteCd, nodeCd, closeYm);
+    /**
+     * 해당 월(YYYYMM)이 nodeCd 기준 부서를 덮는 마감으로 닫혀있는지.
+     *
+     * <p>(재작업: qa High) 종전에는 이 메서드 내부에서 {@code selectUserNodeCd(cmpnyCd, siteCd, userCd)}
+     *   로 TB_USER 를 재조회했는데, TB_USER 는 "현재" SITE_CD 한 행만 가지므로 이동한 사용자의
+     *   과거/실귀속 siteCd(예: {@code open.siteCd()})를 넘기면 0건이 나와 nodeCd 가 항상 '*' 로
+     *   폴백되어 부서단위 마감을 놓쳤다. 이제 nodeCd 는 재조회하지 않고 호출부가 이미 확보한 값
+     *   (근태 행의 NODE_CD 또는 세션 siteCd 기준 재조회 결과)을 그대로 받는다.
+     */
+    private boolean isMonthClosed(String cmpnyCd, String siteCd, String nodeCd, String closeYm) {
+        // 소속부서 미상이면 '*'(전체 사업장) 마감만으로 판정(종전 폴백 유지, 방어적으로 이 메서드에서 정규화).
+        String effectiveNodeCd = StringUtils.hasText(nodeCd) ? nodeCd : "*";
+        int covering = appAttd01Mapper.countCoveringClose(cmpnyCd, siteCd, effectiveNodeCd, closeYm);
         return covering > 0;
+    }
+
+    /**
+     * siteCd 기준 사용자 소속 노드 조회(월마감 판정 전용, 폴백 '*').
+     *
+     * <p>근태 행의 실귀속 nodeCd(open.nodeCd() 등)를 이미 확보한 경우는 이 헬퍼를 쓰지 않고 그 값을
+     *   바로 isMonthClosed 에 넘긴다. 이 헬퍼는 "지금 이 siteCd 기준 현재 소속"이 필요한 조회/신규
+     *   출근 시나리오에서만 사용한다(TB_USER 조회이므로 siteCd 는 반드시 사용자의 "현재" 소속 사업장이어야
+     *   0건이 나지 않는다).
+     */
+    private String resolveNodeCdForClose(String cmpnyCd, String siteCd, String userCd) {
+        String nodeCd = appAttd01Mapper.selectUserNodeCd(cmpnyCd, siteCd, userCd);
+        return StringUtils.hasText(nodeCd) ? nodeCd : "*";
     }
 
     // ====================================================================

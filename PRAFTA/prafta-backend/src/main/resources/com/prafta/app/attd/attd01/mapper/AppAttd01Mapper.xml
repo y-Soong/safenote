@@ -443,6 +443,9 @@
     -->
     <select id="selectReCheckOutTarget" resultType="com.prafta.app.attd.attd01.result.OpenAttdResult">
     /* AppAttd01Mapper.selectReCheckOutTarget */
+    <!-- 작업지시서_소속이동중_출퇴근-사업장필터-근본수정: 근무 시작(출근) 후 근무일 도중 소속이동이
+         발생해도 그 근무는 "시작된 사업장"에 귀속되어야 하므로 세션 SITE_CD 필터를 제거한다
+         (siteCd 파라미터는 SQL 미사용 — Java 시그니처만 IDOR 관례상 유지). -->
     SELECT
           A.ATTD_ID        AS attdId
         , A.WORK_YMD       AS workYmd
@@ -452,7 +455,6 @@
         , A.CHECK_OUT_TIME AS checkOutTime
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.DEL_YN   = 'N'
        AND A.CHECK_IN_TIME IS NOT NULL
@@ -598,36 +600,46 @@
       tb_user_attd_mgmt 자연키에 UNIQUE 제약이 없어, count→insert 경쟁으로 구간한도 초과/
       WORK_SEQ 중복 INSERT 되는 것을 막는다. 동일 사용자의 동시 출근을 트랜잭션 단위로 직렬화.
       잠금은 @Transactional 커밋/롤백 시 자동 해제(named lock 과 달리 커넥션 풀 누수 없음).
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: SITE_CD 조건 제거.
+      TB_USER PK 는 (CMPNY_CD, USER_CD) 이며 SITE_CD 는 포함되지 않는다(스키마 확인 완료).
+      소속이동 배치(00:10 KST) 직후처럼 JWT 의 gv_siteCd 가 아직 갱신되지 않은 짧은 구간에서
+      세션의 "현재" SITE_CD 로 필터링하면 TB_USER 의 실제(갱신된) SITE_CD 와 어긋나 0행이 반환되고,
+      FOR UPDATE 락이 아무 행도 잠그지 않아 count-then-insert 직렬화가 깨질 수 있었다.
+      siteCd 파라미터는 호출부 시그니처 유지를 위해 남겨두되 이 쿼리에서는 사용하지 않는다.
     -->
     <select id="lockUserForCheckIn" resultType="string">
     /* AppAttd01Mapper.lockUserForCheckIn */
     SELECT U.USER_CD
       FROM TB_USER U
      WHERE U.CMPNY_CD = #{cmpnyCd}
-       AND U.SITE_CD  = #{siteCd}
        AND U.USER_CD  = #{userCd}
      FOR UPDATE
     </select>
 
-    <!-- 본인 그 일자 근태 레코드 수 (DEL_YN='N'). WORK_SEQ 산정/출근횟수 제한 판정. -->
+    <!--
+      본인 그 일자 근태 레코드 수 (DEL_YN='N'). WORK_SEQ 산정/출근횟수 제한 판정.
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: 소속이동으로 세션 SITE_CD 가 바뀌어도
+      이 일자의 실제 레코드 수를 정확히 세도록 SITE_CD 필터를 제거한다(WORK_SEQ 오카운트→중복 INSERT 방지).
+    -->
     <select id="countAttdByYmd" resultType="int">
     /* AppAttd01Mapper.countAttdByYmd */
     SELECT COUNT(*)
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.WORK_YMD = #{workYmd}
        AND A.DEL_YN   = 'N'
     </select>
 
-    <!-- 본인 그 일자 열린(미퇴근) 근태 수. 재출근 가드(§5.2). -->
+    <!--
+      본인 그 일자 열린(미퇴근) 근태 수. 재출근 가드(§5.2).
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: SITE_CD 필터 제거(사유는 위와 동일).
+    -->
     <select id="countOpenAttdByYmd" resultType="int">
     /* AppAttd01Mapper.countOpenAttdByYmd */
     SELECT COUNT(*)
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.WORK_YMD = #{workYmd}
        AND A.DEL_YN   = 'N'
@@ -638,18 +650,45 @@
     <!--
       본인 직전일(WORK_YMD = today-1) 열린(미퇴근) 근태 수. 다음날 출근 게이트(prafta-app-021).
       D 미퇴근이 남아 있으면 D+1 출근만 차단(직전일만). D+2 이상 과거 미퇴근은 차단하지 않는다(출근 허용, §7.6).
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: SITE_CD 필터 제거 — 소속이동 낀 케이스에서
+      "어제 미퇴근"이 세션 사업장과 무관하게 정확히 검출되어야 한다(수정 전엔 카운트 0 오판 위험).
     -->
     <select id="countPastOpenAttd" resultType="int">
     /* AppAttd01Mapper.countPastOpenAttd */
     SELECT COUNT(*)
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.WORK_YMD = #{yesterdayYmd}
        AND A.DEL_YN   = 'N'
        AND A.CHECK_IN_TIME IS NOT NULL
        AND A.CHECK_OUT_TIME IS NULL
+    </select>
+
+    <!--
+      (작업지시서_소속이동중_출퇴근-사업장필터-근본수정 재작업 — qa 권고) 직전일(WORK_YMD = yesterdayYmd)
+      열린(미퇴근) 근태 중 1건의 실제 SITE_CD 조회. countPastOpenAttd 의 D+1 출근 게이트 예외 판정에서
+      세션 siteCd 대신 이 레코드의 실귀속 사업장으로 월마감 여부를 판정하기 위해 사용한다.
+      여러 건이면 최신 구간(WORK_SEQ DESC) 1건을 대표값으로 사용.
+    -->
+    <select id="selectPastOpenAttd" resultType="com.prafta.app.attd.attd01.result.OpenAttdResult">
+    /* AppAttd01Mapper.selectPastOpenAttd */
+    SELECT
+          A.ATTD_ID        AS attdId
+        , A.WORK_YMD       AS workYmd
+        , A.WORK_SEQ       AS workSeq
+        , A.SITE_CD        AS siteCd
+        , A.NODE_CD        AS nodeCd
+        , A.CHECK_OUT_TIME AS checkOutTime
+      FROM TB_USER_ATTD_MGMT A
+     WHERE A.CMPNY_CD = #{cmpnyCd}
+       AND A.USER_CD  = #{userCd}
+       AND A.WORK_YMD = #{yesterdayYmd}
+       AND A.DEL_YN   = 'N'
+       AND A.CHECK_IN_TIME IS NOT NULL
+       AND A.CHECK_OUT_TIME IS NULL
+     ORDER BY A.WORK_SEQ DESC
+     LIMIT 1
     </select>
 
     <!--

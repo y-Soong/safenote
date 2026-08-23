@@ -19,6 +19,9 @@
       오늘(todayYmd) 본인 열린 근태(미퇴근) 건수.
       열린 근태 = DEL_YN='N' AND CHECK_IN_TIME IS NOT NULL AND CHECK_OUT_TIME IS NULL.
       AppAttd01Mapper.selectOpenAttd 의 열린 근태 정의를 당일 COUNT 로 차용.
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: 근무 시작(출근) 후 소속이동이 발생해도
+      "근무중" 판정은 세션 SITE_CD 와 무관해야 하므로 SITE_CD 필터를 제거한다
+      (siteCd 파라미터는 SQL 미사용 — Java 시그니처만 IDOR 관례상 유지).
     -->
     <select id="countOpenAttdToday" resultType="int">
     /* WorktimeGateMapper.countOpenAttdToday */
@@ -26,7 +29,6 @@
           COUNT(*)
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.WORK_YMD = #{todayYmd}
        AND A.DEL_YN   = 'N'
@@ -38,6 +40,7 @@
       prafta-app-031 1.1: 전일 미퇴근(open slot)도 근무중으로 인정(com-003-A 선례).
       countOpenAttdToday 와 열린 근태 정의/테이블/컬럼 동일, WORK_YMD 만 전일(todayYmd-1).
       전일 일자는 todayYmd 를 STR_TO_DATE 후 1일 차감해 산출.
+      작업지시서_소속이동중_출퇴근-사업장필터-근본수정: SITE_CD 필터 제거(사유는 위와 동일).
     -->
     <select id="countOpenAttdPrevDay" resultType="int">
     /* WorktimeGateMapper.countOpenAttdPrevDay */
@@ -45,7 +48,6 @@
           COUNT(*)
       FROM TB_USER_ATTD_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.SITE_CD  = #{siteCd}
        AND A.USER_CD  = #{userCd}
        AND A.WORK_YMD = DATE_FORMAT(DATE_SUB(STR_TO_DATE(#{todayYmd}, '%Y%m%d'), INTERVAL 1 DAY), '%Y%m%d')
        AND A.DEL_YN   = 'N'
