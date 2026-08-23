@@ -1875,7 +1875,13 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
     /**
      * 자동 교육시작 예정시각 산출(=prepStartAt + 자동시작분). OPENED 이며 prepStartAt 존재 시에만 산출.
-     * prepStartAt 포맷('yyyy-MM-dd HH:mm:ss')을 파싱해 분을 더한 동일 포맷 문자열을 반환한다.
+     * prepStartAt 포맷('yyyy-MM-dd HH:mm:ss')을 파싱해 분을 더한 뒤 UTC 명시(Z 접미사)로 반환한다.
+     *
+     * <p>PREP_START_AT 은 DB 서버의 {@code NOW()}(=UTC 벽시계값)로 기록된다(운영 EC2/RDS 시스템
+     * 시각이 UTC). Z 표기 없이 순수 벽시계 문자열만 내려주면 클라이언트(new Date(...))가 이를
+     * 기기 로컬시각(KST)으로 오인해 파싱 — 실제보다 9시간 이른 시각으로 계산돼 생성 직후부터
+     * 카운트다운이 즉시 만료된 것처럼 보이는 결함이 있었다(2026-08-23 실기기 검증에서 발견,
+     * iOS/Android 공통 재현). 재발 방지를 위해 반드시 Z 를 붙여 절대시각임을 명시한다.
      */
     private String computePrepAutoStartAt(String statusCd, String prepStartAt) {
         if (!"OPENED".equals(statusCd) || !StringUtils.hasText(prepStartAt)) {
@@ -1886,7 +1892,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                     java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
             return java.time.LocalDateTime.parse(prepStartAt, f)
                     .plusMinutes(prepAutoStartMinutes)
-                    .format(f);
+                    .format(f) + "Z";
         } catch (Exception e) {
             log.warn("TBM 자동 교육시작 예정시각 산출 실패 - prepStartAt={}", prepStartAt);
             return null;

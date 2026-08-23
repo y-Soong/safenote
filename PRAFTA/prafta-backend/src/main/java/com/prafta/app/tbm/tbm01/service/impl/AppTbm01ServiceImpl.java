@@ -183,8 +183,14 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         //   출결 INSERT 를 수행하는 모든 경로가 통과해야 하는 단일 지점(요청서 §3.2).
         tbmSessionShareService.assertEntryAllowed(sessionCd, cmpnyCd);
 
-        // D3: OPENED 일 때만 입실 허용.
-        if (!STATUS_OPENED.equals(session.getStatusCd())) {
+        // D3: 세션이 살아있는 동안만(OPENED/IN_PROGRESS) 입실 API 진입 허용. 신규 입실이 OPENED
+        //     에서만 되도록 막는 건 아래 D3-2(멱등 분기 이후)에서 별도 판정한다 — 여기서 IN_PROGRESS
+        //     를 통째로 막으면 "교육중" 탭의 기입실자 재인증(멱등 재진입)까지 함께 막혀버린다
+        //     (2026-08-23 실기기 검증에서 발견: 이미 입실한 근로자가 자동 교육시작 이후 본인 세션에
+        //     재진입 자체를 못 하던 결함 — TBM_409_030). COMPLETED/CANCELLED/DRAFT 는 그대로 차단.
+        boolean sessionActive = STATUS_OPENED.equals(session.getStatusCd())
+                || STATUS_IN_PROGRESS.equals(session.getStatusCd());
+        if (!sessionActive) {
             log.info("[tbm01] 입실 불가 상태: sessionCd={}, status={}", sessionCd, session.getStatusCd());
             throw new ApiException(TbmErrorCode.TBM_409_030);
         }
@@ -195,9 +201,17 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         verifyPassword(PWD_TYPE_ENTRY, session.getEntryPwd(), param.entryPwd());
 
         // 기입실(멱등): 비밀번호가 일치한 경우에만, UNIQUE 충돌 전에 선조회로 빠르게 안내.
+        //   OPENED/IN_PROGRESS 어느 쪽이든 이미 입실한 사람은 통과(교육중 탭 재진입 지원).
         TbmAttendanceResult existing = appTbm01Mapper.selectMyAttendance(query);
         if (existing != null && existing.getEntryAt() != null) {
             return idempotentEnterResponse(existing);
+        }
+
+        // D3-2: 여기까지 왔다는 건 출결이 없는 "신규" 입실 시도 — OPENED 일 때만 허용한다.
+        //   IN_PROGRESS 로 전환된 뒤의 지각 신규 입실은 정책상 차단(safety §2.2).
+        if (!STATUS_OPENED.equals(session.getStatusCd())) {
+            log.info("[tbm01] 신규 입실 불가(교육시작 이후 지각): sessionCd={}, status={}", sessionCd, session.getStatusCd());
+            throw new ApiException(TbmErrorCode.TBM_409_030);
         }
 
         // D5: GPS 거리 계산/검증 — 암호화 전 원본 Double 좌표로 기존 위치에서 수행(판정 무변경).
