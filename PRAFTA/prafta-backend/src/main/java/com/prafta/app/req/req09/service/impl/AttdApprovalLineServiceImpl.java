@@ -13,7 +13,6 @@ import com.prafta.app.req.req09.service.AttdApprovalLineService;
 import com.prafta.app.req.req09.service.AttdApprovalNotiService;
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
-import com.prafta.common.cmm.leave.mapper.LeaveApprovalNotiMapper;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -27,8 +26,9 @@ import lombok.extern.slf4j.Slf4j;
  * <p>req07 등록 트랜잭션 안에서 호출된다({@code @Transactional} 미부여 — 호출부 트랜잭션 참여).
  * 결재라인 INSERT 는 요청 INSERT 와 원자적으로 커밋/롤백되고, PUSH 적재만 예외 격리한다.
  *
- * <p>연차 {@code AppLeaveFlowServiceImpl#submitLeave}(336~392) 의 'N' 결재라인 생성 패턴을 미러한다
- * (신규 발명 최소). 'Y' 분기는 근태 전용(D3/D4/D5).
+ * <p>연차 {@code AppLeaveFlowServiceImpl#submitLeave}(336~392) 의 결재라인 생성 패턴을 미러한다
+ * (신규 발명 최소). 근태결재선통합 P1-2(2026-08-23)로 구 'Y'/'N' 조직도 위임 분기를 폐지하고
+ * 항상 결재선(다단계) 경로로 통일했다 — {@link #resolveApprovers} 참조.
  */
 @Slf4j
 @Service
@@ -38,7 +38,6 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
     private final AppReq09Mapper appReq09Mapper;
     private final ApprovalLineMapper approvalLineMapper;
     private final AppMypage01Mapper appMypage01Mapper;
-    private final LeaveApprovalNotiMapper leaveApprovalNotiMapper;
     private final AttdApprovalNotiService attdApprovalNotiService;
 
     // 요청 상태 [SYS033]
@@ -54,47 +53,12 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
     public void applyApprovalFlow(String cmpnyCd, String siteCd, String userCd, String reqId,
                                   List<String> approverUserCds, String presetId, String insertNo) {
 
-        // 신청자 소속 노드의 자체근태승인 여부(D2). null → 'N' 취급(결재라인 다단계).
-        String selfApprvYn = appReq09Mapper.selectAttdSelfApprvYn(cmpnyCd, siteCd, userCd);
-
-        if (isYes(selfApprvYn)) {
-            applyAttdSelfApprove(cmpnyCd, siteCd, userCd, reqId, insertNo);
-        } else {
-            applyApprovalLine(cmpnyCd, siteCd, userCd, reqId, approverUserCds, presetId, insertNo);
-        }
-    }
-
-    /**
-     * 'Y' 자체근태승인 분기(D3/D4/D5). 결재라인은 INSERT 하지 않는다.
-     * <ul>
-     *   <li>신청자=노드 정/부 관리자 → 즉시 자동승인(REQ_STATUS='02'), PUSH 미발송 (D4).</li>
-     *   <li>일반 근로자 → 노드 관리자 0명이면 ATTD_400_105(D5), 1명 이상이면 승인 요망 PUSH(D3).</li>
-     * </ul>
-     */
-    private void applyAttdSelfApprove(String cmpnyCd, String siteCd, String userCd, String reqId,
-                                      String insertNo) {
-        boolean isNodeAdmin = appReq09Mapper.selectIsNodeAdmin(cmpnyCd, siteCd, userCd) > 0;
-        if (isNodeAdmin) {
-            // D4: 신청자가 그 노드 관리자 → 즉시 자동승인. PUSH 미발송.
-            appReq09Mapper.updateReqStatus(cmpnyCd, reqId, REQ_APPROVED, userCd, SELF_APPROVE_COMMENT);
-            log.info("[attdAprvLine] 'Y' 자체근태승인 — 신청자=노드관리자 즉시 자동승인 (reqId={}, userCd={})",
-                    reqId, userCd);
-            return;
-        }
-
-        // D5: 일반 근로자 — 승인 가능한 노드 Main/Sub 관리자가 0명이면 설정오류(fail-closed).
-        //   정상 흐름에서는 발생하지 않는다(prafta-046 구조 차단). 최소 방어.
-        List<String> admins = leaveApprovalNotiMapper.selectNodeAdmins(cmpnyCd, siteCd, userCd);
-        if (admins == null || admins.isEmpty()) {
-            log.info("[attdAprvLine] 'Y' 자체근태승인 — 노드 관리자 0명 설정오류 (reqId={}, userCd={})",
-                    reqId, userCd);
-            throw new ApiException(AttdErrorCode.ATTD_400_105);
-        }
-
-        // D3: 승인 요망 PUSH(노드 관리자 전원). 결재라인 미INSERT — 현행 단일승인 경로 유지.
-        attdApprovalNotiService.notifyAttdApprovalRequest(cmpnyCd, siteCd, userCd, reqId, insertNo);
-        log.info("[attdAprvLine] 'Y' 자체근태승인 — 일반 근로자 승인 요망 PUSH 적재 (reqId={}, 관리자수={})",
-                reqId, admins.size());
+        // 근태결재선통합 P1-2(2026-08-23): 'Y'/'N' 분기 폐지, 항상 결재선 경로로 통일.
+        //   구 'Y' 즉시확정(D4)은 결재자 미지정 시 resolveApprovers 3번째 폴백(기본 결재자)이
+        //   결재선 1단계로 재현한다 — 신청자가 그 노드 관리자 본인이면 자기지정 자동승인(D7) 규칙에
+        //   따라 즉시 확정되어 체감이 동일하다. 구 'Y' + 일반근로자 위임 경로(D3)는 폐기한다
+        //   (실사용 0건, 요청서 §1 — 조직도 위임 모델은 결재선으로 완전 대체).
+        applyApprovalLine(cmpnyCd, siteCd, userCd, reqId, approverUserCds, presetId, insertNo);
     }
 
     /**
@@ -103,9 +67,11 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
     private void applyApprovalLine(String cmpnyCd, String siteCd, String userCd, String reqId,
                                    List<String> approverUserCds, String presetId, String insertNo) {
 
-        List<String> approvers = resolveApprovers(cmpnyCd, userCd, approverUserCds, presetId);
+        List<String> approvers = resolveApprovers(cmpnyCd, siteCd, userCd, approverUserCds, presetId);
         if (approvers == null || approvers.isEmpty()) {
-            throw new ApiException(CommonErrorCode.COMMON_400_001);
+            // 구 D5: 노드에 지정 결재자/프리셋도 없고 기본 결재자(MAIN/SUB)도 없는 조직 설정오류.
+            //   클라이언트 입력 문제가 아니므로 COMMON_400_001(필수 파라미터 누락)이 아닌 전용 코드 사용.
+            throw new ApiException(AttdErrorCode.ATTD_400_105);
         }
 
         // D8 결재자 스코프 가드: 본문 결재자가 동일 회사+사업장+재직 사용자인지 서버 검증.
@@ -167,26 +133,35 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
     }
 
     /**
-     * 결재자 목록 결정: approverUserCds 1차, 비어있고 presetId 가 있으면 본인 소유 프리셋을 전개.
-     * 프리셋 전개는 mypage01 {@code selectPresetStepsById}(소유자 스코프) 재사용(타인 프리셋 차단).
+     * 결재자 목록 결정: approverUserCds 1차, 비어있고 presetId 가 있으면 본인 소유 프리셋을 전개,
+     * 근태결재선통합 P1-2(§0-5) — 그 둘 다 없으면 신청자 소속 노드의 기본 결재자(정 관리자 우선,
+     * 없으면 부 관리자) 1인을 단일 결재선으로 반환한다. 프리셋 전개는 mypage01
+     * {@code selectPresetStepsById}(소유자 스코프) 재사용(타인 프리셋 차단).
      */
-    private List<String> resolveApprovers(String cmpnyCd, String userCd,
+    private List<String> resolveApprovers(String cmpnyCd, String siteCd, String userCd,
                                           List<String> approverUserCds, String presetId) {
         if (approverUserCds != null && !approverUserCds.isEmpty()) {
             return approverUserCds;
         }
-        if (presetId == null || presetId.isBlank()) {
-            return approverUserCds;
-        }
-        List<PresetStepResult> steps =
-                appMypage01Mapper.selectPresetStepsById(cmpnyCd, userCd, presetId);
-        List<String> expanded = new ArrayList<>(steps.size());
-        for (PresetStepResult s : steps) {
-            if (s.approverUserCd() != null && !s.approverUserCd().isBlank()) {
-                expanded.add(s.approverUserCd());
+        if (presetId != null && !presetId.isBlank()) {
+            List<PresetStepResult> steps =
+                    appMypage01Mapper.selectPresetStepsById(cmpnyCd, userCd, presetId);
+            List<String> expanded = new ArrayList<>(steps.size());
+            for (PresetStepResult s : steps) {
+                if (s.approverUserCd() != null && !s.approverUserCd().isBlank()) {
+                    expanded.add(s.approverUserCd());
+                }
             }
+            return expanded;
         }
-        return expanded;
+        // §0-5 3번째 폴백(신규): approverUserCds 도 presetId 도 없을 때만 — 신청자 소속 노드의 기본
+        //   결재자. P1-1 lazy 폴백(ApprovalLineMapper.selectDefaultApproverOfNode)과 동일 형식(MAIN→SUB).
+        //   구 'Y' 노드 즉시확정(D3/D4)을 결재선 1단계로 재현한다.
+        String defaultApprover = appReq09Mapper.selectDefaultApproverForUser(cmpnyCd, siteCd, userCd);
+        if (defaultApprover != null && !defaultApprover.isBlank()) {
+            return List.of(defaultApprover);
+        }
+        return List.of();
     }
 
     /** 'Y'(대소문자 무관) → true. null/그외 → false. */

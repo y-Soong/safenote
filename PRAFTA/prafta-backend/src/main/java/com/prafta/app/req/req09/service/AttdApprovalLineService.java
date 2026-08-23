@@ -9,11 +9,14 @@ import java.util.List;
  * 본 서비스를 호출하여 결재 분기/라인을 처리한다. 호출부의 {@code @Transactional} 안에서 실행되어
  * 결재라인 INSERT 가 요청 INSERT 와 원자적으로 커밋/롤백된다(PUSH 적재만 예외 격리).
  *
- * <p>분기(신청자 소속 노드 SELF_ATTD_APPRV_YN):
+ * <p>근태결재선통합 P1-2(2026-08-23): 구 SELF_ATTD_APPRV_YN 'Y'/'N' 조직도 위임 분기를 폐지하고
+ * 항상 결재선(다단계) 경로로 통일한다.
  * <ul>
- *   <li>'Y' + 신청자=노드 정/부 관리자 → 즉시 자동승인(REQ_STATUS='02'), 결재라인 미INSERT, PUSH 미발송 (D4).</li>
- *   <li>'Y' + 일반 근로자 → 결재라인 미INSERT. 노드 관리자 0명이면 ATTD_400_105(D5), 1명 이상이면 승인 요망 PUSH(D3).</li>
- *   <li>'N' → 결재라인 다단계 INSERT(자기승인 자동처리·스코프 가드), 전 단계 자동승인이면 즉시 승인, 첫 수동단계 차례도래 PUSH (D6/D7/D8).</li>
+ *   <li>결재선 다단계 INSERT(자기승인 자동처리·스코프 가드), 전 단계 자동승인이면 즉시 승인, 첫 수동단계
+ *       차례도래 PUSH (D6/D7/D8).</li>
+ *   <li>결재자 미지정(approverUserCds 도 presetId 도 없음) → 신청자 소속 노드의 기본 결재자(정 관리자
+ *       우선, 없으면 부 관리자) 1인을 단일 결재선으로 사용(§0-5) — 구 'Y' 즉시확정(D4) 체감을 재현한다.
+ *       기본 결재자가 없으면 ATTD_400_105(구 D5).</li>
  * </ul>
  *
  * <p>연차 {@code AppLeaveFlowServiceImpl#submitLeave}(336~392, 결재라인 생성) 미러.

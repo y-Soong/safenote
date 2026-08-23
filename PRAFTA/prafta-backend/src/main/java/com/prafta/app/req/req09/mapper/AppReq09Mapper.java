@@ -69,4 +69,16 @@ public interface AppReq09Mapper {
                         @Param("reqStatus") String reqStatus,
                         @Param("processUserCd") String processUserCd,
                         @Param("processComment") String processComment);
+
+    /**
+     * 근태결재선통합 P1-2(§0-5 3번째 폴백): approverUserCds/presetId 둘 다 없을 때 신청자 소속 노드의
+     * 기본 결재자(정 관리자 MAIN_ADMIN_CD 우선, 없으면 부 관리자 SUB_ADMIN_CD).
+     *
+     * <p>공용 {@code ApprovalLineMapper.selectDefaultApproverOfNode} 와 동일 형식(MAIN→SUB) —
+     * 모듈 독립을 위해 복제한다(D7/D8 스코프 가드 재사용 매퍼들과 동일 관례). 신청자 소속 노드는
+     * 여기서 TB_USER 조인으로 직접 해석한다(applyApprovalFlow 가 별도 nodeCd 파라미터를 받지 않음).
+     */
+    String selectDefaultApproverForUser(@Param("cmpnyCd") String cmpnyCd,
+                                        @Param("siteCd") String siteCd,
+                                        @Param("userCd") String userCd);
 }

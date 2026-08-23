@@ -8,7 +8,6 @@ import org.apache.ibatis.annotations.Param;
 import com.prafta.web.attd.attd07.application.command.AttdCloseCommand;
 import com.prafta.web.attd.attd07.result.AttdCloseHistResult;
 import com.prafta.web.attd.attd07.result.AttdCloseRowResult;
-import com.prafta.web.attd.attd07.result.NodeApprovalInfoResult;
 
 /**
  * 근태 마감 전용 Mapper (prafta-019-C / prafta-028 부서 단위 확장).
@@ -95,17 +94,6 @@ public interface AttdCloseMapper {
     String selectUserNodeCd(@Param("cmpnyCd") String cmpnyCd,
                             @Param("siteCd") String siteCd,
                             @Param("userCd") String userCd);
-
-    /**
-     * 노드 1행의 근태 승인 정책 조회 (com-013-06-FU r28).
-     *
-     * <p>해당 노드의 {@code SELF_ATTD_APPRV_YN}, {@code PARENT_NODE_CD},
-     * {@code MAIN_ADMIN_CD}, {@code SUB_ADMIN_CD} 를 반환한다. 노드가 없으면 null.
-     * 자기처리/상위 1단계 결재 강제 판정에만 사용한다(재귀 없음).
-     */
-    NodeApprovalInfoResult selectNodeApprovalInfo(@Param("cmpnyCd") String cmpnyCd,
-                                                  @Param("siteCd") String siteCd,
-                                                  @Param("nodeCd") String nodeCd);
 
     /** 마감 upsert (CLOSED 전이). */
     int upsertClose(AttdCloseCommand command);

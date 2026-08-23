@@ -469,9 +469,12 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         // prafta-leavemulti(정책 변경 2026-08-16, 사용자 확정): 관리자 본인이 낸 요청을 스스로 승인해도 무방하다.
         //   종전에는 앱만 본인결재를 무조건 차단(gate.selfBlockedYn=true → 버튼 비활성)했고 웹은 차단하지 않아
         //   앱이 더 엄격했다. 화면에 "본인 결재 불가" 배너가 남지 않도록 표시 플래그도 함께 내린다.
-        //   근태보정/초과/스케줄은 위임 대상 web Attd07Service 가 노드 정책(SELF_ATTD_APPRV_YN)으로 여전히
-        //   판정하므로(403_001/403_003), 여기서는 막지 않고 서버 처리 시점 메시지로 안내한다
-        //   (:disabled 로 감추면 "눌러도 아무 일이 없다"로 오인된다).
+        //   근태보정/초과/스케줄통합(2026-08-23, 근태결재선통합 P1)은 위임 대상 web Attd07Service 가
+        //   더 이상 노드 정책(SELF_ATTD_APPRV_YN)이 아니라 결재선(TB_USER_ATTD_REQ_APPROVAL) 현재 단계
+        //   소유권으로 판정한다(ApprovalStepGateService — master/hr/safe 예외 §8.5는 유지, 자기처리
+        //   전용 차단 코드 403_001/403_003 은 더 이상 발생하지 않고 결재자 불일치는 403_002 로 수렴).
+        //   여기서는 막지 않고 서버 처리 시점 메시지로 안내한다(:disabled 로 감추면 "눌러도 아무 일이
+        //   없다"로 오인된다).
         boolean selfRequested = meta.userCd() != null && meta.userCd().equals(param.gvUserCd());
         boolean closed = isClosed(param.gvCmpnyCd(), meta);
         boolean conflict = !"01".equals(meta.reqStatus());
@@ -1015,8 +1018,9 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
         //   - 같은 메서드의 IDOR 검사가 이미 "연차는 결재선 참여자면 통과"라는 예외를 두고 있어,
         //     결재선에 본인이 들어간 연차를 본인이 못 여는 것 자체가 앞뒤가 맞지 않았다.
         //   ★나머지 가드는 그대로 유지한다: IDOR 스코프(403_002) / 멱등 409 / 마감(400_042).
-        //   ★근태보정/초과/스케줄은 위임 대상 web Attd07Service 가 노드 정책(SELF_ATTD_APPRV_YN)으로
-        //     자기처리 허용 여부를 계속 판정한다(403_001/403_003) — 웹과 동일한 판정으로 수렴한다.
+        //   ★근태보정/초과/스케줄통합(2026-08-23, 근태결재선통합 P1)은 위임 대상 web Attd07Service 가
+        //     결재선(TB_USER_ATTD_REQ_APPROVAL) 현재 단계 소유권으로 처리 권한을 판정한다
+        //     (ApprovalStepGateService, master/hr/safe 예외 §8.5 유지) — 웹과 동일한 판정으로 수렴한다.
 
         // 멱등 충돌: REQ 가 이미 처리됨(대기 '01' 아님) → 409("다른 관리자가 이미 처리").
         //   연차 다단은 REQ 가 최종 승인 전까지 '01' 을 유지하므로, 단계 차례/중복은 위임 web 서비스가 추가 차단한다.

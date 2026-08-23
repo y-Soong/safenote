@@ -98,4 +98,23 @@
        AND REQ_ID   = #{reqId}
     </update>
 
+    <!-- ============================================================
+         근태결재선통합 P1-2(§0-5 3번째 폴백): 신청자 소속 노드의 기본 결재자 — 정 관리자 우선,
+         없으면 부 관리자. 공용 ApprovalLineMapper.selectDefaultApproverOfNode 와 동일 형식(MAIN→SUB,
+         모듈 독립 위해 복제) — 두 로직이 갈리면 lazy 폴백과 신규 신청의 기본 결재자가 달라진다.
+         ============================================================ -->
+    <select id="selectDefaultApproverForUser" resultType="string">
+    /* AppReq09Mapper.selectDefaultApproverForUser */
+    SELECT IFNULL(N.MAIN_ADMIN_CD, N.SUB_ADMIN_CD)
+      FROM TB_USER U
+      JOIN TB_SITE_NODE N
+        ON N.CMPNY_CD = U.CMPNY_CD
+       AND N.SITE_CD  = U.SITE_CD
+       AND N.NODE_CD  = U.NODE_CD
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.SITE_CD  = #{siteCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
 </mapper>

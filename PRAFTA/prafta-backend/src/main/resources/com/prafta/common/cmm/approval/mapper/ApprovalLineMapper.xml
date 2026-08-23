@@ -63,6 +63,26 @@
        AND APPROVAL_STEP = #{approvalStep}
     </update>
 
+    <!-- 근태결재선통합 P1 Medium 수정(security 지적·사용자 승인 08-23): updateStepStatus 는
+         갱신 전 상태 조건이 없어 동시 처리 시 이미 처리된 단계를 재차 덮어써도 UPDATE 자체는
+         조건 없이 항상 성공한다(현재는 REQ_STATUS 낙관적 락이 우연히 막고 있을 뿐, 이 UPDATE가
+         스스로 보장하지 않음). fromStatus 를 명시적으로 검증해 영향행수 0 을 호출부가 판정할 수
+         있게 한다. leave 도메인의 updateStepStatus 호출(LeaveFlowServiceImpl)은 이번 작업 범위
+         밖이라 변경하지 않고, attd07/ApprovalStepGateServiceImpl 만 이 가드 버전으로 전환한다. -->
+    <update id="updateStepStatusGuarded">
+    /* ApprovalLineMapper.updateStepStatusGuarded */
+    UPDATE TB_USER_ATTD_REQ_APPROVAL
+       SET APPROVAL_STATUS  = #{approvalStatus}
+         , APPROVAL_COMMENT = #{approvalComment}
+         , APPROVAL_DATE    = NOW()
+         , UPDATE_NO        = #{processUserCd}
+         , UPDATE_DATE      = NOW()
+     WHERE CMPNY_CD        = #{cmpnyCd}
+       AND REQ_ID          = #{reqId}
+       AND APPROVAL_STEP   = #{approvalStep}
+       AND APPROVAL_STATUS = #{fromStatus}
+    </update>
+
     <delete id="deleteApprovalLineByReqId">
     /* ApprovalLineMapper.deleteApprovalLineByReqId */
     <!-- ★테넌트 격리: REQ_ID 는 회사별 채번이라 전역 유일하지 않다. CMPNY_CD 없이 지우면
@@ -96,6 +116,19 @@
      WHERE A.CMPNY_CD        = #{cmpnyCd}
        AND A.REQ_ID          = #{reqId}
        AND A.APPROVAL_STATUS = '00'
+    </select>
+
+    <!-- 근태결재선통합 P1(§0-5/§4): 노드의 기본 결재자 — 정 관리자 우선, 없으면 부 관리자.
+         AppReq09Mapper.selectDefaultApproverForUser 와 동일 형식(MAIN→SUB, 모듈 독립 위해 복제) —
+         두 로직이 갈리면 lazy 폴백과 신규 신청의 기본 결재자가 달라진다. -->
+    <select id="selectDefaultApproverOfNode" resultType="string">
+    /* ApprovalLineMapper.selectDefaultApproverOfNode */
+    SELECT IFNULL(N.MAIN_ADMIN_CD, N.SUB_ADMIN_CD)
+      FROM TB_SITE_NODE N
+     WHERE N.CMPNY_CD = #{cmpnyCd}
+       AND N.SITE_CD  = #{siteCd}
+       AND N.NODE_CD  = #{nodeCd}
+     LIMIT 1
     </select>
 
 </mapper>

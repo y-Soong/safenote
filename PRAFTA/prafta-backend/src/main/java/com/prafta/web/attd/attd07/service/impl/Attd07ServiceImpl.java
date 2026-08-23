@@ -6,6 +6,9 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
+import com.prafta.common.cmm.approval.service.ApprovalStepGateService;
+import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
 import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
@@ -104,12 +107,19 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final StdWorkHoursService stdWorkHoursService;
     /** 근무타입 시점 적법성(effective-dating) 판정용 공용 매퍼 — 스케줄수정 승인 시 적용일 검증(2026-08-14). */
     private final com.prafta.common.cmm.schedule.mapper.ScheduleGuardMapper scheduleGuardMapper;
+    /** 근태결재선통합 P1-1(공용 게이트): 결재선 현재 단계 소유권 검증 + 단계 전진(공용 cmm 빈). */
+    private final ApprovalStepGateService approvalStepGateService;
+    /** 근태결재선통합 P1-3: 반려 시 결재선 현재 단계를 직접 반려 상태로 종결하기 위한 매퍼(leave 와 동일 관례). */
+    private final ApprovalLineMapper approvalLineMapper;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
      * CHECK_IN_METHOD(NOT NULL) 보정용 기본값으로 사용한다.
      */
     private static final String ATTD_METHOD_DEFAULT = "01";
+
+    /** 근태결재선통합 P1: 결재 단계 상태 [SYS044] — 반려 시 현재 단계를 직접 종결하는 데 사용(leave 동일 코드값). */
+    private static final String APPROVAL_STEP_REJECTED = "03";
 
     /**
      * PRAFTA-028 - 마감 가드. 대상 부서(nodeCd)+근무월이 마감 커버리지(전체/자기/상위 하위포함)에 들면
@@ -120,38 +130,6 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (attdCloseService.isClosedForNode(cmpnyCd, siteCd, nodeCd, closeYm)) {
             throw new ApiException(AttdErrorCode.ATTD_400_042);
         }
-    }
-
-    /**
-     * 근태/OT/스케줄 직접 승인·반려 자기처리 정책 게이트 (com-013-06-FU r28).
-     *
-     * <p>노드 {@code SELF_ATTD_APPRV_YN} 정책에 따라 처리자(approver)가 신청자(applicant)의
-     * 요청을 직접 처리할 수 있는지 검증한다. 거부 시:
-     * <ul>
-     *   <li>자기처리(신청자==처리자) 또는 동일 노드 관리자 자기처리로 막힌 경우 →
-     *       OT는 {@code ATTD_403_003}, 그 외(근태/스케줄)는 {@code ATTD_403_001}.</li>
-     *   <li>그 외 권한 미달(타 노드 관리자가 자격 없이 시도 등) → {@code ATTD_403_002}.</li>
-     * </ul>
-     * 전사 역할(master/hr/safe)은 정책 메서드 내부에서 즉시 통과한다.
-     *
-     * @param isOvertime OT 경로면 자기처리 차단 코드를 403_003 으로(아니면 403_001).
-     */
-    private void ensureCanProcessAttdSelfPolicy(String authCd, String approverUserCd, String applicantUserCd,
-                                                String cmpnyCd, String siteCd, String nodeCd, boolean isOvertime) {
-        if (attdCloseService.canProcessAttdSelfPolicy(
-                authCd, approverUserCd, applicantUserCd, cmpnyCd, siteCd, nodeCd)) {
-            return;
-        }
-        // 자기처리(신청자==처리자) 여부로 에러코드를 분기한다.
-        boolean selfProcess = applicantUserCd != null && applicantUserCd.equals(approverUserCd);
-        if (selfProcess) {
-            log.warn("근태 처리 거부 - 자기처리 차단. approverUserCd={}, applicantUserCd={}, nodeCd={}, isOvertime={}",
-                    approverUserCd, applicantUserCd, nodeCd, isOvertime);
-            throw new ApiException(isOvertime ? AttdErrorCode.ATTD_403_003 : AttdErrorCode.ATTD_403_001);
-        }
-        log.warn("근태 처리 거부 - 권한 미달. approverUserCd={}, applicantUserCd={}, authCd={}, nodeCd={}",
-                approverUserCd, applicantUserCd, authCd, nodeCd);
-        throw new ApiException(AttdErrorCode.ATTD_403_002);
     }
 
     @Override
@@ -396,10 +374,15 @@ public class Attd07ServiceImpl implements Attd07Service {
         		throw new ApiException(AttdErrorCode.ATTD_400_005);
         	}
 
-        	// (3) 자기처리/매니저 정책 게이트(isOvertime=false → 근태이므로 자기처리 차단 시 403_001).
-        	//     전사 역할(master/hr/safe)은 게이트 내부에서 즉시 통과한다.
-        	ensureCanProcessAttdSelfPolicy(model.gvAuthCd(), model.gvUserCd(), model.userCd(),
-        			model.gvCmpnyCd(), model.siteCd(), authoritativeNodeCd, false);
+        	// (3) 근태결재선통합 P1-5(§0-4): REQ 미소비 직접입력 경로 — canManageNode 게이트로 교체.
+        	//     master/hr/safe 전사 통과 OR 해당 노드(조상 노드 포함) 정·부 관리자. 자기처리 차단 없음
+        	//     (2026-08-16 확정 "관리자 본인결재 허용" 방향과 일치 — 자기 근태 직접 수정도 허용).
+        	if (!attdCloseService.canManageNode(model.gvAuthCd(), model.gvUserCd(), model.gvCmpnyCd(),
+        			model.siteCd(), authoritativeNodeCd)) {
+        		log.warn("admin-direct attd rejected - insufficient privilege. userCd={}, authCd={}, nodeCd={}",
+        				model.gvUserCd(), model.gvAuthCd(), authoritativeNodeCd);
+        		throw new ApiException(AttdErrorCode.ATTD_403_002);
+        	}
 
         	// (5) 대상 사용자가 호출자의 회사/사이트 scope 안에 존재해야 한다.
         	int userExists = attd07Mapper.selectUserExistInCmpnySite(
@@ -892,15 +875,14 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // [보안 재작업] SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
-        // 근태 요청 승인은 일반 작업자가 호출해선 안 되고, 노드 SELF_ATTD_APPRV_YN='N' 정책에서
-        // 노드 관리자 본인의 자기 승인을 차단하고 부모 1단계 노드 관리자에게만 승인을 허용한다.
-        // 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로 body 위조로 권한 escalation 을 할 수 없다.
-        //   [보안 재작업 com-013-06-FU] 권한 판정 노드/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다
-        //   (스케줄/OT 반려 경로와 일관화 — body↔REQ mismatch 검사 이전이라도 게이트가 권위값으로 판정).
-        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd, 사업장=reqRow.siteCd.
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // 근태결재선통합 P1-3(2026-08-23): 구 노드 정책 게이트(ensureCanProcessAttdSelfPolicy)를
+        //   결재선 현재 단계 소유권 게이트로 교체한다. 권한 판정 노드/사업장은 클라 body 가 아닌
+        //   REQ 의 권위값(reqRow)을 사용한다(기존과 동일 원칙 — body↔REQ mismatch 검사 이전이라도
+        //   게이트가 권위값으로 판정). 결재선이 없는 레거시 orphan REQ 는 게이트 내부에서 lazy
+        //   생성된다(§4). master/hr/safe 는 결재선 소유권과 무관하게 통과한다(§8.5).
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
         // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 승인 차단 (REQ 권위 부서 기준)
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), param.workYmd());
 
@@ -911,7 +893,7 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
 
-        // 3. 자기 승인 차단은 위 ensureCanProcessAttdSelfPolicy 로 일원화(노드 SELF_ATTD_APPRV_YN 정책).
+        // 3. 처리 권한 검증은 위 resolveProcessableStep 로 일원화(결재선 현재 단계 소유권 + §8.5 마스터 예외).
 
         // 4. 요청 본문이 보안 민감 필드에 한해 저장된 REQ row와 일치하는지 검증한다.
         //    하나라도 불일치하면 변조(tampering)로 간주한다.
@@ -1014,7 +996,7 @@ public class Attd07ServiceImpl implements Attd07Service {
             , param.gvCmpnyCd()
             , param.gvUserCd()
             // [보안 하드닝 ripple] 모델 record 확장에 따른 값 보존만 수행한다.
-            //   본 경로(요청 승인)는 진입부에서 이미 ensureCanProcessAttdSelfPolicy/ensureNotClosed/
+            //   본 경로(요청 승인)는 진입부에서 이미 resolveProcessableStep/ensureNotClosed/
             //   selectUserExistInCmpnySite 게이트를 통과하므로 이 두 필드는 게이트에 사용하지 않는다(동작 불변).
             , param.gvAuthCd()
             , reqRow.siteCd()
@@ -1037,14 +1019,24 @@ public class Attd07ServiceImpl implements Attd07Service {
                 param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), targetId,
                 param.checkInDate(), param.checkInTime(), param.checkOutDate(), param.checkOutTime());
 
-        // 8. TB_USER_ATTD_MGMT MERGE.
+        // 8. 근태결재선통합 P1-3(§0-3): 결재선 단계 전진. 최종 단계일 때만 아래 MGMT/HIST/REQ 를 반영한다.
+        //    중간 단계면 REQ_STATUS 는 그대로 두고(다음 결재자 대기) 여기서 반환한다.
+        boolean finalStep = approvalStepGateService.advanceOrFinalize(
+                param.gvCmpnyCd(), reqRow.reqId(), currentStep, param.processComment(), param.gvUserCd());
+        if (!finalStep) {
+            log.info("근태 요청 결재선 중간 단계 승인(반영 보류). reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
+            return;
+        }
+
+        // 9. TB_USER_ATTD_MGMT MERGE.
         attd07Mapper.updateUserAttdInfos(UpdateUserAttdInfosCommand.from(targetId, model));
 
-        // 9. TB_USER_ATTD_HIST INSERT (HIST_TYPE='01').
+        // 10. TB_USER_ATTD_HIST INSERT (HIST_TYPE='01').
         String histId = attd07Mapper.selectHistId(param.gvCmpnyCd());
         attd07Mapper.insertUserAttdInfos(InsertUserAttdHistsCommand.from(histId, targetId, model));
 
-        // 10. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향을 받아야 한다 (REQ_STATUS='01'(신청) 가드).
+        // 11. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향을 받아야 한다 (REQ_STATUS='01'(신청) 가드).
         int updated = attd07Mapper.updateUserAttdReqApprove(UpdateUserAttdRequestCommand.from(targetId, param));
         if (updated == 0) {
             // lost-update / 동시 승인 충돌: @Transactional 경계로 전체 롤백.
@@ -1088,12 +1080,12 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // [보안 재작업] SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
-        // 근태 요청 반려도 승인과 동일하게 노드 SELF_ATTD_APPRV_YN 정책을 적용한다.
-        //   [보안 재작업] 권한 판정 노드/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다
-        //   (스케줄/OT 반려 경로와 일관화). 신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd, 사업장=reqRow.siteCd.
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // 근태결재선통합 P1-3(2026-08-23): 결재선 현재 단계 소유권 게이트로 교체(승인 경로와 동일 원칙).
+        //   반려는 leave 와 동일하게 결재선 단계 무관 즉시 REQ 전체 반려(아래 5번) — 현재 단계
+        //   소유권 검증만 이 게이트로 수행한다.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
         // PRAFTA-028 - 마감된 기간(부서)의 근태 요청 반려 차단 (REQ 권위 부서 기준)
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), param.workYmd());
 
@@ -1147,6 +1139,20 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (updated == 0) {
             // lost-update / 동시 처리 충돌: @Transactional 경계로 전체 롤백.
             log.warn("reject rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 근태결재선통합 P1-3(§0-3): 결재선 현재 단계도 반려로 종결한다(REQ 는 위에서 이미 전체
+        //   반려됨 — 결재선 단계 진행과 무관하게 즉시 종결, leave rejectStep 과 동일 원칙).
+        // P1 Medium 수정(security 지적·사용자 승인 08-23): 갱신 전 상태(currentStep 조회 시점의
+        //   APPLIED) 를 가드하고 영향행수를 검사한다(다른 UPDATE 들과 동일한 가드 패턴).
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(param.gvCmpnyCd(), reqRow.reqId(),
+                currentStep.getApprovalStep(), currentStep.getApprovalStatus(),
+                APPROVAL_STEP_REJECTED, param.rejectReason(), param.gvUserCd());
+        if (stepUpdated == 0) {
+            // lost-update / 동시 처리 충돌: @Transactional 경계로 전체 롤백(위 REQ UPDATE 포함).
+            log.warn("reject rejected - approval step changed concurrently. reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
 
@@ -1207,12 +1213,11 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
-        // 스케줄 수정 승인도 노드 SELF_ATTD_APPRV_YN 정책(자기처리는 ATTD_403_001)을 적용한다.
-        //   [보안 정렬] 권한 판정 대상 부서/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다.
-        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd.
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // 근태결재선통합 P1-4(2026-08-23): 결재선 현재 단계 소유권 게이트로 교체(근태보정 승인과 동일 원칙).
+        //   권한 판정 대상 부서/사업장은 클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
 
         // PRAFTA-028 - 마감된 기간(부서)의 스케줄 변경 차단 (REQ 의 권위 부서/근무일 기준).
         //   현행 PRAFTA 마감 메커니즘은 근태 월마감(tb_attd_close) 단일이므로 그것으로 매핑한다(D5-a).
@@ -1306,7 +1311,17 @@ public class Attd07ServiceImpl implements Attd07Service {
                     com.prafta.common.cmm.schedule.ScheduleLockMessages.scheduleChangeBlockedMessage(leaveLocks));
         }
 
-        // 6. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
+        // 6. 근태결재선통합 P1-4(§0-3): 결재선 단계 전진. 최종 단계일 때만 아래 work_plan upsert/REQ 를 반영한다.
+        //    중간 단계면 REQ_STATUS·근무계획 모두 그대로 두고(다음 결재자 대기) 여기서 반환한다.
+        boolean finalStep = approvalStepGateService.advanceOrFinalize(
+                param.gvCmpnyCd(), reqRow.reqId(), currentStep, null, param.gvUserCd());
+        if (!finalStep) {
+            log.info("스케줄 수정 요청 결재선 중간 단계 승인(반영 보류). reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
+            return;
+        }
+
+        // 6-1. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
         attd07Mapper.upsertUserWorkPlan(UpsertUserWorkPlanCommand.of(
                 param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, param.gvUserCd()));
 
@@ -1358,10 +1373,11 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책 (REQ 권위 부서 기준).
-        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd. 자기처리는 ATTD_403_001.
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), false);
+        // 근태결재선통합 P1-4(2026-08-23): 결재선 현재 단계 소유권 게이트로 교체(REQ 권위 부서 기준).
+        //   반려는 결재선 단계 무관 즉시 REQ 전체 반려(아래 6번) — 현재 단계 소유권 검증만 이 게이트로 수행.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
 
         // PRAFTA-028 - 마감된 기간(부서)의 스케줄 요청 반려 차단 (REQ 의 권위 부서/근무일 기준).
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
@@ -1407,6 +1423,17 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
 
+        // 근태결재선통합 P1-4(§0-3): 결재선 현재 단계도 반려로 종결(REQ 는 위에서 이미 전체 반려됨).
+        // P1 Medium 수정(security 지적·사용자 승인 08-23): 갱신 전 상태 가드 + 영향행수 검사.
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(param.gvCmpnyCd(), reqRow.reqId(),
+                currentStep.getApprovalStep(), currentStep.getApprovalStatus(),
+                APPROVAL_STEP_REJECTED, param.rejectReason(), param.gvUserCd());
+        if (stepUpdated == 0) {
+            log.warn("sched-modify reject rejected - approval step changed concurrently. reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
         log.info("스케줄 수정 요청 반려 완료. reqId={}, userCd={}, workYmd={}",
                 reqRow.reqId(), reqRow.userCd(), reqRow.workYmd());
 
@@ -1447,10 +1474,11 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_006);
         }
 
-        // SEC-015 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책 (REQ 권위 부서 기준).
-        //   신청자=reqRow.userCd, 처리자=param.gvUserCd, 노드=reqRow.nodeCd. OT 자기처리는 ATTD_403_003.
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), reqRow.userCd(),
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), true);
+        // 근태결재선통합 P1-5(2026-08-23): 결재선 현재 단계 소유권 게이트로 교체(REQ 권위 부서 기준).
+        //   반려는 결재선 단계 무관 즉시 REQ 전체 반려(아래 3번) — 현재 단계 소유권 검증만 이 게이트로 수행.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
         // PRAFTA-028 - 마감된 기간(부서)의 초과근무 요청 반려 차단 (REQ 의 권위 부서/근무일 기준)
         ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.nodeCd(), reqRow.workYmd());
 
@@ -1483,6 +1511,17 @@ public class Attd07ServiceImpl implements Attd07Service {
         if (updated == 0) {
             // lost-update / 동시 처리 충돌: @Transactional 경계로 전체 롤백.
             log.warn("OT reject rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 근태결재선통합 P1-5(§0-3): 결재선 현재 단계도 반려로 종결(REQ 는 위에서 이미 전체 반려됨).
+        // P1 Medium 수정(security 지적·사용자 승인 08-23): 갱신 전 상태 가드 + 영향행수 검사.
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(param.gvCmpnyCd(), reqRow.reqId(),
+                currentStep.getApprovalStep(), currentStep.getApprovalStatus(),
+                APPROVAL_STEP_REJECTED, param.rejectReason(), param.gvUserCd());
+        if (stepUpdated == 0) {
+            log.warn("OT reject rejected - approval step changed concurrently. reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
             throw new ApiException(AttdErrorCode.ATTD_409_001);
         }
 
@@ -1525,36 +1564,103 @@ public class Attd07ServiceImpl implements Attd07Service {
         // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
         siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
 
-        // SEC-015/SEC-016 + com-013-06-FU(r28) - 매니저 전용 게이트 + 자기처리/상위결재 정책.
-        // OT 직접 등록은 일반 작업자가 호출해선 안 되고, 노드 SELF_ATTD_APPRV_YN='N' 정책에서
-        // 노드 관리자 본인의 자기 등록을 차단하고 부모 1단계 노드 관리자에게만 등록을 허용한다.
-        // 역할 검사는 JWT 기반 gvAuthCd 를 사용하므로 body 위조로 권한 escalation 을 할 수 없다.
-        //   신청자(대상)=param.userCd, 처리자=param.gvUserCd, OT 자기처리는 ATTD_403_003.
-        //
-        // [보안 재작업 com-013-06-FU] OT 직접등록 경로는 reqRow(권위 row)가 없어 body↔REQ nodeCd
-        //   mismatch 검사가 전혀 없었다. 그래서 'N' 노드 관리자가 본인 OT 를 등록할 때 body nodeCd 를
-        //   본인이 관리자이면서 'Y'인 다른 노드로 위조하면 게이트가 4-b 로 빠져 자기처리 차단이 무력화되고,
-        //   위조 nodeCd 가 TB_USER_OVERTIME_MGMT.NODE_CD 에까지 영속되었다.
-        //   → 게이트 노드/영속 노드 모두 대상 사용자(param.userCd)의 서버 조회 노드로 강제한다.
-        String authoritativeNodeCd =
-                attdCloseService.resolveUserNodeCd(param.gvCmpnyCd(), param.siteCd(), param.userCd());
-        // 소속 미상(서버노드 null/blank)이면 노드 단위 정책을 적용할 수 없으므로 fail-closed 차단.
-        if (authoritativeNodeCd == null || authoritativeNodeCd.isBlank()) {
-            log.warn("OT register rejected - 대상 사용자 소속 부서 미상(서버 노드 부재). cmpnyCd={}, siteCd={}, userCd={}",
-                    param.gvCmpnyCd(), param.siteCd(), param.userCd());
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        // 근태결재선통합 P1-5(2026-08-23, §0-3/§0-4): reqId 유무로 완전히 다른 게이트를 적용한다.
+        //   - reqId 있음 = 근로자 신청 경유 승인(REQ_TYPE 03 생성 / 04 수정) → 결재선 현재 단계 소유권 게이트.
+        //     REQ 로딩(REQ_TYPE/workYmd/user/site 대조)을 게이트보다 먼저 끌어올려 REQ 의 권위 노드로 판정한다.
+        //   - reqId 없음 = 관리자 직접등록/수정(§0-4, REQ 미소비) → canManageNode 게이트(구
+        //     ensureCanProcessAttdSelfPolicy 대체 — 조상 노드 관리자까지 허용 + 자기처리 차단 없음,
+        //     2026-08-16 확정 "관리자 본인결재 허용" 방향과 일치).
+        //   PRAFTA-025: reqRow / isModify 는 메서드 스코프로 끌어올려 아래 03(생성=INSERT) /
+        //   04(수정=UPDATE) 분기 및 최종단계 반영 게이트(advanceOrFinalize)에 계속 사용한다.
+        UserAttdReqResult reqRow = null;
+        boolean isModify = false;
+        ApprovalStepVO currentStep = null;
+        String authoritativeNodeCd;
+        if (param.reqId() != null && !param.reqId().isEmpty()) {
+            reqRow = attd07Mapper.selectUserAttdReqByReqId(
+                    param.reqId(), param.gvCmpnyCd());
+            if (reqRow == null) {
+                log.warn("OT register rejected - reqId not found. reqId={}, cmpnyCd={}",
+                        param.reqId(), param.gvCmpnyCd());
+                throw new ApiException(AttdErrorCode.ATTD_404_001);
+            }
+            // SEC-018: REQ_TYPE 가드. 본 endpoint는 초과근무 요청(03 생성 / 04 수정)만 처리한다.
+            // 근태/연차 요청이 OT 승인 경로로 흘러들어 타입 혼동을 일으키지 않도록 fail-closed로 거부한다.
+            if (!AttdReqTypeUtils.isOvertimeReqType(reqRow.reqType())) {
+                log.warn("OT approve rejected - wrong REQ_TYPE for overtime endpoint. reqId={}, reqType={}",
+                        reqRow.reqId(), reqRow.reqType());
+                throw new ApiException(AttdErrorCode.ATTD_400_006);
+            }
+            isModify = AttdReqTypeUtils.isOvertimeModify(reqRow.reqType());
+            // ★M-2(security 지적, 2026-08-12): workYmd 대조 추가 — 형제 승인 경로(근태 승인·반려·
+            //   스케줄수정 승인 등)는 전부 workYmd 를 대조하는데 이 경로만 빠져 있었다.
+            //   workYmd=A일 + reqId=같은 주 B일 대기 OT 요청 조합으로 호출하면
+            //     ① B일 신청이 A일 등록으로 조용히 종결되고(기존 결함),
+            //     ② 소정-07 게이트가 excludeReqId / reqRow.targetId() 로 "다른 날"의 REQ·OT 를 주간
+            //        합계에서 빼버려 720분 한도가 과소 집계된다(게이트 우회).
+            //   청구 확인 생략 분기의 근거를 reqId 에 둔 이상 REQ 권위값 대조 범위를 형제와 맞춘다.
+            //   ★근태결재선통합 P1-5: nodeCd 도 함께 대조한다(추가) — INSERT 시 param.nodeCd() 가
+            //   그대로 TB_USER_OVERTIME_MGMT.NODE_CD 에 영속되므로(InsertUserOvertimeCommand.from),
+            //   REQ 권위값과 대조하지 않으면 위조 nodeCd 가 그대로 저장된다(형제 승인 경로와 동일 레벨 방어).
+            if (StringEqualsUtils.isMismatched(param.userCd(), reqRow.userCd())
+                    || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())
+                    || StringEqualsUtils.isMismatched(param.workYmd(), reqRow.workYmd())
+                    || StringEqualsUtils.isMismatched(param.nodeCd(), reqRow.nodeCd())) {
+                log.warn("OT register rejected - reqId scope mismatch. reqId={}, paramUser={}, reqUser={}, paramSite={}, reqSite={}, paramYmd={}, reqYmd={}, paramNode={}, reqNode={}",
+                        reqRow.reqId(),
+                        param.userCd(), reqRow.userCd(),
+                        param.siteCd(), reqRow.siteCd(),
+                        param.workYmd(), reqRow.workYmd(),
+                        param.nodeCd(), reqRow.nodeCd());
+                throw new ApiException(AttdErrorCode.ATTD_400_005);
+            }
+            // 요청 승인 관리(Attd_10) 인박스 경유 승인: 대기('01' 신청) 상태의 요청만 승인 가능.
+            // (이중 처리 방지 — 등록 전 선제 가드. 마감 처리는 INSERT/UPDATE 후 updateUserOvertimeReqApprove에서 수행.)
+            if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
+                log.warn("OT approve rejected - REQ already processed. reqId={}, status={}",
+                        reqRow.reqId(), reqRow.reqStatus());
+                throw new ApiException(AttdErrorCode.ATTD_409_001);
+            }
+            // 결재선 현재 단계 소유권 게이트 — REQ 의 권위 노드/사업장 사용(클라 body 미신뢰).
+            currentStep = approvalStepGateService.resolveProcessableStep(
+                    param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                    param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
+            authoritativeNodeCd = reqRow.nodeCd();
+            // PRAFTA-028 - 마감된 기간(부서)의 초과근무 승인 차단 (REQ 권위 부서 기준).
+            ensureNotClosed(param.gvCmpnyCd(), reqRow.siteCd(), authoritativeNodeCd, param.workYmd());
+        } else {
+            // reqId 없음 = 관리자 직접등록/수정(§0-4, REQ 미소비) — canManageNode 게이트.
+            //
+            // [보안 재작업 com-013-06-FU] OT 직접등록 경로는 reqRow(권위 row)가 없어 body↔REQ nodeCd
+            //   mismatch 검사가 전혀 없었다. 그래서 'N' 노드 관리자가 본인 OT 를 등록할 때 body nodeCd 를
+            //   본인이 관리자이면서 'Y'인 다른 노드로 위조하면 게이트가 4-b 로 빠져 자기처리 차단이 무력화되고,
+            //   위조 nodeCd 가 TB_USER_OVERTIME_MGMT.NODE_CD 에까지 영속되었다.
+            //   → 게이트 노드/영속 노드 모두 대상 사용자(param.userCd)의 서버 조회 노드로 강제한다.
+            authoritativeNodeCd =
+                    attdCloseService.resolveUserNodeCd(param.gvCmpnyCd(), param.siteCd(), param.userCd());
+            // 소속 미상(서버노드 null/blank)이면 노드 단위 정책을 적용할 수 없으므로 fail-closed 차단.
+            if (authoritativeNodeCd == null || authoritativeNodeCd.isBlank()) {
+                log.warn("OT register rejected - 대상 사용자 소속 부서 미상(서버 노드 부재). cmpnyCd={}, siteCd={}, userCd={}",
+                        param.gvCmpnyCd(), param.siteCd(), param.userCd());
+                throw new ApiException(AttdErrorCode.ATTD_403_002);
+            }
+            // body nodeCd 가 서버 권위 노드와 불일치하면 변조로 간주하고 차단(다른 경로의 mismatch 방어와 동일 레벨).
+            if (StringEqualsUtils.isMismatched(param.nodeCd(), authoritativeNodeCd)) {
+                log.warn("OT register rejected - body/서버 nodeCd mismatch(변조). cmpnyCd={}, siteCd={}, userCd={}, paramNode={}, serverNode={}",
+                        param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.nodeCd(), authoritativeNodeCd);
+                throw new ApiException(AttdErrorCode.ATTD_400_005);
+            }
+            // 게이트 인자 = 서버 권위 노드(클라 body 미신뢰). master/hr/safe 전사 통과 OR 해당 노드
+            //   (조상 포함) 정·부 관리자. 자기처리 차단 없음(2026-08-16 확정 방향과 일치).
+            if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(),
+                    param.siteCd(), authoritativeNodeCd)) {
+                log.warn("OT register rejected - insufficient privilege. userCd={}, authCd={}, nodeCd={}",
+                        param.gvUserCd(), param.gvAuthCd(), authoritativeNodeCd);
+                throw new ApiException(AttdErrorCode.ATTD_403_002);
+            }
+            // PRAFTA-028 - 마감된 기간(부서)의 초과근무 등록/수정 차단 (게이트와 동일한 권위 노드 사용).
+            ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, param.workYmd());
         }
-        // body nodeCd 가 서버 권위 노드와 불일치하면 변조로 간주하고 차단(다른 경로의 mismatch 방어와 동일 레벨).
-        if (StringEqualsUtils.isMismatched(param.nodeCd(), authoritativeNodeCd)) {
-            log.warn("OT register rejected - body/서버 nodeCd mismatch(변조). cmpnyCd={}, siteCd={}, userCd={}, paramNode={}, serverNode={}",
-                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.nodeCd(), authoritativeNodeCd);
-            throw new ApiException(AttdErrorCode.ATTD_400_005);
-        }
-        // 게이트 인자 = 서버 권위 노드(클라 body 미신뢰).
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), param.userCd(),
-                param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, true);
-        // PRAFTA-028 - 마감된 기간(부서)의 초과근무 등록/수정 차단 (게이트와 동일한 권위 노드 사용).
-        ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, param.workYmd());
 
         // SEC-017 (a) - 대상 사용자가 호출자의 회사/사이트 scope 안에 존재해야 한다.
         int userExists = attd07Mapper.selectUserExistInCmpnySite(
@@ -1583,53 +1689,6 @@ public class Attd07ServiceImpl implements Attd07Service {
                 log.warn("OT register rejected - attdId not in scope. cmpnyCd={}, siteCd={}, userCd={}, attdId={}",
                         param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.attdId());
                 throw new ApiException(AttdErrorCode.ATTD_404_012);
-            }
-        }
-
-        // SEC-017 (c) - reqId가 전달된 경우, body의 userCd / siteCd와 일치하는 REQ row를 참조해야 한다.
-        // 근태 승인 경로와 동일한 권위 row 로더를 공유하기 위해 selectUserAttdReqByReqId를 재사용한다.
-        // PRAFTA-025: reqRow / isModify 를 메서드 스코프로 끌어올려 03(생성=INSERT) / 04(수정=UPDATE) 분기에 사용한다.
-        UserAttdReqResult reqRow = null;
-        boolean isModify = false;
-        if (param.reqId() != null && !param.reqId().isEmpty()) {
-            reqRow = attd07Mapper.selectUserAttdReqByReqId(
-                    param.reqId(), param.gvCmpnyCd());
-            if (reqRow == null) {
-                log.warn("OT register rejected - reqId not found. reqId={}, cmpnyCd={}",
-                        param.reqId(), param.gvCmpnyCd());
-                throw new ApiException(AttdErrorCode.ATTD_404_001);
-            }
-            // SEC-018: REQ_TYPE 가드. 본 endpoint는 초과근무 요청(03 생성 / 04 수정)만 처리한다.
-            // 근태/연차 요청이 OT 승인 경로로 흘러들어 타입 혼동을 일으키지 않도록 fail-closed로 거부한다.
-            if (!AttdReqTypeUtils.isOvertimeReqType(reqRow.reqType())) {
-                log.warn("OT approve rejected - wrong REQ_TYPE for overtime endpoint. reqId={}, reqType={}",
-                        reqRow.reqId(), reqRow.reqType());
-                throw new ApiException(AttdErrorCode.ATTD_400_006);
-            }
-            isModify = AttdReqTypeUtils.isOvertimeModify(reqRow.reqType());
-            // ★M-2(security 지적, 2026-08-12): workYmd 대조 추가 — 형제 승인 경로(근태 승인·반려·
-            //   스케줄수정 승인 등)는 전부 workYmd 를 대조하는데 이 경로만 빠져 있었다.
-            //   workYmd=A일 + reqId=같은 주 B일 대기 OT 요청 조합으로 호출하면
-            //     ① B일 신청이 A일 등록으로 조용히 종결되고(기존 결함),
-            //     ② 소정-07 게이트가 excludeReqId / reqRow.targetId() 로 "다른 날"의 REQ·OT 를 주간
-            //        합계에서 빼버려 720분 한도가 과소 집계된다(게이트 우회).
-            //   청구 확인 생략 분기의 근거를 reqId 에 둔 이상 REQ 권위값 대조 범위를 형제와 맞춘다.
-            if (StringEqualsUtils.isMismatched(param.userCd(), reqRow.userCd())
-                    || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())
-                    || StringEqualsUtils.isMismatched(param.workYmd(), reqRow.workYmd())) {
-                log.warn("OT register rejected - reqId scope mismatch. reqId={}, paramUser={}, reqUser={}, paramSite={}, reqSite={}, paramYmd={}, reqYmd={}",
-                        reqRow.reqId(),
-                        param.userCd(), reqRow.userCd(),
-                        param.siteCd(), reqRow.siteCd(),
-                        param.workYmd(), reqRow.workYmd());
-                throw new ApiException(AttdErrorCode.ATTD_400_005);
-            }
-            // 요청 승인 관리(Attd_10) 인박스 경유 승인: 대기('01' 신청) 상태의 요청만 승인 가능.
-            // (이중 처리 방지 — 등록 전 선제 가드. 마감 처리는 INSERT/UPDATE 후 updateUserOvertimeReqApprove에서 수행.)
-            if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
-                log.warn("OT approve rejected - REQ already processed. reqId={}, status={}",
-                        reqRow.reqId(), reqRow.reqStatus());
-                throw new ApiException(AttdErrorCode.ATTD_409_001);
             }
         }
 
@@ -1864,6 +1923,19 @@ public class Attd07ServiceImpl implements Attd07Service {
             }
         }
 
+        // 근태결재선통합 P1-5(§0-3): reqId 있는 경로(결재선)만 결재선 단계를 전진시키고, 최종 단계일
+        //   때만 아래 OT INSERT/UPDATE + REQ 반영을 수행한다. reqId 없는 관리자 직접등록/수정(§0-4)은
+        //   결재선과 무관하므로 항상 즉시 반영한다(현행 동작 그대로 — currentStep==null 이면 skip).
+        if (currentStep != null) {
+            boolean finalStep = approvalStepGateService.advanceOrFinalize(
+                    param.gvCmpnyCd(), reqRow.reqId(), currentStep, null, param.gvUserCd());
+            if (!finalStep) {
+                log.info("초과근무 요청 결재선 중간 단계 승인(반영 보류). reqId={}, step={}",
+                        reqRow.reqId(), currentStep.getApprovalStep());
+                return;
+            }
+        }
+
         // 7. 초과근무 기록 반영.
         //    - 03(생성) 또는 Attd_07 직접 등록 → 각 구간을 새 OT row로 INSERT.
         //    - 04(수정) → 기존 OT 행(TARGET_ID=OT_ID)을 요청 구간으로 UPDATE(단일 구간).
@@ -2052,11 +2124,16 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_005);
         }
 
-        // 2) 매니저 게이트 + 자기처리/상위결재 정책 게이트 — 게이트 인자 = 서버 권위 노드(클라 body 미신뢰).
-        //    master/hr/safe 전사 통과는 ensureCanProcessAttdSelfPolicy 내부에서 유지된다.
-        //    SELF_ATTD_APPRV_YN='N' 노드에서 본인 OT 자기삭제는 ATTD_403_003 으로 차단된다(등록 경로와 대칭).
-        ensureCanProcessAttdSelfPolicy(param.gvAuthCd(), param.gvUserCd(), param.userCd(),
-                param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, true);
+        // 2) 근태결재선통합 P1-5(§0-4): REQ 미소비 직접입력 경로(DeleteUserOvertimeParam 에 reqId
+        //    필드 자체가 없음 — 전수 확인 완료) — canManageNode 게이트로 교체. 게이트 인자 = 서버 권위
+        //    노드(클라 body 미신뢰). master/hr/safe 전사 통과 OR 해당 노드(조상 포함) 정·부 관리자.
+        //    자기처리 차단 없음(2026-08-16 확정 "관리자 본인결재 허용" 방향과 일치).
+        if (!attdCloseService.canManageNode(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(),
+                param.siteCd(), authoritativeNodeCd)) {
+            log.warn("delete-user-overtime rejected - insufficient privilege. userCd={}, authCd={}, nodeCd={}",
+                    param.gvUserCd(), param.gvAuthCd(), authoritativeNodeCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
 
         // 3) 마감 가드 — 마감된 기간(부서)의 OT 삭제 차단 (게이트와 동일한 권위 노드 사용).
         ensureNotClosed(param.gvCmpnyCd(), param.siteCd(), authoritativeNodeCd, param.workYmd());
