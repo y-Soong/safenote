@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
@@ -125,23 +126,60 @@ public class Attd13ServiceImpl implements Attd13Service {
 
     @Override
     public List<LeaveChangeRequestRowResult> getChangeRequests(ChangeRequestListParam param) {
-        // 역할 기반 스코프(작업1 D1+D3):
-        //   - master/hr: 회사 전사(사업장 미지정=전체, 지정 시 해당 사업장). 부서 미지정 허용.
-        //   - 노드 정·부 관리자: 본인 담당 노드(+하위) 강제. 부서 미지정 진입은 403 대신 안내성 BadRequest.
+        // 역할 기반 스코프(작업1 D1+D3, 접수함연차변경다중사업장확장-001/002 확장):
+        //   - master/hr: 접근 가능 사업장 전체(사업장 미지정=전체, 지정 시 그 1건). 부서 미지정 허용.
+        //   - 노드 정·부 관리자: 부서 필수(미지정 시 403 대신 안내성 BadRequest, 무수정 유지). 사업장은
+        //     지정 시 그 1건, 미지정 시 접근 가능 사업장 전체(다중 사업장 겸임자 지원).
         boolean siteWide = AuthRoleUtils.isManager(param.gvAuthCd());
-        if (!siteWide) {
-            // 사업장 접근 인가(구 토큰 사업장 등식 가드 대체 — User_03 원장 기반).
-            siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
-            // 노드 관리자는 부서 필수(미지정 시 즉시 403 대신 안내). 빈 nodeCd 로 조회하면 ensureCanManageScope 가 403.
-            if (param.nodeCd() == null || param.nodeCd().isBlank() || WHOLE_SITE.equals(param.nodeCd())) {
-                throw new ApiException(AttdErrorCode.ATTD_400_130);
+        if (!siteWide && (param.nodeCd() == null || param.nodeCd().isBlank() || WHOLE_SITE.equals(param.nodeCd()))) {
+            throw new ApiException(AttdErrorCode.ATTD_400_130);
+        }
+        List<String> siteCds = resolveSiteCds(
+                param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+        if (siteCds.isEmpty()) {
+            // 접근 가능 사업장 원장이 비어있는 극단 케이스 방어 — SQL IN() 빈 목록 오류 예방
+            // (ReqInboxServiceImpl.resolveSiteCds 호출부 관례 동일).
+            return List.of();
+        }
+        // §0-5 설계 결정: 부서(NODE_CD) 필터는 접근 가능 사업장이 정확히 1건으로 좁혀졌을 때만 유효.
+        //   다건/미확정 상태에서 nodeCd 를 지정하면 조용히 빈 결과가 아니라 명확한 에러로 거부한다
+        //   (fail-visible — 종전 "NU.SITE_CD = NULL" 버그를 함께 바로잡는다).
+        String nodeSiteCd = null;
+        boolean nodeFilterRequested =
+                param.nodeCd() != null && !param.nodeCd().isBlank() && !WHOLE_SITE.equals(param.nodeCd());
+        if (nodeFilterRequested) {
+            if (siteCds.size() != 1) {
+                throw new ApiException(AttdErrorCode.ATTD_400_214);
             }
-            // 지정 노드에 대한 관리 권한(해당/상위 부서 정·부 관리자) 강제(safe 제외)
-            ensureCanManageScope(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd(), param.nodeCd());
+            nodeSiteCd = siteCds.get(0);
+        }
+        if (!siteWide) {
+            // 노드 관리자는 nodeFilterRequested 가 항상 true(위 가드) — 지정 노드에 대한 관리 권한
+            // (해당/상위 부서 정·부 관리자) 강제(safe 제외, 무수정 유지).
+            ensureCanManageScope(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), nodeSiteCd, param.nodeCd());
         }
         return attd13Mapper.selectChangeRequests(
-                param.gvCmpnyCd(), siteWide ? "Y" : "N", param.siteCd(), param.nodeCd(), param.incSubNodeYn(),
+                param.gvCmpnyCd(), siteCds, nodeSiteCd, param.nodeCd(), param.incSubNodeYn(),
                 param.userNm(), param.reqStatus());
+    }
+
+    /**
+     * 목록 조회 사업장 스코프 해석(접수함연차변경다중사업장확장-001 —
+     * {@code ReqInboxServiceImpl.resolveSiteCds} 와 동일 원칙, 이미 주입된 {@code siteAccessService}
+     * 필드를 재사용한다).
+     *
+     * <p>{@code reqSiteCd} 가 있으면 접근 가능 여부를 개별 검증(IDOR 가드, 실패 시 {@code COMMON_403_003})한
+     * 후 그 1건으로 좁힌다. 없으면 접근 가능 사업장 전체를 사용한다.
+     */
+    private List<String> resolveSiteCds(String cmpnyCd, String userCd, String authCd, String gvSiteCd,
+                                        String reqSiteCd) {
+        if (reqSiteCd != null && !reqSiteCd.isBlank()) {
+            siteAccessService.assertSiteAccess(cmpnyCd, userCd, authCd, gvSiteCd, reqSiteCd);
+            return List.of(reqSiteCd);
+        }
+        return siteAccessService.getAccessibleSites(cmpnyCd, userCd, authCd).stream()
+                .map(AccessibleSiteResult::siteCd)
+                .toList();
     }
 
     @Override

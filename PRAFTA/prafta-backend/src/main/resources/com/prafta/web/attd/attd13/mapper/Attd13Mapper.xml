@@ -378,35 +378,39 @@
        AND LT.LEAVE_CD = LU.LEAVE_CD
      WHERE R.CMPNY_CD = #{cmpnyCd}
        AND R.DEL_YN   = 'N'
-    <!-- 사업장 스코프: 노드 관리자(siteWide='N')는 항상 자기 사업장 강제. master/hr 는 선택 사업장 지정 시에만 필터. -->
-    <if test="!&quot;Y&quot;.equals(siteWide) or (siteCd != null and siteCd != '')">
-       AND R.SITE_CD  = #{siteCd}
-    </if>
+    <!-- 사업장 스코프(접수함연차변경다중사업장확장-001): 서비스가 확정한 접근 가능 사업장 목록
+         (ReqInboxMapper.selectPendingRequests 와 동형 — 항상 1건 이상만 전달됨). -->
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
     <if test="reqStatus != null and reqStatus != ''">
        AND R.REQ_STATUS = #{reqStatus}
     </if>
     <if test="userNm != null and userNm != ''">
        AND TU.USER_NM LIKE CONCAT('%', #{userNm}, '%')
     </if>
-    <!-- 부서 필터: 지정 시 해당 노드(+ 하위포함 옵션) 소속 대상자만. 노드 관리자는 호출부에서 nodeCd 강제 주입. -->
+    <!-- 부서 필터(접수함연차변경다중사업장확장-002): 지정 시 해당 노드(+ 하위포함 옵션) 소속 대상자만.
+         부서 필터는 사업장이 정확히 1건일 때만 유효(§0-5 설계 결정) — 서비스가 그 경우에만
+         nodeSiteCd 를 채워 전달한다고 가정한다(매퍼는 값 검증을 하지 않는다). -->
     <if test="nodeCd != null and nodeCd != '' and nodeCd != '*'">
        AND R.TARGET_USER_CD IN (
            SELECT NU.USER_CD
              FROM TB_USER NU
             WHERE NU.CMPNY_CD = #{cmpnyCd}
-              AND NU.SITE_CD  = #{siteCd}
+              AND NU.SITE_CD  = #{nodeSiteCd}
         <choose>
             <when test="incSubNodeYn == 'Y'">
               AND NU.NODE_CD IN (
                   WITH RECURSIVE sub AS (
                       SELECT N.NODE_CD
                         FROM TB_SITE_NODE N
-                       WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{siteCd} AND N.NODE_CD = #{nodeCd}
+                       WHERE N.CMPNY_CD = #{cmpnyCd} AND N.SITE_CD = #{nodeSiteCd} AND N.NODE_CD = #{nodeCd}
                       UNION ALL
                       SELECT C.NODE_CD
                         FROM TB_SITE_NODE C
                         JOIN sub S2
-                          ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{siteCd} AND C.PARENT_NODE_CD = S2.NODE_CD
+                          ON C.CMPNY_CD = #{cmpnyCd} AND C.SITE_CD = #{nodeSiteCd} AND C.PARENT_NODE_CD = S2.NODE_CD
                   )
                   SELECT NODE_CD FROM sub
               )

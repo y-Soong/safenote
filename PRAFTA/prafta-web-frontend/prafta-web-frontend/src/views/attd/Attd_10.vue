@@ -148,6 +148,16 @@
             <div class="ra-inbox__head">
               연차 변경 요청 대기 ({{ leavechangeList.length }})
             </div>
+            <LeaveChangeScopeFilter
+              v-model:site-cd="leaveChangeSiteCd"
+              v-model:node-cd="leaveChangeNodeCd"
+              v-model:inc-sub-node-yn="leaveChangeIncSubNodeYn"
+              :accessible-sites="accessibleSites"
+              :node-list="leaveChangeNodeList"
+              :node-enabled="leaveChangeNodeSelectEnabled"
+              :loading="accessibleSitesLoading"
+              :node-list-loading="leaveChangeNodeListLoading"
+            />
             <div class="ra-list">
               <div v-if="leaveChangeNoDept" class="ra-empty">
                 담당 부서가 없어 연차 변경 요청을 조회할 수 없습니다.
@@ -528,6 +538,7 @@ import ReqProcessedHistoryPop from "./popup/ReqProcessedHistoryPop.vue";
 import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
 import AttdSchedCompareSection from "./popup/AttdSchedCompareSection.vue";
 import ReqInboxSiteFilter from "./popup/ReqInboxSiteFilter.vue";
+import LeaveChangeScopeFilter from "./popup/LeaveChangeScopeFilter.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -722,7 +733,9 @@ const leavechangeList = ref([]);
 const leavechangeCount = ref(0);
 const showLeaveChangePop = ref(false);
 const selectedLeaveChangeReqId = ref("");
-// 담당 부서(gv_nodeCd)가 없는 노드 관리자 — 조회를 생략하고 인라인 안내만 표시(F-1, alert 금지).
+// 노드 관리자인데 부서 필터(leaveChangeNodeCd)가 비어 조회를 생략한 상태 — 인라인 안내만 표시
+//   (F-1, alert 금지). 접수함연차변경다중사업장확장-004: 판정 기준을 "세션 gv_nodeCd 존재 여부"에서
+//   "선택된 leaveChangeNodeCd 존재 여부"로 갱신(최초 마운트 시 gv_nodeCd 로 프리필하므로 초기 동작은 동일).
 const leaveChangeNoDept = ref(false);
 
 // 권한 스코프(F-1) — Attd_13.vue 의 프리필 규칙과 동형: master/hr 는 전사, 그 외는 담당 부서 강제.
@@ -730,6 +743,21 @@ const leaveChangeNoDept = ref(false);
 const isMasterOrHr = computed(() => {
   const a = sessionStorage.getItem("gv_authCd");
   return a === "master" || a === "hr";
+});
+
+// 접수함연차변경다중사업장확장-003/004: 소섹션 전용 사업장/부서 필터 상태.
+//   accessibleSites/accessibleSitesLoading 은 상단 3탭 필터와 공유(이미 로드된 것을 재사용 — 재조회 없음).
+const leaveChangeSiteCd = ref("");
+const leaveChangeNodeCd = ref("");
+const leaveChangeIncSubNodeYn = ref("Y"); // 기존 고정값(Attd_13 기본=포함)과 동일 — 무회귀 기본값
+const leaveChangeNodeList = ref([]);
+const leaveChangeNodeListLoading = ref(false);
+
+// "사업장이 정확히 1곳으로 좁혀졌는지" 판정(§0-5 설계 결정) — 접근 가능 사업장이 1곳뿐이면
+//   (leaveChangeSiteCd 가 비어 있어도) 사실상 그 1곳으로 확정된 것이므로 부서 필터를 활성화한다
+//   (단일 사업장 관리자 무회귀). 그 외엔 leaveChangeSiteCd 가 비어있지 않을 때만 활성.
+const leaveChangeNodeSelectEnabled = computed(() => {
+  return accessibleSites.value.length === 1 || !!leaveChangeSiteCd.value;
 });
 
 // 연차 변경 요청 코드 → 라벨 매핑(TB_LEAVE_CHANGE_REQUEST 전용 — SYS032 와 무관, 재사용 금지)
@@ -921,28 +949,66 @@ const fnLoadApprovals = async () => {
   }
 };
 
+// 접수함연차변경다중사업장확장-004: 소섹션 부서 목록 조회(Attd_13.vue fnLoadNodeList 패턴 재사용
+//   — 신규 API 아님). siteCd 미지정이면 목록을 비운다(부서 select 는 nodeEnabled 로 이미 disabled).
+const fnLoadLeaveChangeNodeList = async (siteCd) => {
+  if (!siteCd) {
+    leaveChangeNodeList.value = [];
+    return;
+  }
+  leaveChangeNodeListLoading.value = true;
+  try {
+    const r = await axios.get("/comApi/baseinfo/site-node-lists", {
+      params: { cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"), siteCd },
+    });
+    leaveChangeNodeList.value = (r.data?.siteNodeInfoList ?? []).map((n) => ({
+      nodeCd: n.nodeCd,
+      nodeNm: n.nodeNm,
+    }));
+  } catch (e) {
+    console.warn("[Attd_10] 연차 변경 부서 목록 조회 실패", e);
+    leaveChangeNodeList.value = [];
+  } finally {
+    leaveChangeNodeListLoading.value = false;
+  }
+};
+
+// 접수함연차변경다중사업장확장-004: 연차 변경 소섹션 스코프 파라미터 조립 — 목록(fnLoadLeaveChanges)과
+//   카운트(fnLoadCounts) 가 동일 로직을 공유한다(항상 같은 스코프를 보장 — 배지·리스트 불일치 방지).
+//   null 반환 = 노드 관리자인데 부서 필터가 비어 서버 호출 자체를 생략해야 함을 의미한다(ATTD_400_130 회피).
+const buildLeaveChangeScopeParams = () => {
+  if (!isMasterOrHr.value && !leaveChangeNodeCd.value) {
+    return null;
+  }
+  const params = { REQ_STATUS: "AGREED" };
+  if (leaveChangeSiteCd.value) {
+    params.SITE_CD = leaveChangeSiteCd.value;
+  } else if (accessibleSites.value.length === 1) {
+    // 접근 가능 사업장이 1곳뿐이면 명시 선택 없이도 그 1곳으로 확정(§0-5) — 서버 nodeSiteCd 판정과 정합.
+    params.SITE_CD = accessibleSites.value[0].siteCd;
+  }
+  if (leaveChangeNodeCd.value) {
+    params.NODE_CD = leaveChangeNodeCd.value;
+    params.INC_SUB_NODE_YN = leaveChangeIncSubNodeYn.value;
+  }
+  return params;
+};
+
 // "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션 목록 조회(B안) — 확인 대기(AGREED) 건만 노출.
-//   사이트/부서 셀렉터가 없는 화면이므로 Attd_13.vue 의 프리필 규칙을 그대로 따른다(F-1):
-//   master/hr 는 전사 조회, 그 외(노드 관리자)는 세션 사업장(gv_siteCd)/담당 부서(gv_nodeCd)로 고정 조회.
-//   프리필할 담당 부서가 없으면 서버 호출 자체를 생략하고 소섹션을 비운 채 인라인 안내만 표시한다
-//   (전역 alert 로 화면 흐름을 끊지 않는다 — 부서 필수 EP 를 부서 없이 호출해 발생하던 400 즉시 방지).
+//   접수함연차변경다중사업장확장-004: 세션 프리필 대신 LeaveChangeScopeFilter 가 노출하는
+//   leaveChangeSiteCd/leaveChangeNodeCd/leaveChangeIncSubNodeYn ref 값을 그대로 params 에 싣는다
+//   (빈 문자열 = 서버가 "전체"로 해석 — ChangeRequestListParam 계약, 접수함연차변경다중사업장확장-001/002).
 //   fnLoadApprovals 와 독립적으로 실패를 격리해, 한쪽이 실패해도 다른 소섹션은 정상 표시되게 한다.
 const fnLoadLeaveChanges = async () => {
   leaveChangeNoDept.value = false;
-  const params = { REQ_STATUS: "AGREED" };
-  if (!isMasterOrHr.value) {
-    const nodeCd = sessionStorage.getItem("gv_nodeCd") ?? "";
-    if (!nodeCd) {
-      // 담당 부서가 없는 노드 관리자 — 조회를 건너뛰고 조용히 비운다(alert 금지, 상세설명 2번).
-      leavechangeList.value = [];
-      leavechangeCount.value = 0;
-      leaveChangeNoDept.value = true;
-      return;
-    }
-    params.SITE_CD = sessionStorage.getItem("gv_siteCd") ?? "";
-    params.NODE_CD = nodeCd;
-    // 이 화면엔 별도 하위부서 포함 토글이 없어 Attd_13 기본값(포함)으로 고정(상세설명 3번).
-    params.INC_SUB_NODE_YN = "Y";
+  const params = buildLeaveChangeScopeParams();
+  if (!params) {
+    // 노드 관리자인데 부서 필터가 비어 있음(예: 사업장을 "전체"로 전환하는 cascade 로 함께 초기화된
+    //   경우) — 호출을 생략하고 조용히 비운다(alert 금지, 기존 관례 유지).
+    leavechangeList.value = [];
+    leavechangeCount.value = 0;
+    leaveChangeNoDept.value = true;
+    return;
   }
   try {
     const r = await axios.get("/webApi/attd13/change-requests", { params });
@@ -1019,12 +1085,19 @@ const fnLoadCounts = async () => {
     overtimeCount.value = (otRes.data?.pendingList ?? []).length;
 
     // 연차 변경 요청 대기 건수는 별도 try/catch 로 격리(노드 관리자 400 등 실패해도 위 3개 배지 갱신은 막지 않는다).
+    //   접수함연차변경다중사업장확장-004: buildLeaveChangeScopeParams 로 fnLoadLeaveChanges 와 동일
+    //   스코프를 실어 보낸다(종전엔 SITE_CD/NODE_CD 를 전혀 싣지 않아 노드 관리자는 이 호출이 늘 실패했다).
     try {
-      const changeRes = await axios.get("/webApi/attd13/change-requests", {
-        params: { REQ_STATUS: "AGREED" },
-      });
-      leavechangeCount.value =
-        changeRes.data?.totalCnt ?? (changeRes.data?.list ?? []).length;
+      const changeParams = buildLeaveChangeScopeParams();
+      if (changeParams) {
+        const changeRes = await axios.get("/webApi/attd13/change-requests", {
+          params: changeParams,
+        });
+        leavechangeCount.value =
+          changeRes.data?.totalCnt ?? (changeRes.data?.list ?? []).length;
+      } else {
+        leavechangeCount.value = 0;
+      }
     } catch (e) {
       console.warn("[Attd_10] 연차 변경 요청 카운트 로드 실패", e);
     }
@@ -1275,7 +1348,50 @@ watch(selectedSiteCd, () => {
   fnSearch();
 });
 
-onMounted(() => {
+// 접수함연차변경다중사업장확장-004: onMounted 프리필 중 아래 leaveChangeSiteCd watcher 의 중복
+//   재조회를 억제한다(Attd_13.vue initializing 관례 미러 — 프리셋 부서값 클로버 방지).
+const leaveChangeInitializing = ref(true);
+// 사업장 watcher 가 cascade 로 nodeCd/incSubNodeYn 을 리셋할 때, 아래 두 번째 watcher 가 같은
+//   재조회를 중복 트리거하지 않도록 억제하는 플래그(템플릿에 노출되지 않는 순수 제어값 — ref 불필요).
+let suppressLeaveChangeReload = false;
+
+// 사업장 필터 변경 시: 부서 목록 재조회 + 부서/하위부서 표시값 cascade 초기화 + 목록 재조회.
+//   User_01.vue focusKill(사업장 값이 비면 nodeDisabled=true 로 부서도 함께 초기화)·Attd_13.vue
+//   watch(siteCd)(사업장 변경 시 nodeCd 무조건 리셋) 패턴을 미러한다 — "전체 사업장"으로 되돌아갈 때뿐
+//   아니라 다른 사업장으로 바뀔 때도 이전 사업장의 NODE_CD 를 들고 있으면 안 된다(§0-5 핵심 근거:
+//   NODE_CD 는 사업장마다 재사용되는 코드라 사업장이 바뀌면 그 값 자체가 무의미해진다).
+//   부서 select/하위부서 체크박스의 disabled 전환은 leaveChangeNodeSelectEnabled computed 가 자동 반영.
+watch(leaveChangeSiteCd, async (siteCd) => {
+  if (leaveChangeInitializing.value) return;
+  suppressLeaveChangeReload = true;
+  leaveChangeNodeCd.value = "";
+  leaveChangeIncSubNodeYn.value = "Y"; // 기존 고정값(포함)으로 되돌림 — disabled 상태의 stale 값 방지
+  await fnLoadLeaveChangeNodeList(siteCd);
+  suppressLeaveChangeReload = false;
+  await fnLoadLeaveChanges();
+});
+
+// 부서/하위부서 포함 변경 시 목록만 재조회(부서 목록 재조회 불필요). 사업장 watcher 의 cascade
+//   리셋으로 인한 재호출은 suppressLeaveChangeReload 로 걸러(사업장 watcher 가 마지막에 1회만 재조회).
+watch([leaveChangeNodeCd, leaveChangeIncSubNodeYn], () => {
+  if (leaveChangeInitializing.value || suppressLeaveChangeReload) return;
+  fnLoadLeaveChanges();
+});
+
+onMounted(async () => {
+  // 접수함연차변경다중사업장확장-004: leaveChangeSiteCd/leaveChangeNodeCd 초기 프리필
+  //   (master/hr: 빈 값 유지="전체" / 노드 관리자: gv_siteCd, gv_nodeCd 세션값 — 기존 동작과 동일
+  //   결과가 나오도록). 프리필이 끝날 때까지 leaveChangeInitializing 을 유지해 위 watcher 들의
+  //   중복 재조회를 막는다(최초 로드는 아래 fnLoad() 단일 경로로만 수행).
+  if (!isMasterOrHr.value) {
+    leaveChangeSiteCd.value = sessionStorage.getItem("gv_siteCd") ?? "";
+    leaveChangeNodeCd.value = sessionStorage.getItem("gv_nodeCd") ?? "";
+  }
+  if (leaveChangeSiteCd.value) {
+    await fnLoadLeaveChangeNodeList(leaveChangeSiteCd.value);
+  }
+  leaveChangeInitializing.value = false;
+
   fnLoad();
   fnLoadCounts();
   fnLoadAccessibleSites();

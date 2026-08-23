@@ -139,18 +139,21 @@ public interface Attd13Mapper {
     int insertChangeRequest(LeaveChangeRequestInsertCommand cmd);
 
     /**
-     * 변경 요청 목록 조회(관리자) — 역할 기반 스코프(작업1 D1+D3).
+     * 변경 요청 목록 조회(관리자) — 접근 가능 사업장 목록 기반 스코프
+     * (접수함연차변경다중사업장확장-001/002, ReqInboxMapper.selectPendingRequests 와 동형).
      *
      * <ul>
-     *   <li>{@code siteWide='Y'}(master/hr): 회사 전사. siteCd 가 지정되면 해당 사업장으로 선택 필터,
-     *       미지정이면 전체 사업장.</li>
-     *   <li>{@code siteWide='N'}(노드 정·부 관리자): siteCd + nodeCd(+하위) 강제 한정. 호출부에서
-     *       권한 검증을 통과한 nodeCd 만 넘긴다(노드 미지정 진입 불가).</li>
+     *   <li>{@code siteCds}: 서비스({@code Attd13ServiceImpl.resolveSiteCds})가 확정한 접근 가능
+     *       사업장 목록. 항상 1건 이상만 전달된다 — 0건이면 호출부가 매퍼 호출 자체를 생략한다.</li>
+     *   <li>{@code nodeCd} 지정 시 부서(+하위) 서브필터를 적용한다. 부서 필터는 사업장이 정확히
+     *       1건으로 좁혀졌을 때만 유효(§0-5 설계 결정)하며, 그 경우에 한해 서비스가
+     *       {@code nodeSiteCd}(= {@code siteCds} 의 그 1건)를 채워 전달한다. 매퍼는 항상 유효한
+     *       조합만 받는다고 가정한다(2건 이상/0건 + nodeCd 조합은 서비스 단계에서 거부).</li>
      * </ul>
      */
     List<LeaveChangeRequestRowResult> selectChangeRequests(@Param("cmpnyCd") String cmpnyCd,
-                                                           @Param("siteWide") String siteWide,
-                                                           @Param("siteCd") String siteCd,
+                                                           @Param("siteCds") List<String> siteCds,
+                                                           @Param("nodeSiteCd") String nodeSiteCd,
                                                            @Param("nodeCd") String nodeCd,
                                                            @Param("incSubNodeYn") String incSubNodeYn,
                                                            @Param("userNm") String userNm,
