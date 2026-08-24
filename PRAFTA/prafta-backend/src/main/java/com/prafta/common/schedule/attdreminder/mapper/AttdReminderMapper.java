@@ -32,13 +32,20 @@ public interface AttdReminderMapper {
                                                         @Param("targetHhmm") String targetHhmm);
 
     /**
-     * 퇴근 리마인더(W5) 대상: 오늘({@code workYmd}) 스케줄의 <b>마지막 구간 종료시각</b>(2구간=2구간 종료,
-     * 그 외=1구간 종료)이 {@code targetHhmm}(=현재+5분)과 같은 사용자. 단, 그 마지막 구간에 출근 기록이
-     * 있고(미출근이면 제외, §8-R 3) 아직 퇴근하지 않은(CHECK_OUT_TIME NULL) 경우만.
+     * 퇴근 리마인더(W5) 대상: 스케줄의 <b>마지막 구간 종료시각</b>(2구간=2구간 종료, 그 외=1구간 종료)이
+     * {@code targetHhmm}(=현재+5분)과 같은 사용자. 단, 그 마지막 구간에 출근 기록이 있고(미출근이면 제외,
+     * §8-R 3) 아직 퇴근하지 않은(CHECK_OUT_TIME NULL) 경우만.
      *
-     * @param workYmd    오늘(YYYYMMDD)
-     * @param targetHhmm 현재+5분(HHMM)
+     * <p>오버나이트(자정 넘김) 근무 대응: 근무계획은 시작일({@code workYmd}) 기준으로 저장되는데,
+     * 자정을 넘겨 종료하는 스케줄은 종료 시각이 다음 날(오늘 시점 실행에서는 {@code workYmd}, 근무계획
+     * 상으로는 그 전날 = {@code prevWorkYmd})에 온다. 두 날짜를 모두 조회해 각 근무계획의 실제 자정 넘김
+     * 여부(마지막 구간 종료시각이 시작시각보다 이른지)로 분기한다(한쪽만 매칭).
+     *
+     * @param workYmd     오늘(YYYYMMDD) — 당일 종료(자정 안 넘김) 스케줄 매칭용
+     * @param prevWorkYmd 어제(YYYYMMDD) — 전날 시작 오버나이트 스케줄 매칭용
+     * @param targetHhmm  현재+5분(HHMM)
      */
     List<AttdReminderTargetResult> selectCheckOutTargets(@Param("workYmd") String workYmd,
+                                                         @Param("prevWorkYmd") String prevWorkYmd,
                                                          @Param("targetHhmm") String targetHhmm);
 }

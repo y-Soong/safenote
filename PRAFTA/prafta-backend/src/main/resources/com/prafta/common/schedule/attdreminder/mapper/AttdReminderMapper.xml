@@ -141,10 +141,14 @@
 
     <!--
       PRAFTA-APP-021-4(W5): 퇴근 5분 전 리마인더 대상.
-      - 오늘(workYmd) 스케줄의 마지막 구간 종료시각(2구간=SEC_END, 그 외=FST_END)=targetHhmm.
+      - 마지막 구간 종료시각(2구간=SEC_END, 그 외=FST_END)이 targetHhmm과 같은 사용자.
       - 그 마지막 구간(workSeq=2/1)에 출근 기록 존재(CHECK_IN_TIME 有) AND 미퇴근(CHECK_OUT_TIME NULL)만.
         출근하지 않았으면 제외(§8-R 3). 종일 연차일은 출근 기록이 없어 자연 제외.
-      - 스케줄 시각은 근무일(WP.WORK_YMD=workYmd) 기준 유효 버전(effectiveSchJoin)으로 해석.
+      - 스케줄 시각은 근무일(WP.WORK_YMD) 기준 유효 버전(effectiveSchJoin)으로 해석.
+      - 오버나이트(자정 넘김) 보완: 근무계획은 시작일 기준으로 저장되므로, 새벽에 종료하는 스케줄은
+        근무계획상 전날(prevWorkYmd) 날짜로 남아있다. 당일(workYmd, 자정 안 넘김)과 전날(prevWorkYmd,
+        자정 넘김) 두 갈래로 나눠 조회하고, 각 갈래는 그 조건(마지막구간 종료<시작 여부)으로만 매칭해
+        서로 겹치지 않는다.
     -->
     <select id="selectCheckOutTargets" resultType="com.prafta.common.schedule.attdreminder.AttdReminderTargetResult">
     /* AttdReminderMapper.selectCheckOutTargets */
@@ -172,6 +176,47 @@
        AND U.ACCOUNT_STATUS = '01'
        AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
                   THEN SC.SEC_SCH_END_TIME ELSE SC.FST_SCH_END_TIME END ) = #{targetHhmm}
+       <!-- 자정 안 넘김: 마지막구간 종료시각 >= 시작시각(같은 날 안에서 끝남) -->
+       AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_END_TIME ELSE SC.FST_SCH_END_TIME END )
+           <![CDATA[ >= ]]>
+           ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_STR_TIME ELSE SC.FST_SCH_STR_TIME END )
+       AND NULLIF(TRIM(A.CHECK_IN_TIME), '') IS NOT NULL
+       AND NULLIF(TRIM(A.CHECK_OUT_TIME), '') IS NULL
+
+    UNION ALL
+
+    SELECT
+          WP.CMPNY_CD  AS cmpnyCd
+        , WP.SITE_CD   AS siteCd
+        , WP.USER_CD   AS userCd
+        , U.NODE_CD    AS nodeCd
+        , CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END AS workSeq
+      FROM TB_USER_WORK_PLAN WP
+           <include refid="effectiveSchJoin"/>
+           INNER JOIN TB_USER U
+              ON  U.CMPNY_CD = WP.CMPNY_CD
+              AND U.SITE_CD  = WP.SITE_CD
+              AND U.USER_CD  = WP.USER_CD
+           INNER JOIN TB_USER_ATTD_MGMT A
+              ON  A.CMPNY_CD = WP.CMPNY_CD
+              AND A.SITE_CD  = WP.SITE_CD
+              AND A.USER_CD  = WP.USER_CD
+              AND A.WORK_YMD = #{prevWorkYmd}
+              AND A.WORK_SEQ = CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL THEN 2 ELSE 1 END
+              AND A.DEL_YN   = 'N'
+     WHERE WP.WORK_YMD = #{prevWorkYmd}
+       AND U.USE_YN = 'Y'
+       AND U.ACCOUNT_STATUS = '01'
+       AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_END_TIME ELSE SC.FST_SCH_END_TIME END ) = #{targetHhmm}
+       <!-- 자정 넘김: 마지막구간 종료시각 < 시작시각(전날 시작해 오늘 새벽에 끝남) -->
+       AND ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_END_TIME ELSE SC.FST_SCH_END_TIME END )
+           <![CDATA[ < ]]>
+           ( CASE WHEN NULLIF(TRIM(SC.SEC_SCH_END_TIME), '') IS NOT NULL
+                  THEN SC.SEC_SCH_STR_TIME ELSE SC.FST_SCH_STR_TIME END )
        AND NULLIF(TRIM(A.CHECK_IN_TIME), '') IS NOT NULL
        AND NULLIF(TRIM(A.CHECK_OUT_TIME), '') IS NULL
     </select>

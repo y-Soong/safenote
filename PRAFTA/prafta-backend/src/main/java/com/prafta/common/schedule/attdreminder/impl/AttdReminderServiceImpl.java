@@ -52,11 +52,12 @@ public class AttdReminderServiceImpl implements AttdReminderService {
         LocalDate today = LocalDate.now();
         LocalTime targetTime = LocalTime.now().plusMinutes(AttdReminderConst.LEAD_MINUTES);
         String workYmd = today.format(YMD);
+        String prevWorkYmd = today.minusDays(1).format(YMD);
         String targetHhmm = targetTime.format(HHMM);
 
         int sent = 0;
         sent += dispatchCheckIn(workYmd, targetHhmm);
-        sent += dispatchCheckOut(workYmd, targetHhmm);
+        sent += dispatchCheckOut(workYmd, prevWorkYmd, targetHhmm);
         if (sent > 0) {
             log.info("[attdReminder] 리마인더 적재 완료. workYmd={}, targetHhmm={}, 적재={}건", workYmd, targetHhmm, sent);
         }
@@ -81,9 +82,14 @@ public class AttdReminderServiceImpl implements AttdReminderService {
         return sent;
     }
 
-    /** W5 퇴근 리마인더 적재. dedupKey=CHECKOUT_REMIND_{userCd}_{workYmd}_{workSeq}. */
-    private int dispatchCheckOut(String workYmd, String targetHhmm) {
-        List<AttdReminderTargetResult> targets = attdReminderMapper.selectCheckOutTargets(workYmd, targetHhmm);
+    /**
+     * W5 퇴근 리마인더 적재. dedupKey=CHECKOUT_REMIND_{userCd}_{workYmd}_{workSeq}.
+     * dedupKey 의 workYmd 는 리마인더를 "보낸 날"(오늘) 기준 — 오버나이트 근무는 근무계획상
+     * 전날 날짜로 매칭되지만, 멱등키는 실행일 기준으로 충분하다(같은 분 재실행 중복 방지 목적).
+     */
+    private int dispatchCheckOut(String workYmd, String prevWorkYmd, String targetHhmm) {
+        List<AttdReminderTargetResult> targets =
+                attdReminderMapper.selectCheckOutTargets(workYmd, prevWorkYmd, targetHhmm);
         if (targets == null || targets.isEmpty()) {
             return 0;
         }
