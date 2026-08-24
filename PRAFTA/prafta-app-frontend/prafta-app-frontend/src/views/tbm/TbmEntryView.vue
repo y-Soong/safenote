@@ -65,14 +65,16 @@
             />
           </label>
 
-          <div class="divider"><span>또는</span></div>
+          <template v-if="QR_ENTRY_ENABLED">
+            <div class="divider"><span>또는</span></div>
 
-          <button type="button" class="btn btn--ghost" @click="onScanQrToEnter">
-            <svg class="icon" width="18" height="18" aria-hidden="true">
-              <use href="#i-tbm-qr" />
-            </svg>
-            QR 스캔으로 입실
-          </button>
+            <button type="button" class="btn btn--ghost" @click="onScanQrToEnter">
+              <svg class="icon" width="18" height="18" aria-hidden="true">
+                <use href="#i-tbm-qr" />
+              </svg>
+              QR 스캔으로 입실
+            </button>
+          </template>
 
           <!-- 서명 영역 (C-D1 "서명 필수" 확정 시 노출/구현 — C6) -->
           <div v-if="requireEntrySign" class="sign-box">
@@ -110,7 +112,7 @@
             />
           </label>
 
-          <button type="button" class="btn btn--ghost" @click="onScanQrToExit">
+          <button v-if="QR_ENTRY_ENABLED" type="button" class="btn btn--ghost" @click="onScanQrToExit">
             <svg class="icon" width="18" height="18" aria-hidden="true">
               <use href="#i-tbm-qr" />
             </svg>
@@ -461,9 +463,13 @@ const onBack = () => {
   router.back()
 }
 
-// QR 입실/종료: 현재 앱 self-device 입실 경로는 비밀번호만 지원하고,
-// 공용 QrScanner(/QrScanner)는 ChkLst 전용 복귀로 하드코딩되어 범용 반환 경로가 없다.
-// TBM 전용 QR 반환/관리자 스캔 입실은 본 라운드 범위 밖(planner 재분해 필요) → 안내만.
+// QR 입실/종료 노출 플래그. 현재 앱 self-device 입실 경로는 비밀번호만 지원하고,
+// 공용 QrScanner(/QrScanner)는 ChkLst 전용 복귀로 하드코딩되어 범용 반환 경로가 없어
+// 버튼을 눌러도 안내 토스트만 뜨는 미구현 스텁이었다(2026-08-24 사용자 확인 후 숨김 처리).
+// 버튼/핸들러는 유지 — TBM 전용 QR 반환 경로가 생기면 이 값만 true 로 전환.
+const QR_ENTRY_ENABLED = false
+
+// TBM 전용 QR 반환/관리자 스캔 입실은 별도 범위(planner 재분해 필요) → 안내만.
 const onScanQrToEnter = () => {
   showAlert('QR 입실은 준비 중입니다. 입실 비밀번호로 진행해 주세요.')
 }
