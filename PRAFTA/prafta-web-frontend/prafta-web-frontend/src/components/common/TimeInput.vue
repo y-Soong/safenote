@@ -185,19 +185,24 @@ watch(
   { deep: true }
 );
 
+/** 현재 hourVal/minuteVal 을 부모로 밀어올린다(readonly/disabled 이면 무시). */
+const emitCurrent = () => {
+  if (props.readonly || props.disabled) return;
+  const val = hourVal.value === "24" ? "24:00" : `${hourVal.value}:${minuteVal.value}`;
+  if (val !== props.modelValue) {
+    emit("update:modelValue", val);
+  }
+};
+
 watch(
   [hourVal, minuteVal],
-  ([h, m]) => {
+  () => {
     // disabled 상태에서는 내부 기본값("00:00")을 부모로 밀어올리지 않는다.
     // immediate:true 라 마운트 직후 1회 무조건 실행되는데, disabled 시점엔 사용자가
     // 아직 아무 값도 선택하지 않은 "미설정" 의미이므로 modelValue 를 건드리면 안 된다
     // (근무타입 생성 팝업의 휴게시간 시작처럼, 휴게(분)=0이라 비활성화된 필드가
     //  본인도 모르게 "00:00"으로 채워져 서버 검증에서 거부되는 결함의 원인이었다).
-    if (props.readonly || props.disabled) return;
-    const val = h === "24" ? "24:00" : `${h}:${m}`;
-    if (val !== props.modelValue) {
-      emit("update:modelValue", val);
-    }
+    emitCurrent();
   },
   { immediate: true }
 );
@@ -258,11 +263,16 @@ const selectHour = (opt) => {
   hourVal.value = opt;
   if (opt === "24") minuteVal.value = "00";
   hourOpen.value = false;
+  // ref 값이 클릭 전과 동일하면(예: 비활성 상태에서 보이던 기본값 "00"을 활성화 후 그대로 선택)
+  // watch([hourVal, minuteVal])가 발화하지 않아 부모에 값이 전달되지 않는다 — 명시적 클릭은
+  // 항상 즉시 반영되도록 직접 호출한다(오버나이트 휴게시작 00:00 등 "표시값=선택값" 케이스 대응).
+  emitCurrent();
 };
 
 const selectMinute = (opt) => {
   minuteVal.value = opt;
   minuteOpen.value = false;
+  emitCurrent();
 };
 
 const onDocClick = (e) => {

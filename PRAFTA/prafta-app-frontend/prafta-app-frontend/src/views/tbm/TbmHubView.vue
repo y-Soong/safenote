@@ -170,9 +170,18 @@ const onSelectInProgress = (session) => {
   openEntrySheet(session, '/TbmInProgress')
 }
 
-// 교육완료 카드 선택 → /TbmCompletedDetail 이동
+// 교육완료 카드 선택 → 기본은 읽기전용 상세(/TbmCompletedDetail).
+//   단, completionStatusCd 가 없으면(관리자가 세션을 먼저 종료해 본인이 아직 퇴실/서명을
+//   못 한 상태 — 목록 조회 WHERE 절이 "세션 COMPLETED 이거나 내가 이미 퇴실"이라 이 경우도
+//   목록엔 뜬다) 상세는 읽기전용이라 서명할 방법이 없다. 백엔드 exit() 는 세션이 COMPLETED
+//   여도 퇴실을 허용하므로(C6), 종료 화면(/TbmEntry — alreadyEntered=true 면 종료 단계 표시)
+//   으로 보내 서명을 마칠 수 있게 한다.
 const onSelectCompleted = (session) => {
   if (!session?.sessionCd) return
+  if (!session.completionStatusCd) {
+    router.push({ path: '/TbmEntry', query: { sessionCd: session.sessionCd } })
+    return
+  }
   router.push({ path: '/TbmCompletedDetail', query: { sessionCd: session.sessionCd } })
 }
 
