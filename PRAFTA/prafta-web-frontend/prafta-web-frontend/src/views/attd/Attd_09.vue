@@ -406,6 +406,7 @@
     <Attd_09_Shortfall
       v-if="isFiscalCompany"
       v-show="activeTab === 'shortfall'"
+      :active="activeTab === 'shortfall'"
     />
   </div>
 </template>

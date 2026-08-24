@@ -1729,6 +1729,23 @@ public class LeaveGrantEngineServiceImpl implements LeaveGrantEngineService {
         return BigDecimal.valueOf(Math.ceil(raw));
     }
 
+    /**
+     * 테스트 전용 노출: {@link #resolveFiscalEntitlement}의 결과를 grantType→일수 합계로 평탄화해 반환한다
+     * (내부 {@code Entitlement}/{@code GrantComponent}는 private라 테스트에서 직접 못 읽으므로).
+     * {@code resolveFiscalEntitlement} 자체는 today를 명시 파라미터로 받아 결정적이라(LocalDate.now() 미사용)
+     * 임의 시나리오 날짜로 직접 검증 가능하다.
+     */
+    // package-private: PRORATE 봉인해제 스트레스 테스트(S-1~S-10, 작업지시서_PRORATE-봉인해제_스트레스테스트.md)에서 직접 검증
+    Map<String, BigDecimal> resolveFiscalEntitlementForTest(LeavePolicyVO policy, LocalDate hire, LocalDate today,
+                                                             int actualMonths, int creditedMonths) {
+        Entitlement ent = resolveFiscalEntitlement(policy, hire, today, actualMonths, creditedMonths, "TEST", "TEST");
+        Map<String, BigDecimal> totals = new LinkedHashMap<>();
+        for (GrantComponent c : ent.components) {
+            totals.merge(c.grantType, c.days, BigDecimal::add);
+        }
+        return totals;
+    }
+
     // ============================================================
     // 입사일 변경 차액 보전 (prafta-030 BE-1 / D1) — KEEP_AND_BACKFILL 전용
     // ============================================================

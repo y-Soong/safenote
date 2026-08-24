@@ -967,7 +967,7 @@ const isLoading = ref(false);
 //   → 항목은 남겨두되(추후 지원 예정) 선택만 막는다. 실제 요구 고객사가 생기면 노무사 확인 후 해제.
 //   참고: .claude/refs/연차_회계연도_비례부여_타임라인.md
 //   ※운영 실측(2026-08-19): PRORATE 를 쓰는 정책 0건 — 기존 고객사 영향 없음.
-const PRORATE_TEMPORARILY_DISABLED = true;
+const PRORATE_TEMPORARILY_DISABLED = false; // ★로컬 실기동 테스트용 임시 해제(미커밋) — 검증 후 정식 커밋 예정
 
 // 1번 매트릭스(§4.3 / prafta-029): axis1=HIRE_DATE면 PRORATE/NEXT_YEAR_BULK 비활성,
 //   axis1=FISCAL_YEAR면 MONTHLY_ONLY 비활성(회계연도는 PRORATE/NEXT_YEAR_BULK만 허용)
