@@ -293,7 +293,9 @@ const fnImport = async () => {
 /* 안내 밴드 — 팝업 헤더 톤(guide 토큰)만 재사용, 하드코딩 색상 없음 */
 .import-notice {
   flex-shrink: 0;
-  margin: 0 20px;
+  /* 위: 조회영역과 10px 여백 확보. 아래: 다음 .viewBody 의 공용 padding-top(20px, guide css)과
+     합쳐 최종 10px 여백이 되도록 -10px 로 절반 상쇄(공용 padding 자체는 다른 팝업과 공유되어 수정 금지) */
+  margin: 10px 20px -10px 20px;
   padding: 10px 12px;
   background: var(--modal-header-bg);
   border: 1px solid var(--modal-border);
