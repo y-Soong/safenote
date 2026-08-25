@@ -156,8 +156,24 @@
     </select>
 
     <!--
-      내 처리 이력(근태보정/초과/스케줄 탭): 내가 승인('02')/반려('03') 처리한 요청.
-      PROCESS_USER_CD = 본인 조건이 스코프의 핵심이라 본인이 처리한 건만 나온다(타 관리자 처리분 미노출).
+      내 처리 이력(근태보정/초과/스케줄 탭): 결재라인에서 내가 승인('02')/반려('03')한 요청.
+      (근태결재선통합 P2-2) 종전 R.PROCESS_USER_CD 기준은 다단계 결재의 중간 단계 승인자 처리 이력이
+      영구 누락되는 실결함이 있었다 - 중간 단계 승인 시 advanceOrFinalize 가 REQ 자체(REQ_STATUS/
+      PROCESS_USER_CD 등)를 갱신하지 않기 때문(Attd07ServiceImpl 확인). 아래 selectProcessedLeaveApprovals
+      (연차 탭)와 동형 패턴으로 TB_USER_ATTD_REQ_APPROVAL.APPROVER_USER_CD 기준으로 전환한다
+      (다단계 중간 승인 건도 그대로 이력이 된다 - 의도 동작, 연차 탭과 동일).
+      ★알려진 의도적 한계(연차 탭과 동일, 변경 안 함): master/hr 가 §8.5 예외로 타인 결재 단계를
+      대신 처리(bypass)해도 APPROVER_USER_CD 는 원 지정 결재자로 남는다(실제 처리자는 UPDATE_NO 에만
+      기록) - bypass 한 master/hr 의 "내 처리 이력"에는 안 뜨고 원 지정 결재자 몫으로 남는다.
+      (P2-2 회귀수정, qa 08-25 적발) P1(0edaefed) 이전에 이미 처리완료('02'/'03')된 레거시 REQ는
+      결재선 행 자체가 없다(orphan REQ, 개발DB 실측 40건, PROCESS_DATE 2026-06-21~07-17). AP를
+      INNER JOIN 하면 이 건들이 "내 처리 이력"에서 통째로 사라지므로, FROM 축을 R(TB_USER_ATTD_REQ)
+      root 로 되돌리고 AP는 "이 사람이 담당한 단계(APPROVER_USER_CD=본인, 상태 02/03)"만 LEFT JOIN
+      한다. WHERE는 (a) AP 매칭 성공(정상 케이스) OR (b) 이 REQ에 결재선 행이 아예 없고(레거시)
+      R.PROCESS_USER_CD=본인 AND R.REQ_STATUS IN (02,03)(레거시 폴백) - PENDING 목록 orphan REQ의
+      기본결재자 read-only 폴백(결정 3)과 동일 원칙: 결재선 없으면 REQ 자체 값으로 대체한다.
+      procStatus/processDate/processComment 는 COALESCE(AP값, R값)로 레거시 폴백 시 R 값을 쓴다.
+      approvalStep 은 레거시 REQ엔 개념이 없어 NULL 유지(정상 케이스만 AP.APPROVAL_STEP 채움).
       스케줄 수정('10')은 요청 스케줄 번호(schNo) 표시용으로 TB_SCH_MGMT 를 LEFT JOIN 한다
       (그 외 유형은 R.SCH_CD 가 NULL 이라 미매치 - schNo NULL).
       ★ ProcessedReqResult record 위치 기반 매핑 - SELECT 컬럼 순서 변경 금지.
@@ -181,12 +197,18 @@
         , TS.SCH_NO                                                    AS schNo
         , R.REQ_REASON                                                 AS reqReason
         , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
-        , R.REQ_STATUS                                                 AS procStatus
-        , DATE_FORMAT(R.PROCESS_DATE, '%Y-%m-%dT%H:%i:%s')             AS processDate
-        , R.PROCESS_COMMENT                                            AS processComment
-        , NULL                                                         AS approvalStep
+        , COALESCE(AP.APPROVAL_STATUS, R.REQ_STATUS)                   AS procStatus
+        , DATE_FORMAT(COALESCE(AP.APPROVAL_DATE, R.PROCESS_DATE), '%Y-%m-%dT%H:%i:%s') AS processDate
+        , COALESCE(AP.APPROVAL_COMMENT, R.PROCESS_COMMENT)             AS processComment
+        , AP.APPROVAL_STEP                                             AS approvalStep
         , S.SITE_NM                                                    AS siteNm
       FROM TB_USER_ATTD_REQ R
+      <!-- 이 사람이 담당한 단계만 매칭 - REQ당 여러 단계 행이 있을 수 있어(PK=(REQ_ID,APPROVAL_STEP)) 좁혀야 함. -->
+      LEFT JOIN TB_USER_ATTD_REQ_APPROVAL AP
+        ON AP.CMPNY_CD         = R.CMPNY_CD
+       AND AP.REQ_ID           = R.REQ_ID
+       AND AP.APPROVER_USER_CD = #{callerUserCd}
+       AND AP.APPROVAL_STATUS IN ('02', '03')
       LEFT JOIN TB_SCH_MGMT TS
         ON TS.CMPNY_CD = R.CMPNY_CD
        AND TS.SITE_CD  = R.SITE_CD
@@ -194,19 +216,30 @@
       LEFT JOIN TB_SITE S
         ON S.CMPNY_CD = R.CMPNY_CD
        AND S.SITE_CD  = R.SITE_CD
-     WHERE R.CMPNY_CD        = #{cmpnyCd}
+     WHERE R.CMPNY_CD          = #{cmpnyCd}
        AND R.SITE_CD IN
        <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
            #{sc}
        </foreach>
-       AND R.PROCESS_USER_CD = #{processUserCd}
-       AND R.REQ_STATUS IN ('02', '03')
        AND R.DEL_YN          = 'N'
        AND R.REQ_TYPE IN
        <foreach collection="reqTypes" item="rt" open="(" separator="," close=")">
            #{rt}
        </foreach>
-     ORDER BY R.PROCESS_DATE DESC, R.REQ_ID DESC
+       AND (
+             AP.REQ_ID IS NOT NULL
+          OR (
+                NOT EXISTS (
+                    SELECT 1
+                      FROM TB_USER_ATTD_REQ_APPROVAL AP2
+                     WHERE AP2.CMPNY_CD = R.CMPNY_CD
+                       AND AP2.REQ_ID   = R.REQ_ID
+                )
+                AND R.PROCESS_USER_CD = #{callerUserCd}
+                AND R.REQ_STATUS IN ('02', '03')
+             )
+           )
+     ORDER BY COALESCE(AP.APPROVAL_DATE, R.PROCESS_DATE) DESC, R.REQ_ID DESC
      LIMIT 300
     </select>
 

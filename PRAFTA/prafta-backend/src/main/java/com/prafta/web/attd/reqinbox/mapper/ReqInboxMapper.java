@@ -41,14 +41,18 @@ public interface ReqInboxMapper {
                                                            @Param("reqType") String reqType);
 
     /**
-     * 내가 승인('02')/반려('03') 처리한 요청 이력 (근태보정/초과/스케줄 탭 — PROCESS_USER_CD 기준).
+     * 내가 결재라인에서 승인('02')/반려('03') 처리한 요청 이력
+     * (근태보정/초과/스케줄 탭 — TB_USER_ATTD_REQ_APPROVAL.APPROVER_USER_CD 기준, 근태결재선통합 P2-2).
+     *
+     * <p>종전 REQ.PROCESS_USER_CD 기준은 다단계 결재의 중간 단계 승인자 처리 이력이 누락되는
+     * 결함이 있어 {@link #selectProcessedLeaveApprovals}(연차 탭)와 동형 패턴으로 전환했다.
      *
      * @param siteCds  조회 대상 SITE_CD 목록(접수함다중사업장권한확장-001 원장 기반 접근가능 목록)
      * @param reqTypes 조회 대상 REQ_TYPE 목록 (근태보정 01/02, 초과 03/04, 스케줄 10)
      */
     List<ProcessedReqResult> selectProcessedRequests(@Param("cmpnyCd") String cmpnyCd,
                                                      @Param("siteCds") List<String> siteCds,
-                                                     @Param("processUserCd") String processUserCd,
+                                                     @Param("callerUserCd") String callerUserCd,
                                                      @Param("reqTypes") List<String> reqTypes);
 
     /**
