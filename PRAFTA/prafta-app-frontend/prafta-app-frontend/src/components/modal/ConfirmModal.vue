@@ -4,7 +4,7 @@
       <div v-if="visible" class="modal-overlay" tabindex="0">
         <div class="modal-content">
           <div class="modal-body">
-            <p style="white-space: pre-line">{{ message }}</p>
+            <p style="white-space: pre-line; word-break: keep-all">{{ message }}</p>
           </div>
           <!-- F-10 규약: 왼쪽=진행/확정(variant 로 primary/danger), 오른쪽=이탈(ghost), 폭 균등 -->
           <div class="modal-footer">

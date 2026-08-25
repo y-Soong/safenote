@@ -337,7 +337,7 @@ onMounted(fetchSchedOptions)
 const onSubmit = () => {
   // prafta-com-008-D-5: 교대팀 소속 기간이면 제출 차단(서버 D-3 가드가 최종 강제하나 사전 안내).
   if (shiftLocked.value) {
-    showAlert('교대근무팀 소속 기간은 근무계획을 변경할 수 없어요. 연차는 사용할 수 있어요.')
+    showAlert('교대근무팀 소속 기간은 근무계획을 변경할 수 없어요.\n연차는 사용할 수 있어요.')
     return
   }
   // 사유 전용 가드(버튼은 기본 활성 → 빈값 제출 시 사유 안내).

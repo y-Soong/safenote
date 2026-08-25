@@ -169,18 +169,33 @@ const selectedItems = ref(props.multiple ? [...props.modelValue] : props.modelVa
 
 watch(srchParam, (v) => emit('search', v))
 
+// ✅ 부모가 modelValue 를 외부에서 나중에 세팅해도(예: 로그인 사용자 소속 사업장 기본값을
+//    onMounted 에서 비동기로 채우는 경우) 팝업 내부 선택 상태가 따라가도록 동기화.
+//    (기존엔 setup 시점 1회 스냅샷이라 이후 갱신이 반영되지 않아 기본 선택이 항상 빈 상태였음)
+watch(
+  () => props.modelValue,
+  (v) => {
+    selectedItems.value = props.multiple ? [...(Array.isArray(v) ? v : [])] : v
+  },
+)
+
 // ✅ 검색 실행
 function onSearch() {
   emit('search', srchParam.value)
 }
 
 // ✅ 항목 선택 여부 판단
+//    modelValue 가 객체(선택 결과 그대로)뿐 아니라 문자열/숫자 코드값(예: siteCd)로 바인딩되는
+//    화면도 있어(Risk_01 등), 두 형태 모두 지원한다.
 function isSelected(item) {
   if (props.multiple) {
-    return selectedItems.value.some((i) => i[props.keyField] === item[props.keyField])
-  } else {
-    return selectedItems.value && selectedItems.value[props.keyField] === item[props.keyField]
+    return selectedItems.value.some((i) => i && i[props.keyField] === item[props.keyField])
   }
+  const sel = selectedItems.value
+  if (sel && typeof sel === 'object') {
+    return sel[props.keyField] === item[props.keyField]
+  }
+  return sel === item[props.keyField]
 }
 
 // ✅ 선택 토글

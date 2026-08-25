@@ -424,7 +424,7 @@ const submitBulk = async (item, decision, comment) => {
   // 서버 400 을 그대로 노출하지 않고 화면이 먼저 안내한다(카드에도 사유 배지가 상시 노출된다).
   if (bulkItems.length > MAX_BULK_ITEMS) {
     await showAlert(
-      `일괄 처리는 한 번에 최대 ${MAX_BULK_ITEMS}건까지 가능합니다. 펼쳐서 날짜별로 처리해 주세요.`,
+      `일괄 처리는 한 번에 최대 ${MAX_BULK_ITEMS}건까지 가능합니다.\n펼쳐서 날짜별로 처리해 주세요.`,
     )
     return
   }

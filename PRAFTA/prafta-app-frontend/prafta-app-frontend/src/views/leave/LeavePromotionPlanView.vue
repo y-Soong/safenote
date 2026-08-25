@@ -231,7 +231,7 @@ const guardLeave = async (proceed) => {
     return
   }
   const ok = await askConfirm(
-    '1차 촉진 기간에 계획서를 제출하지 않으면 2차 촉진 때 남은 모든 연차 날짜를 회사가 직접 지정합니다. 그대로 종료하시겠습니까?',
+    '1차 촉진 기간에 계획서를 제출하지 않으면 2차 촉진 때 남은 모든 연차 날짜를 회사가 직접 지정합니다.\n그대로 종료하시겠습니까?',
   )
   if (ok) proceed()
 }
