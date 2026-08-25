@@ -30,6 +30,10 @@ public final class AttdReqTypeUtils {
      * 운영 적용 (prafta-app-007-attd-req-extensions.sql) 후 비로소 의미를 가진다.
      */
     public static final String REQ_TYPE_SCHED_MODIFY  = "10";
+    /** 연차 사용 요청 (SYS032=05). LeaveFlowServiceImpl.REQ_TYPE_LEAVE_USE 와 동일 코드값. */
+    public static final String REQ_TYPE_LEAVE_USE     = "05";
+    /** 연차 수정 요청 (SYS032=06). LeaveFlowServiceImpl.REQ_TYPE_LEAVE_MODIFY 와 동일 코드값. */
+    public static final String REQ_TYPE_LEAVE_MODIFY  = "06";
 
     // REQ_STATUS 코드값 (SYS033)
     public static final String REQ_STATUS_REQUESTED   = "01";
@@ -81,5 +85,16 @@ public final class AttdReqTypeUtils {
     public static boolean isScheduleModifyReqType(String reqType) {
         if (reqType == null || reqType.isEmpty()) return false;
         return REQ_TYPE_SCHED_MODIFY.equals(reqType);
+    }
+
+    /**
+     * 근태결재선통합 P3-1 QA 재작업 - 연차 처리 endpoint에서 사용하는 REQ_TYPE allow-list.
+     * 연차 사용('05')/연차 수정('06') 값에 대해서만 true 를 반환한다. 근태(01/02)/OT(03/04)/스케줄(10)
+     * 값(그리고 알 수 없는 값)은 false 를 반환하여 타입 혼동(type confusion)을 차단한다.
+     */
+    public static boolean isLeaveReqType(String reqType) {
+        if (reqType == null || reqType.isEmpty()) return false;
+        return REQ_TYPE_LEAVE_USE.equals(reqType)
+            || REQ_TYPE_LEAVE_MODIFY.equals(reqType);
     }
 }

@@ -9,6 +9,7 @@ import com.prafta.web.attd.reqinbox.result.PendingReqResult;
 import com.prafta.web.attd.reqinbox.result.PendingSchedReqResult;
 import com.prafta.web.attd.reqinbox.result.ProcessedLeaveChangeResult;
 import com.prafta.web.attd.reqinbox.result.ProcessedReqResult;
+import com.prafta.web.attd.reqinbox.result.ReqSummaryResult;
 
 /**
  * 요청 승인 관리 통합 대기요청 조회 Mapper (prafta-019 후속).
@@ -71,4 +72,11 @@ public interface ReqInboxMapper {
     List<ProcessedLeaveChangeResult> selectProcessedLeaveChangeRequests(@Param("cmpnyCd") String cmpnyCd,
                                                                         @Param("siteCds") List<String> siteCds,
                                                                         @Param("confirmUserCd") String confirmUserCd);
+
+    /**
+     * 요청 1건 요약(REQ_ID/SITE_CD/REQ_TYPE/USER_CD) — {@code GET /reqinbox/approval-line}(근태결재선통합
+     * P3-1)의 IDOR 검증(소속 사업장 접근 가능 여부 / 연차 요청자 본인 여부) 용도. 없으면 null(호출부가
+     * ATTD_404_001 처리).
+     */
+    ReqSummaryResult selectReqSummaryByReqId(@Param("cmpnyCd") String cmpnyCd, @Param("reqId") String reqId);
 }

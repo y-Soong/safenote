@@ -3,6 +3,7 @@ package com.prafta.web.attd.reqinbox.service;
 import java.util.List;
 
 import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
+import com.prafta.web.attd.reqinbox.dto.response.ApprovalLineResponse;
 import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
 import com.prafta.web.attd.reqinbox.result.PendingReqResult;
 import com.prafta.web.attd.reqinbox.result.PendingSchedReqResult;
@@ -67,4 +68,26 @@ public interface ReqInboxService {
      * @param authCd JWT 기반 권한코드(역할 게이트 + 사업장 원장 role fast-path 용). body 위조 불가.
      */
     List<AccessibleSiteResult> getAccessibleSites(String cmpnyCd, String userCd, String authCd);
+
+    /**
+     * 결재 진행 타임라인(근태결재선통합 P3-1) — 결재선 단계 배열 + 처리 가능 여부.
+     *
+     * <p>correction/overtime/schedule: {@link #getPendingRequests} 와 동일하게 매니저 전용
+     * 게이트({@code AuthRoleUtils.isManager}) + 요청 소속 사업장이 caller 접근 가능 사업장에
+     * 포함되는지 IDOR 검증({@code SiteAccessService.assertSiteAccess}).
+     *
+     * <p>leave: 매니저 게이트를 적용하지 않는다. 대신 caller 가 결재선의 어느 한 단계든
+     * 결재자이거나, 요청자 본인이거나, {@code AuthRoleUtils.canManageAllNodes} 중 하나가 아니면
+     * {@code ATTD_403_002}.
+     *
+     * <p>{@code canProcess}/{@code currentApproverUserNm} 은 읽기 전용으로 산출한다(부작용 있는
+     * {@code ApprovalStepGateService.resolveProcessableStep} 미사용 — plan §1 결정 D).
+     *
+     * @param siteCd       JWT 기반 토큰 사업장(gv_siteCd, IDOR 검증 fast-path 용). body 위조 불가.
+     * @param userCd       JWT 기반 본인 사용자코드. body 위조 불가.
+     * @param authCd       JWT 기반 권한코드. body 위조 불가.
+     * @param reqTypeGroup "correction" | "overtime" | "schedule" | "leave"
+     */
+    ApprovalLineResponse getApprovalLine(String cmpnyCd, String siteCd, String userCd, String authCd,
+                                         String reqId, String reqTypeGroup);
 }

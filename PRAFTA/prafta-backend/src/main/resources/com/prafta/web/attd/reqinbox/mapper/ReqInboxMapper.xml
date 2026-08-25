@@ -359,4 +359,22 @@
      LIMIT 300
     </select>
 
+    <!--
+      요청 1건 요약(REQ_ID/SITE_CD/REQ_TYPE/USER_CD) - GET /reqinbox/approval-line(근태결재선통합 P3-1)
+      IDOR 검증 용도(소속 사업장 접근 가능 여부 / 연차 요청자 본인 여부). 목록 조회용 상세 컬럼 없음.
+    -->
+    <select id="selectReqSummaryByReqId" resultType="com.prafta.web.attd.reqinbox.result.ReqSummaryResult">
+    /* ReqInboxMapper.selectReqSummaryByReqId */
+    SELECT
+          R.REQ_ID    AS reqId
+        , R.SITE_CD   AS siteCd
+        , R.REQ_TYPE  AS reqType
+        , R.USER_CD   AS userCd
+      FROM TB_USER_ATTD_REQ R
+     WHERE R.CMPNY_CD = #{cmpnyCd}
+       AND R.REQ_ID   = #{reqId}
+       AND R.DEL_YN   = 'N'
+     LIMIT 1
+    </select>
+
 </mapper>

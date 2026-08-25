@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.RestController;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.web.attd.reqinbox.dto.response.AccessibleSiteListResponse;
+import com.prafta.web.attd.reqinbox.dto.response.ApprovalLineResponse;
 import com.prafta.web.attd.reqinbox.dto.response.PendingReqListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.PendingSchedReqListResponse;
 import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
@@ -104,6 +105,28 @@ public class ReqInboxController {
                 .accessibleSites(reqInboxService.getAccessibleSites(
                         token.gv_cmpnyCd(), token.gv_userCd(), token.gv_authCd()))
                 .build();
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * 결재 진행 타임라인 (근태결재선통합 P3-1, 웹 {@code Attd_10.vue} 상세 패널 소비).
+     *
+     * <p>reqTypeGroup: correction | overtime | schedule | leave.
+     * correction/overtime/schedule 은 매니저(master/hr) 전용 + 소속 사업장 IDOR 검증, leave 는
+     * 결재선 실존/요청자 본인/canManageAllNodes 기준으로 인가한다(서비스 계층에서 분기).
+     */
+    @GetMapping("/approval-line")
+    public ResponseEntity<?> approvalLine(
+            @RequestParam("reqId") String reqId,
+            @RequestParam("reqTypeGroup") String reqTypeGroup,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo token = jwtUtil.getAllClaimsAsMap(authorization);
+
+        ApprovalLineResponse response = reqInboxService.getApprovalLine(
+                token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(),
+                reqId, reqTypeGroup);
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

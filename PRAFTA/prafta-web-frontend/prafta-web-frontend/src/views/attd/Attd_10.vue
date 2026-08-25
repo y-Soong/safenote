@@ -318,15 +318,40 @@
               </dl>
             </div>
 
+            <!-- 결재 진행 현황(P3) — 재기획서 §5.7 ⑥ -->
+            <div class="ra-sec">
+              <div class="ra-sec__title">결재 진행 현황</div>
+              <ApprovalStepTimeline
+                :steps="approvalSteps"
+                :loading="approvalStepsLoading"
+                :error-message="approvalStepsError"
+                @retry="fnLoadApprovalSteps(selected.reqId, 'leave')"
+              />
+            </div>
+
             <!-- 관리자 결정 (§5.8.4 — 연차는 라디오 2개) -->
             <div class="ra-sec ra-decide">
               <div class="ra-sec__title">결재 처리</div>
+              <!-- 결정 A: "내 차례 아님" 배너(P3) — 서버 canProcess 를 그대로 신뢰(클라 자체 판정 금지) -->
+              <p v-if="!canProcessCurrentStep" class="ra-decide__warn">
+                현재 결재 단계 담당자가 아닙니다. {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
+              </p>
               <label class="ra-radio">
-                <input type="radio" v-model="decision" value="approve" />
+                <input
+                  type="radio"
+                  v-model="decision"
+                  value="approve"
+                  :disabled="!canProcessCurrentStep"
+                />
                 요청대로 승인
               </label>
               <label class="ra-radio">
-                <input type="radio" v-model="decision" value="reject" />
+                <input
+                  type="radio"
+                  v-model="decision"
+                  value="reject"
+                  :disabled="!canProcessCurrentStep"
+                />
                 반려
               </label>
               <textarea
@@ -339,7 +364,7 @@
               <div class="ra-decide__actions">
                 <button
                   class="btn btn-primary"
-                  :disabled="processing"
+                  :disabled="processing || !canProcessCurrentStep"
                   @click="fnProcess"
                 >
                   처리하기
@@ -461,15 +486,40 @@
               :row="reqSelected"
             />
 
+            <!-- 결재 진행 현황(P3) — 재기획서 §5.7 ⑥ -->
+            <div class="ra-sec">
+              <div class="ra-sec__title">결재 진행 현황</div>
+              <ApprovalStepTimeline
+                :steps="approvalSteps"
+                :loading="approvalStepsLoading"
+                :error-message="approvalStepsError"
+                @retry="fnLoadApprovalSteps(reqSelected.reqId, reqTypeGroupOf(activeTab))"
+              />
+            </div>
+
             <!-- 결재 처리 — 요청대로 승인 / 반려 (연차 탭과 동일 패턴). 편의상 본 화면에서도 승인 가능. -->
             <div class="ra-sec ra-decide">
               <div class="ra-sec__title">결재 처리</div>
+              <!-- 결정 A: "내 차례 아님" 배너(P3) — 서버 canProcess 를 그대로 신뢰(클라 자체 판정 금지) -->
+              <p v-if="!canProcessCurrentStep" class="ra-decide__warn">
+                현재 결재 단계 담당자가 아닙니다. {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
+              </p>
               <label class="ra-radio">
-                <input type="radio" v-model="reqDecision" value="approve" />
+                <input
+                  type="radio"
+                  v-model="reqDecision"
+                  value="approve"
+                  :disabled="!canProcessCurrentStep"
+                />
                 요청대로 승인
               </label>
               <label class="ra-radio">
-                <input type="radio" v-model="reqDecision" value="reject" />
+                <input
+                  type="radio"
+                  v-model="reqDecision"
+                  value="reject"
+                  :disabled="!canProcessCurrentStep"
+                />
                 반려
               </label>
               <p v-if="reqDecision === 'approve'" class="ra-decide__note">
@@ -490,7 +540,7 @@
                 <button
                   class="btn btn-primary"
                   :class="{ 'btn-reject': reqDecision === 'reject' }"
-                  :disabled="reqProcessing"
+                  :disabled="reqProcessing || !canProcessCurrentStep"
                   @click="fnProcessReq"
                 >
                   처리하기
@@ -539,6 +589,7 @@ import AttdNeighborDaySegments from "./popup/AttdNeighborDaySegments.vue";
 import AttdSchedCompareSection from "./popup/AttdSchedCompareSection.vue";
 import ReqInboxSiteFilter from "./popup/ReqInboxSiteFilter.vue";
 import LeaveChangeScopeFilter from "./popup/LeaveChangeScopeFilter.vue";
+import ApprovalStepTimeline from "@/components/common/ApprovalStepTimeline.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 
@@ -720,6 +771,57 @@ const reqProcessing = ref(false);
 // 앞뒤 근무일(D-1/D+1) 근태 구간 — 근태 보정 승인 판단 보조(앱 승인 상세와 동일 정보).
 const neighborSegments = ref([]);
 const neighborLoading = ref(false);
+
+// ── 결재 진행 타임라인(P3) ─────────────────────────────────────────
+//   근태보정/초과/스케줄 3탭(reqSelected)과 연차 탭(selected)이 공용으로 쓰는 1세트.
+//   두 상세 패널은 동시에 열리지 않으므로 공유해도 무방하나, 선택이 바뀔 때마다
+//   fnLoadApprovalSteps 진입 시점에 초기화해 다른 건의 잔상이 보이지 않게 한다.
+const approvalSteps = ref([]);
+const approvalStepsLoading = ref(false);
+const approvalStepsError = ref("");
+const canProcessCurrentStep = ref(true); // 서버 응답 전 기본값 true(무차단) — 응답 도착 후 서버값으로 교체
+const currentApproverUserNm = ref("");
+
+// GET /webApi/reqinbox/approval-line 조회 → approvalSteps/canProcessCurrentStep 등 갱신.
+// reqTypeGroup 은 correction/overtime/schedule(reqTypeGroupOf(activeTab.value)) 또는 'leave' 고정.
+// stale-response 가드(ApprovalLineDetailSheet.vue app 패턴과 동일): fetch 시작 시점의 reqId 를
+//   캡처해두고, 응답 도착 시점에 현재 선택된 건(연차 탭=selected, 그 외 3탭=reqSelected)이
+//   여전히 이 reqId 와 일치할 때만 상태를 반영한다 — 빠른 재선택 시 늦게 온 이전 응답이
+//   최신 선택 상태를 덮어쓰지 않도록 방지한다.
+const fnLoadApprovalSteps = async (reqId, reqTypeGroup) => {
+  // 선택이 바뀔 때마다 이전 건의 잔상이 남지 않도록 즉시 초기화한다.
+  approvalSteps.value = [];
+  approvalStepsError.value = "";
+  canProcessCurrentStep.value = true;
+  currentApproverUserNm.value = "";
+  if (!reqId) return;
+
+  const isCurrent = () =>
+    reqTypeGroup === "leave"
+      ? selected.value?.reqId === reqId
+      : reqSelected.value?.reqId === reqId;
+
+  approvalStepsLoading.value = true;
+  try {
+    const r = await axios.get("/webApi/reqinbox/approval-line", {
+      params: { reqId, reqTypeGroup },
+    });
+    if (!isCurrent()) return; // stale 응답 폐기
+    approvalSteps.value = Array.isArray(r.data?.steps) ? r.data.steps : [];
+    canProcessCurrentStep.value = r.data?.canProcess !== false;
+    currentApproverUserNm.value = r.data?.currentApproverUserNm ?? "";
+  } catch (e) {
+    console.warn("[Attd_10] 결재선 조회 실패", e);
+    if (!isCurrent()) return; // stale 응답 폐기
+    approvalSteps.value = [];
+    approvalStepsError.value = resolveApiErrorMessage(
+      e,
+      "결재선을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
+  } finally {
+    if (isCurrent()) approvalStepsLoading.value = false;
+  }
+};
 
 // 탭별 대기 건수 (배지용) — 활성 탭과 무관하게 유지
 const leaveCount = ref(0);
@@ -1126,6 +1228,7 @@ const fnSelectReq = (row) => {
   reqDecision.value = "approve";
   reqRejectReason.value = "";
   fnLoadNeighborSegments(row);
+  fnLoadApprovalSteps(row.reqId, reqTypeGroupOf(activeTab.value));
 };
 
 // 앞뒤 근무일 근태 구간 로드 — 일자상세 API(daily-attd-details)의 neighborAttdSegmentList 만 취한다
@@ -1304,6 +1407,7 @@ const fnSelect = (row) => {
   selectedGroup.value = null;   // 단건 선택 시 묶음 선택 해제(상호배타)
   decision.value = "approve";
   rejectReason.value = "";
+  fnLoadApprovalSteps(row.reqId, "leave");
 };
 
 const fnProcess = async () => {

@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.springframework.stereotype.Service;
 
+import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
+import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
 import com.prafta.common.cmm.siteauth.result.AccessibleSiteResult;
 import com.prafta.common.cmm.siteauth.service.SiteAccessService;
 import com.prafta.common.error.attd.AttdErrorCode;
@@ -11,10 +13,12 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
+import com.prafta.web.attd.reqinbox.dto.response.ApprovalLineResponse;
 import com.prafta.web.attd.reqinbox.dto.response.ProcessedReqListResponse;
 import com.prafta.web.attd.reqinbox.mapper.ReqInboxMapper;
 import com.prafta.web.attd.reqinbox.result.PendingReqResult;
 import com.prafta.web.attd.reqinbox.result.PendingSchedReqResult;
+import com.prafta.web.attd.reqinbox.result.ReqSummaryResult;
 import com.prafta.web.attd.reqinbox.service.ReqInboxService;
 
 import lombok.RequiredArgsConstructor;
@@ -26,8 +30,13 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class ReqInboxServiceImpl implements ReqInboxService {
 
+    // 결재 단계 상태 [SYS044] - ApprovalStepGateServiceImpl/AppLeaveApprovalServiceImpl 과 동일 코드값
+    // (공유 테이블 TB_USER_ATTD_REQ_APPROVAL). '01' = 현재 처리 대상인 진행중 단계.
+    private static final String STEP_APPLIED = "01";
+
     private final ReqInboxMapper reqInboxMapper;
     private final SiteAccessService siteAccessService;
+    private final ApprovalLineMapper approvalLineMapper;
 
     @Override
     public List<PendingReqResult> getPendingRequests(String cmpnyCd, String siteCd, String userCd, String authCd,
@@ -130,6 +139,121 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
         return siteAccessService.getAccessibleSites(cmpnyCd, userCd, authCd);
+    }
+
+    @Override
+    public ApprovalLineResponse getApprovalLine(String cmpnyCd, String siteCd, String userCd, String authCd,
+                                                String reqId, String reqTypeGroup) {
+        boolean isLeave = "leave".equals(reqTypeGroup);
+        if (!isLeave && !"correction".equals(reqTypeGroup) && !"overtime".equals(reqTypeGroup)
+                && !"schedule".equals(reqTypeGroup)) {
+            // 미지원 그룹 - fail-closed(다른 reqinbox 조회 endpoint 와 동일 원칙).
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        ReqSummaryResult reqSummary = reqInboxMapper.selectReqSummaryByReqId(cmpnyCd, reqId);
+        if (reqSummary == null) {
+            throw new ApiException(AttdErrorCode.ATTD_404_001);
+        }
+
+        // QA 재작업(P3-1) - reqTypeGroup(클라이언트 주장 라벨)과 실제 REQ_TYPE 정합성 검증.
+        // 이 검증은 아래 매니저 게이트/소유권 검증 분기(isLeave 판정) 이전에 수행해야 한다 - 그렇지
+        // 않으면 예를 들어 correction/overtime/schedule 요청의 reqId 를 reqTypeGroup=leave 로 조회해
+        // 매니저 게이트를 우회하고 소유권 검증(isRequester) 경로로 통과할 수 있다(타입 혼동).
+        if (!reqTypeGroupMatchesActualType(reqTypeGroup, reqSummary.reqType())) {
+            log.warn("reqinbox approval-line reqTypeGroup 불일치 - reqTypeGroup={}, actualReqType={}, reqId={}",
+                    reqTypeGroup, reqSummary.reqType(), reqId);
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        if (!isLeave && !AuthRoleUtils.isManager(authCd)) {
+            // correction/overtime/schedule: 매니저(master/hr) 전용 게이트 - getPendingRequests 와 동일 규칙.
+            log.warn("reqinbox approval-line rejected - insufficient privilege. authCd={}, reqTypeGroup={}",
+                    authCd, reqTypeGroup);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        List<ApprovalStepVO> steps = approvalLineMapper.selectApprovalLineByReqId(cmpnyCd, reqId);
+
+        if (isLeave) {
+            // leave: 매니저 게이트 없음. 결재선 결재자 실존(AppLeaveApprovalServiceImpl.findMyStep 과 동일
+            // 패턴) 또는 요청자 본인 또는 canManageAllNodes 중 하나가 아니면 IDOR 차단.
+            boolean isApprover = isApproverInSteps(steps, userCd);
+            boolean isRequester = userCd != null && userCd.equals(reqSummary.userCd());
+            if (!isApprover && !isRequester && !AuthRoleUtils.canManageAllNodes(authCd)) {
+                log.warn("reqinbox approval-line(leave) IDOR 차단 - userCd={}, reqId={}", userCd, reqId);
+                throw new ApiException(AttdErrorCode.ATTD_403_002);
+            }
+        } else {
+            // correction/overtime/schedule: 요청 소속 사업장이 caller 접근 가능 사업장에 포함되는지 검증
+            // (IDOR 가드, 실패 시 COMMON_403_003) - resolveSiteCds 의 assertSiteAccess 재사용.
+            siteAccessService.assertSiteAccess(cmpnyCd, userCd, authCd, siteCd, reqSummary.siteCd());
+        }
+
+        return buildApprovalLineResponse(steps, userCd, authCd);
+    }
+
+    /**
+     * canProcess/currentApproverUserNm 읽기 전용 산출(근태결재선통합 P3-1 plan §1 결정 D).
+     *
+     * <p>{@code ApprovalStepGateService.resolveProcessableStep} 은 예외를 던지고 orphan REQ 를 만나면
+     * 결재선을 lazy INSERT 하는 부작용이 있어 GET 요청에서 재사용하지 않는다 - steps 배열에서
+     * {@code approvalStatus=='01'}(진행중)인 첫 항목을 찾아 직접 판정한다. 그런 항목이 없으면(전부
+     * 처리완료 또는 orphan) canProcess=false, currentApproverUserNm=null.
+     */
+    private ApprovalLineResponse buildApprovalLineResponse(List<ApprovalStepVO> steps, String callerUserCd,
+                                                            String authCd) {
+        String currentApproverUserNm = null;
+        boolean canProcess = false;
+        if (steps != null) {
+            for (ApprovalStepVO s : steps) {
+                if (STEP_APPLIED.equals(s.getApprovalStatus())) {
+                    currentApproverUserNm = s.getApproverUserNm();
+                    canProcess = (callerUserCd != null && callerUserCd.equals(s.getApproverUserCd()))
+                            || AuthRoleUtils.canManageAllNodes(authCd);
+                    break;
+                }
+            }
+        }
+        return ApprovalLineResponse.builder()
+                .steps(steps == null ? List.of() : steps)
+                .canProcess(canProcess)
+                .currentApproverUserNm(currentApproverUserNm)
+                .build();
+    }
+
+    /**
+     * QA 재작업(P3-1) - reqTypeGroup(클라이언트 주장 라벨)이 실제 REQ_TYPE 과 대응하는지 검증한다.
+     * 매핑은 {@link AttdReqTypeUtils} 의 기존 allow-list(다른 reqinbox/근태 endpoint 와 공유하는
+     * 단일 출처)를 그대로 재사용한다: correction↔01/02, overtime↔03/04, schedule↔10, leave↔05/06.
+     */
+    private boolean reqTypeGroupMatchesActualType(String reqTypeGroup, String actualReqType) {
+        if ("leave".equals(reqTypeGroup)) {
+            return AttdReqTypeUtils.isLeaveReqType(actualReqType);
+        }
+        if ("correction".equals(reqTypeGroup)) {
+            return AttdReqTypeUtils.isAttendanceReqType(actualReqType);
+        }
+        if ("overtime".equals(reqTypeGroup)) {
+            return AttdReqTypeUtils.isOvertimeReqType(actualReqType);
+        }
+        if ("schedule".equals(reqTypeGroup)) {
+            return AttdReqTypeUtils.isScheduleModifyReqType(actualReqType);
+        }
+        return false;
+    }
+
+    /** 결재선에 userCd 가 결재자로 실존하는지(단계 무관) - AppLeaveApprovalServiceImpl.findMyStep 과 동일 패턴. */
+    private boolean isApproverInSteps(List<ApprovalStepVO> steps, String userCd) {
+        if (steps == null || userCd == null) {
+            return false;
+        }
+        for (ApprovalStepVO s : steps) {
+            if (userCd.equals(s.getApproverUserCd())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
