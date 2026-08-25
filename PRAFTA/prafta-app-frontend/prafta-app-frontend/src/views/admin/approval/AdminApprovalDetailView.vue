@@ -67,6 +67,12 @@
             <dd>{{ detail.meta.reqDateDisplay || '-' }}</dd>
             <dt v-if="detail.meta.deadlineText">마감</dt>
             <dd v-if="detail.meta.deadlineText">{{ detail.meta.deadlineText }}</dd>
+            <!-- PRAFTA-001: 근태결재선통합 P4 — LEAVE 는 ③ 섹션에서 이미 표시(HR 최종 포함), 중복 방지로 제외.
+                 근태보정/초과/스케줄은 P1(커밋 0edaefed)부터 meta.approvalStep 이 서버에서 채워진다. -->
+            <dt v-if="detail.meta.approvalStep != null && detail.group !== 'LEAVE'">결재 단계</dt>
+            <dd v-if="detail.meta.approvalStep != null && detail.group !== 'LEAVE'">
+              결재 {{ detail.meta.approvalStep }}단계
+            </dd>
           </dl>
         </section>
 
