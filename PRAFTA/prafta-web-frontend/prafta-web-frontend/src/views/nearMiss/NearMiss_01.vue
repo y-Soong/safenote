@@ -536,11 +536,12 @@ const fnSearch = async () => {
   text-overflow: ellipsis;
 }
 
-/* 상태 탭 */
+/* 상태 탭 — 왼쪽은 아래 테이블(.viewBody 좌측 padding)과 동일 들여쓰기로 맞추고,
+   아래쪽은 padding 을 비워 "사건 리스트" 소제목과의 간격이 위 조회 영역과의 간격과 비슷해지도록 함 */
 .status-tabs {
   display: flex;
   gap: var(--space-sm, 0.5rem);
-  padding: var(--space-sm, 0.5rem) 0;
+  padding: var(--space-sm, 0.5rem) 0 0 var(--space-lg, 1rem);
 }
 
 .status-tab {
