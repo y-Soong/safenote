@@ -24,32 +24,7 @@ const routes = [
   {
     path: "/",
     name: "Home",
-    component: () => import("@/views/intro/IntroMainView.vue"),
-  },
-  {
-    path: "/attendance",
-    name: "IntroAttendance",
-    component: () => import("@/views/intro/IntroAttendanceView.vue"),
-  },
-  {
-    path: "/safety",
-    name: "IntroSafety",
-    component: () => import("@/views/intro/IntroSafetyView.vue"),
-  },
-  {
-    path: "/pricing",
-    name: "IntroPricing",
-    component: () => import("@/views/intro/IntroPricingView.vue"),
-  },
-  {
-    path: "/about",
-    name: "IntroAbout",
-    component: () => import("@/views/intro/IntroAboutView.vue"),
-  },
-  {
-    path: "/contact",
-    name: "IntroContact",
-    component: () => import("@/views/intro/IntroContactView.vue"),
+    component: () => import("@/views/intro/CompanyIntroView.vue"),
   },
   // 개인정보 처리방침 (비로그인 공개 — 스토어 제출용 공개 URL, 약관 002 문안)
   {

@@ -63,8 +63,4 @@
   --lnb-brand-padding-x: 16px;
   --lnb-item-height: 40px;
   --lnb-item-padding-x: 12px;
-
-  /* 인트로(마케팅 랜딩) 전용 — 근태/안전 축 라벨·로고 한정 */
-  --color-attd: #2563eb;          /* 근태 축 라벨·아이콘 전용(블루) */
-  --color-brand-yellow: #f5b301;  /* 로고 F 액센트·브랜드 스토리 스테이지 전용 */
 }
