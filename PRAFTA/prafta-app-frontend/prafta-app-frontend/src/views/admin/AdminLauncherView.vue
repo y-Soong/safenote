@@ -286,9 +286,13 @@ const loadAccessContext = async (siteCd, { silent = false } = {}) => {
 }
 
 // 모듈별 미처리 건수 조회(배지용).
-//   기존 목록 엔드포인트가 이미 집계를 돌려주므로 전용 API 를 신설하지 않는다.
+//   기존 목록/카운트 엔드포인트가 이미 집계를 돌려주므로 전용 API 를 신설하지 않는다.
 //     · 승인 관리: GET /appApi/admin/approval/pending → counts.ALL (pageSize=1 로 목록 부하 최소화)
 //     · 입장 승인: GET /appApi/entryadmin01/pending-lists → totalCount
+//     · 가입 승인: GET /appApi/admin/self-join/pending → 목록 길이
+//     · 안전 관리: 위험성평가(001 평가요청) + 아차사고(100 접수) 합산 — 아래 SAFETY 분기 참조
+//   ATTD_DETAIL(조회 전용, 근태결재는 승인 관리로 통합됨) · TBM · SITE_OPS(QR 스캔 액션) ·
+//   BOARD(관리자 발행 자료실, 근로자 요청 큐 없음) 는 "근로자 요청 대응" 성격이 아니라서 배지 대상 제외.
 //   비활성 모듈은 호출 자체를 건너뛴다(불필요한 403 방지). 실패는 0 으로 두고 조용히 넘어간다 —
 //   배지는 보조 정보이므로 홈 진입을 막거나 알림을 띄우지 않는다.
 const loadModuleBadges = async () => {
@@ -339,6 +343,33 @@ const loadModuleBadges = async () => {
         .catch(() => {
           next.SELF_JOIN = 0
         }),
+    )
+  }
+
+  // 안전 관리 배지 = 위험성평가(001 평가요청, 관리자 첫 대응 대기) + 아차사고(100 접수, 조치 시작 전) 합산.
+  //   순회점검 결과는 조회 전용이라 집계 대상이 아니다(AdminSafetyView 카드 3개 중 2개만 대응 필요 성격).
+  //   ⚠️ 한계: 아차사고 /appApi/nearmiss/status-counts 는 siteCd 파라미터를 받지 않고 토큰 사업장(gv_siteCd)
+  //      고정이라, 관리자 모드에서 현장을 전환해도 배지는 로그인 사업장 기준으로 남는다(위험성평가는
+  //      siteCd 를 지원해 currentSiteCd 로 정확히 반영됨 — 근본 해결은 근태결재선통합류의 백엔드 대응 필요).
+  if (moduleActiveMap.value.SAFETY === true) {
+    tasks.push(
+      Promise.all([
+        api
+          .get('/appApi/admin/safety/risk-findings', {
+            params: {
+              assessmentStatus: '001',
+              ...(currentSiteCd.value ? { siteCd: currentSiteCd.value } : {}),
+            },
+          })
+          .then(({ data }) => (Array.isArray(data?.findings) ? data.findings.length : 0))
+          .catch(() => 0),
+        api
+          .get('/appApi/nearmiss/status-counts')
+          .then(({ data }) => Number(data?.statusCount?.receivedCnt) || 0)
+          .catch(() => 0),
+      ]).then(([riskCnt, nearMissCnt]) => {
+        next.SAFETY = riskCnt + nearMissCnt
+      }),
     )
   }
 

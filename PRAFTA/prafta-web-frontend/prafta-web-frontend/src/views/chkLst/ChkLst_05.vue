@@ -244,12 +244,6 @@
                       <span class="desc-preview" :title="row.actionDesc || ''">
                         {{ row.actionDesc || "-" }}
                       </span>
-                      <button
-                        class="btn btn-custom btn-desc"
-                        @click="fnDetailPopOpen(group, row)"
-                      >
-                        상세
-                      </button>
                     </template>
                   </td>
                   <td style="text-align: center">
@@ -625,16 +619,7 @@ const fnChkptTargetPopOpen = () => {
   });
 };
 
-// ===== 상세/사진 열람(읽기전용, DefectDetailPop 재사용) =====
-const fnDetailPopOpen = (group, row) => {
-  openPop(DefectDetailPop, {
-    inspectItemSubj_p: group.inspectItemSubj,
-    workDate_p: formatYmdDot(group.workDate),
-    answerDesc_p: row.actionDesc, // 불량조치 탭: 조치내용
-    fileMgmtCd_p: row.fileMgmtCd,
-    filePath_p: row.filePath,
-  });
-};
+// ===== 상세 열람(읽기전용, DefectDetailPop 재사용) =====
 const fnPhotoPopOpen = (group, row) => {
   openPop(DefectDetailPop, {
     inspectItemSubj_p: group.inspectItemSubj,
@@ -753,17 +738,13 @@ const fnPhotoPopOpen = (group, row) => {
   font-size: 0.75rem;
   font-weight: 600;
 }
-/* 불량조치 탭 — 조치내용 인라인 미리보기(말줄임) + 상세 버튼 */
+/* 불량조치 탭 — 조치내용 인라인 미리보기(말줄임, hover 시 title 로 전문 노출) */
 .desc-preview {
   display: inline-block;
-  max-width: calc(100% - 3.5rem);
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: middle;
-}
-.btn-desc {
-  margin-left: 0.35rem;
   vertical-align: middle;
 }
 
