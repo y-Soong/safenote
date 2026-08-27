@@ -7,6 +7,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -107,6 +111,10 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 	/** GPS좌표-암호화-전환-06: 관리자 좌표 AES-GCM 암복호화(쓰기 암호화 + 상세 fallback 복호화). */
 	private final GpsCoordCrypto gpsCoordCrypto;
+
+	/** 15분 자동 교육시작 경과 임계(분). 앱(AppAdminTbmServiceImpl)과 동일 프로퍼티 키로 단일 값 유지. */
+	@Value("${tbm.prep.auto-start-minutes:15}")
+	private int prepAutoStartMinutes = 15;
 
 	/** 비밀번호 자리수(랜덤 6자리). */
 	private static final int PWD_LENGTH = 6;
@@ -217,6 +225,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.gpsManualConfirmYn(session.gpsManualConfirmYn())
 				.openedAt(session.openedAt())
 				.prepStartAt(session.prepStartAt())
+				.prepAutoStartAt(computePrepAutoStartAt(session.statusCd(), session.prepStartAt()))
 				.startedAt(session.startedAt())
 				.endedAt(session.endedAt())
 				.cancelledAt(session.cancelledAt())
@@ -1326,6 +1335,29 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	/** 비밀번호 열람 가능 관리자 역할(safe/master/hr). */
 	private boolean isManagerRole(String authCd) {
 		return AuthRoleUtils.canManageCommon(authCd) || AuthRoleUtils.isManager(authCd);
+	}
+
+	/**
+	 * 자동 교육시작 예정시각 산출(=prepStartAt + 자동시작분). OPENED 이며 prepStartAt 존재 시에만 산출.
+	 * prepStartAt 포맷('yyyy-MM-dd HH:mm:ss')을 파싱해 분을 더한 뒤 UTC 명시(Z 접미사)로 반환한다.
+	 *
+	 * <p>PREP_START_AT 은 DB 서버의 {@code NOW()}(=UTC 벽시계값)로 기록된다(운영 EC2/RDS 시스템
+	 * 시각이 UTC). Z 표기 없이 순수 벽시계 문자열만 내려주면 클라이언트(new Date(...))가 이를
+	 * 브라우저 로컬시각(KST)으로 오인해 파싱 — 실제보다 9시간 이른 시각으로 계산돼 생성 직후부터
+	 * 카운트다운이 즉시 만료(00:00)된 것처럼 보이는 결함이 있다(앱 AppAdminTbmServiceImpl 에서
+	 * 2026-08-23 실기기 검증으로 먼저 발견·수정된 동일 결함을 웹에도 동일하게 적용).
+	 */
+	private String computePrepAutoStartAt(String statusCd, String prepStartAt) {
+		if (!"OPENED".equals(statusCd) || !StringUtils.hasText(prepStartAt)) {
+			return null;
+		}
+		try {
+			DateTimeFormatter f = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+			return LocalDateTime.parse(prepStartAt, f).plusMinutes(prepAutoStartMinutes).format(f) + "Z";
+		} catch (Exception e) {
+			log.warn("TBM 자동 교육시작 예정시각 산출 실패 - prepStartAt={}", prepStartAt);
+			return null;
+		}
 	}
 
 	/**

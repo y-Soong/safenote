@@ -364,6 +364,7 @@ const session = reactive({
   gpsManualConfirmYn: "",
   openedAt: "",
   prepStartAt: "",
+  prepAutoStartAt: "",
   cancelReason: "",
   insertDate: "",
 });
@@ -420,36 +421,24 @@ onUnmounted(() => {
   stopCountdown();
 });
 
-// 'yyyy-MM-dd HH:mm:ss' 문자열을 로컬 Date 로 파싱(브라우저 타임존 차이 회피)
-const parsePrepStartAt = (str) => {
-  if (!str) return null;
-  const m = String(str).match(
-    /^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})/
-  );
-  if (!m) return null;
-  return new Date(
-    Number(m[1]),
-    Number(m[2]) - 1,
-    Number(m[3]),
-    Number(m[4]),
-    Number(m[5]),
-    Number(m[6])
-  );
-};
-
-// prepStartAt 기준 남은 초 산출(표시 전용). OPENED 가 아니면 null.
+// prepAutoStartAt(=prepStartAt+15분, 서버가 UTC 명시 'Z' 접미사로 산출) 기준 남은 초 산출(표시 전용).
+// OPENED 가 아니거나 값이 없으면 null.
+// ★PREP_START_AT 은 DB 서버 NOW()(=UTC 벽시계값)로 기록된다. 과거엔 prepStartAt(타임존 표기 없는
+//   문자열)을 브라우저 로컬시각(KST)으로 오인 파싱해 실제보다 9시간 이른 시각으로 계산되는 바람에
+//   교육준비 진입 즉시 카운트다운이 00:00 으로 보이는 결함이 있었다(앱에서 2026-08-23 먼저 발견·수정된
+//   동일 결함 — 웹에도 동일하게 적용). prepAutoStartAt 은 Z 가 붙은 절대시각이라 Date 파싱이 안전하다.
 const computeRemainSec = () => {
-  if (session.statusCd !== "OPENED") {
+  if (session.statusCd !== "OPENED" || !session.prepAutoStartAt) {
     remainSec.value = null;
     return;
   }
-  const base = parsePrepStartAt(session.prepStartAt);
-  if (!base) {
+  const target = new Date(session.prepAutoStartAt.replace(" ", "T")).getTime();
+  if (Number.isNaN(target)) {
     remainSec.value = null;
     return;
   }
-  const elapsedSec = Math.floor((Date.now() - base.getTime()) / 1000);
-  remainSec.value = Math.max(0, PREP_TIMER_SEC - elapsedSec);
+  const remainMs = target - Date.now();
+  remainSec.value = Math.max(0, Math.floor(remainMs / 1000));
   // 남은 시간이 다시 생기면(연장/재조회) 자동 재조회 가드 해제
   if (remainSec.value > 0) autoStartRefetched = false;
 };
@@ -481,6 +470,7 @@ const fnSearch = async () => {
       session.gpsManualConfirmYn = s.gpsManualConfirmYn || "";
       session.openedAt = s.openedAt || "";
       session.prepStartAt = s.prepStartAt || "";
+      session.prepAutoStartAt = s.prepAutoStartAt || "";
       session.cancelReason = s.cancelReason || "";
       session.insertDate = s.insertDate || "";
 

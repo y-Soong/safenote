@@ -46,6 +46,7 @@ public class SessionDetailResponse {
 		private String gpsManualConfirmYn;
 		private String openedAt;
 		private String prepStartAt;		// 교육준비 타이머 기준시각(15분 자동 교육시작 기준, FE 카운트다운용)
+		private String prepAutoStartAt;	// 자동 교육시작 예정시각(=prepStartAt + 자동시작분, UTC 명시 'Z' 접미사, 서버 산출)
 		private String startedAt;
 		private String endedAt;
 		private String cancelledAt;
