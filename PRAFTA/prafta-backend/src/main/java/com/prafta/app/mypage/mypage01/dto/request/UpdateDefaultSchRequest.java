@@ -1,5 +1,7 @@
 package com.prafta.app.mypage.mypage01.dto.request;
 
+import java.util.List;
+
 import lombok.Data;
 
 /**
@@ -15,4 +17,13 @@ public class UpdateDefaultSchRequest {
 
     /** 변경 사유(필수, 최대 500자 — TB_USER_ATTD_REQ.REQ_REASON). */
     private String reqReason;
+
+    /**
+     * PRAFTA-002(결재자 선택 UI, 2026-08-27): 결재선 결재자 순서 목록(1차). 비면 presetId 폴백.
+     * req07(SchedModifyRequest) 과 동일 계약 — 스코프 가드는 결재 서비스가 수행.
+     */
+    private List<String> approverUserCds;
+
+    /** PRAFTA-002: approverUserCds 가 비었을 때 전개할 본인 소유 프리셋 ID(없으면 null). */
+    private String presetId;
 }

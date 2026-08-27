@@ -285,7 +285,7 @@ public class User01ServiceImpl implements User01Service{
 
 			// ----- 결재선 적용(app.req.req09.AttdApprovalLineService 재사용 — 결재자 미지정 → 기본 결재자 폴백) -----
 			attdApprovalLineService.applyApprovalFlow(
-					cmpnyCd, siteCd, userCd, reqId, java.util.List.of(), null, userCd);
+					cmpnyCd, siteCd, userCd, reqId, param.approverUserCds(), param.presetId(), userCd);
 		} finally {
 			releaseDefaultSchDupLock(lockKey);
 		}

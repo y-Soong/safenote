@@ -70,7 +70,10 @@
 
         <!-- 근무 정보 (F-8-3) — 기본 근무타입 자기변경(웹 내정보). 현재값 표시 + 인라인 변경.
              본인 변경은 정책서 §6.1 이 "관리자 주체"로만 서술돼 있어 명시적 근거는 없으나,
-             2026-08-05 사용자 확정(3경로: 관리자/웹 내정보/앱 마이페이지)에 따라 F-8-2 API 를 연결한다. -->
+             2026-08-05 사용자 확정(3경로: 관리자/웹 내정보/앱 마이페이지)에 따라 F-8-2 API 를 연결한다.
+             PRAFTA-004(결재자선택UI 추가, 2026-08-27): 편집 모드에 결재선 구성 UI 추가
+             (LeaveApplyPop.vue 결재라인 구성 패턴 재사용). 웹은 selfApprvYn 개념이 없어 항상 노출하며
+             미선택 시 서버가 부서 기본 결재자로 자동 폴백한다(필수 아님 — 2026-08-27 사용자 승인). -->
         <div class="section-title">근무 정보</div>
         <div class="form-container">
           <!-- 대기중 신청 있음 — 배너만 노출, 변경 버튼 숨김(PRAFTA-004 신규 3번째 분기). -->
@@ -134,6 +137,97 @@
                 placeholder="변경 사유를 입력해 주세요."
               ></textarea>
             </div>
+
+            <!-- 결재선 구성 (PRAFTA-004, LeaveApplyPop.vue 패턴 재사용) — 웹은 선택 사항(미선택 시
+                 서버가 부서 기본 결재자로 자동 폴백, 2026-08-27 사용자 승인). -->
+            <div class="default-sch-approval">
+              <div class="default-sch-approval__head">
+                <span>결재선 구성 (선택)</span>
+                <select
+                  v-if="approvalPresets.length > 0"
+                  class="default-sch-preset-sel"
+                  v-model="selectedApprovalPresetId"
+                  @change="fnApplyApprovalPresetSel"
+                >
+                  <option value="">프리셋 선택</option>
+                  <option
+                    v-for="p in approvalPresets"
+                    :key="p.presetId"
+                    :value="p.presetId"
+                  >
+                    {{ p.presetNm }}{{ p.defaultYn === "Y" ? " (기본)" : "" }}
+                  </option>
+                </select>
+                <span v-else class="default-sch-preset-empty">
+                  등록된 프리셋 없음 (사용자관리 &gt; 연차 결재라인 구성)
+                </span>
+              </div>
+              <div class="default-sch-approval__cols">
+                <div class="default-sch-pane">
+                  <div class="default-sch-pane__title">후보</div>
+                  <div class="default-sch-list">
+                    <div
+                      v-for="c in approvalCandidates"
+                      :key="c.userCd"
+                      class="default-sch-cand"
+                      :class="{ added: fnInApprovalLine(c.userCd) }"
+                    >
+                      <span>{{ c.userNm }} · {{ c.rankNm || "직급없음" }}</span>
+                      <button
+                        type="button"
+                        :disabled="fnInApprovalLine(c.userCd)"
+                        @click="fnAddApprover(c)"
+                      >
+                        추가
+                      </button>
+                    </div>
+                    <div v-if="approvalCandidates.length === 0" class="default-sch-empty">
+                      후보 없음
+                    </div>
+                  </div>
+                </div>
+                <div class="default-sch-pane">
+                  <div class="default-sch-pane__title">
+                    결재 순서 ({{ approvalLine.length }})
+                  </div>
+                  <div class="default-sch-list">
+                    <div
+                      v-for="(s, i) in approvalLine"
+                      :key="s.userCd"
+                      class="default-sch-step"
+                    >
+                      <span class="default-sch-step__no">{{ i + 1 }}</span>
+                      <span class="default-sch-step__nm">{{ s.userNm }}</span>
+                      <button
+                        type="button"
+                        :disabled="i === 0"
+                        @click="fnMoveApproverUp(i)"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        :disabled="i === approvalLine.length - 1"
+                        @click="fnMoveApproverDown(i)"
+                      >
+                        ▼
+                      </button>
+                      <button
+                        type="button"
+                        class="default-sch-del"
+                        @click="fnRemoveApprover(i)"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    <div v-if="approvalLine.length === 0" class="default-sch-empty">
+                      지정하지 않으면 부서 기본 결재자에게 자동 배정됩니다.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <span class="form-msg" v-if="defaultSchErrorMsg">{{
               defaultSchErrorMsg
             }}</span>
@@ -326,6 +420,14 @@ const pendingDefaultSch = ref({
 });
 const defaultSchReqReason = ref("");
 
+// PRAFTA-004(결재자선택UI 추가, 2026-08-27): 결재선 구성 상태(LeaveApplyPop.vue 미러).
+//   웹은 selfApprvYn 개념이 없어 항상 노출 — 미선택 제출 시 서버가 부서 기본 결재자로 자동 폴백한다
+//   (2026-08-27 사용자 승인 — "선택 사항" 설계 확정).
+const approvalCandidates = ref([]); // [{ userCd, userNm, rankNm, nodeNm }]
+const approvalPresets = ref([]); // 본인 결재라인 프리셋(webApi/user04/presets)
+const selectedApprovalPresetId = ref("");
+const approvalLine = ref([]); // [{ userCd, userNm }] — 순서 = 결재 단계
+
 // 선택약관 동의 설정 — GET /comApi/consent/my-optional-terms 응답(현재버전 + agrYn).
 //   비치명적: 조회 실패 시 빈 목록(섹션 미노출). 토글은 POST /comApi/consent/my-optional-terms-agree.
 const optionalTerms = ref([]);
@@ -397,13 +499,21 @@ const fnFmtSchTime = (t) => {
   return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
 };
 
-// 변경 클릭 → 인라인 전환 + 옵션 로드(현재값으로 선택 초기화).
+// 변경 클릭 → 인라인 전환 + 옵션/결재선 로드(현재값으로 선택 초기화).
+//   PRAFTA-004: 결재 후보/프리셋도 이 시점에 함께 로드(LeaveApplyPop.vue onMounted 패턴을
+//   "편집 진입 시점"으로 옮긴 것 — 팝업 mount 시점에 항상 로드할 필요 없음).
 const onStartEditDefaultSch = async () => {
   isEditingDefaultSch.value = true;
   pendingDefaultSchCd.value = defaultSchCd.value;
   defaultSchErrorMsg.value = "";
   defaultSchReqReason.value = "";
-  await fnLoadDefaultSchOptions();
+  approvalLine.value = [];
+  selectedApprovalPresetId.value = "";
+  await Promise.all([
+    fnLoadDefaultSchOptions(),
+    fnLoadApprovalCandidates(),
+    fnLoadApprovalPresets(),
+  ]);
 };
 
 // 세션 사업장 고정 옵션 조회(파라미터 없음 — 서버가 토큰으로만 사업장 도출, IDOR 방지).
@@ -427,14 +537,73 @@ const fnLoadDefaultSchOptions = async () => {
   }
 };
 
+// PRAFTA-004: 결재자 후보 조회(LeaveApplyPop.vue fnLoadCandidates 미러). 비치명적 — 실패는 빈 배열.
+const fnLoadApprovalCandidates = async () => {
+  try {
+    const r = await axios.get("/webApi/user04/approval-candidates", {});
+    approvalCandidates.value = r.data?.candidates ?? [];
+  } catch (e) {
+    approvalCandidates.value = [];
+  }
+};
+
+// PRAFTA-004: 본인 결재라인 프리셋 조회 + 기본 프리셋 자동 적용(LeaveApplyPop.vue fnLoadPresets 미러).
+const fnLoadApprovalPresets = async () => {
+  try {
+    const r = await axios.get("/webApi/user04/presets", {});
+    approvalPresets.value = r.data?.presets ?? [];
+    const def = approvalPresets.value.find((p) => p.defaultYn === "Y");
+    if (def) {
+      selectedApprovalPresetId.value = def.presetId;
+      fnApplyApprovalPresetSel();
+    }
+  } catch (e) {
+    approvalPresets.value = [];
+  }
+};
+
+// ── 결재라인 구성 (PRAFTA-004, LeaveApplyPop.vue 헬퍼 미러) ─────────────
+const fnInApprovalLine = (userCd) =>
+  approvalLine.value.some((s) => s.userCd === userCd);
+const fnAddApprover = (c) => {
+  if (!fnInApprovalLine(c.userCd)) {
+    approvalLine.value.push({ userCd: c.userCd, userNm: c.userNm });
+  }
+};
+const fnRemoveApprover = (i) => approvalLine.value.splice(i, 1);
+const fnMoveApproverUp = (i) => {
+  if (i <= 0) return;
+  const a = approvalLine.value;
+  [a[i - 1], a[i]] = [a[i], a[i - 1]];
+};
+const fnMoveApproverDown = (i) => {
+  const a = approvalLine.value;
+  if (i >= a.length - 1) return;
+  [a[i + 1], a[i]] = [a[i], a[i + 1]];
+};
+// 선택한 프리셋의 결재라인을 적용.
+const fnApplyApprovalPresetSel = () => {
+  const p = approvalPresets.value.find(
+    (x) => x.presetId === selectedApprovalPresetId.value
+  );
+  if (!p) return;
+  approvalLine.value = (p.steps ?? []).map((s) => ({
+    userCd: s.approverUserCd,
+    userNm: s.userNm,
+  }));
+};
+
 const onCancelEditDefaultSch = () => {
   isEditingDefaultSch.value = false;
   defaultSchErrorMsg.value = "";
   defaultSchReqReason.value = "";
+  approvalLine.value = [];
+  selectedApprovalPresetId.value = "";
 };
 
 // PRAFTA-001/004(기본근무타입-승인제): 저장 → 신청 전환. 승인 전까지 현재값(defaultSchCd/defaultSchLabel)은
 //   갱신하지 않는다(원 요청서 §3) — 성공 시 pendingDefaultSch 를 채워 배너로 즉시 전환한다.
+//   PRAFTA-004: approverUserCds 를 SSOT 로 함께 전송(빈 배열이면 서버가 부서 기본 결재자로 자동 폴백).
 const onRequestDefaultSch = async () => {
   if (!pendingDefaultSchCd.value) return;
   if (!(defaultSchReqReason.value || "").trim()) {
@@ -450,9 +619,12 @@ const onRequestDefaultSch = async () => {
   isSavingDefaultSch.value = true;
   defaultSchErrorMsg.value = "";
   try {
+    // TODO(developer): approvalLine 이 비어 있을 때 approverUserCds:[] 전송이 서버 기본 결재자 폴백과
+    //   정확히 정합하는지 최종 확인(PRAFTA-002 배선 이후).
     const { data } = await axios.post("/webApi/user01/update-my-default-sch", {
       defaultSchCd: pendingDefaultSchCd.value,
       reqReason: defaultSchReqReason.value,
+      approverUserCds: approvalLine.value.map((s) => s.userCd),
     });
     // 성공 — 선택된 옵션에서 schNo 라벨을 파생해 대기 배너를 채운다(defaultSchCd/defaultSchLabel 은 갱신하지 않음).
     const selected = defaultSchOptions.value.find(
@@ -466,6 +638,8 @@ const onRequestDefaultSch = async () => {
     };
     isEditingDefaultSch.value = false;
     defaultSchReqReason.value = "";
+    approvalLine.value = [];
+    selectedApprovalPresetId.value = "";
   } catch (err) {
     defaultSchErrorMsg.value = resolveApiErrorMessage(
       err,
@@ -676,6 +850,98 @@ const fnChangePassword = async () => {
   padding: 0.4rem 0.5rem;
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: 0.35rem;
+}
+
+/* 결재선 구성 (PRAFTA-004, LeaveApplyPop.vue .la-* 톤 재사용) */
+.default-sch-approval {
+  border-top: 1px solid var(--color-border, #e5e7eb);
+  padding-top: 0.6rem;
+}
+.default-sch-approval__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.85rem;
+  margin-bottom: 0.4rem;
+}
+.default-sch-preset-sel {
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.78rem;
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+  max-width: 60%;
+}
+.default-sch-preset-empty {
+  font-size: 0.74rem;
+  color: var(--color-text-muted, #9ca3af);
+}
+.default-sch-approval__cols {
+  display: flex;
+  gap: 0.6rem;
+}
+.default-sch-pane {
+  flex: 1;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.4rem;
+  padding: 0.4rem;
+  min-height: 120px;
+}
+.default-sch-pane__title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.3rem;
+}
+.default-sch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.default-sch-cand,
+.default-sch-step {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+}
+.default-sch-cand {
+  justify-content: space-between;
+}
+.default-sch-cand.added {
+  opacity: 0.5;
+}
+.default-sch-cand button,
+.default-sch-step button {
+  border: 1px solid var(--color-border, #d1d5db);
+  background: var(--color-surface, #fff);
+  border-radius: 0.3rem;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.default-sch-step__no {
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 50%;
+  background: var(--color-primary, #16a34a);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+}
+.default-sch-step__nm {
+  flex: 1;
+}
+.default-sch-del {
+  color: var(--color-danger, #dc2626);
+}
+.default-sch-empty {
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #9ca3af);
+  text-align: center;
+  padding: 0.6rem 0;
 }
 
 .default-sch-actions {

@@ -20,6 +20,11 @@
       → 신규 엔드포인트 없음. 기존 leave01/my-leave-summary 재사용. 그룹은 TOTAL 만(분리 토글 스코프 밖).
   - planner 라운드 스코프: 연차 요약 섹션 마크업 + scoped 스타일 + pull-to-refresh 인디케이터/핸들러 바인딩(template/style).
     script 의 API 호출/리팩터(조회 함수 묶기·pull 핸들러 본문·연차요약 매핑)는 아래 TODO(developer)로 표시만.
+
+  ── PRAFTA-003(결재자선택UI 추가, 2026-08-27) ──────────────────────────────
+  - "근무 정보" 바텀시트(DefaultSchEditSheet)가 결재선 선택 UI를 얹음에 따라, 시트 오픈 시점에
+    프리셋(GET /appApi/mypage/approval-presets) + 결재선 분기 컨텍스트(GET /appApi/req09/approval-context)
+    를 1회 로드해 props 로 전달한다(AttdRequestView.vue 의 loadPresets/loadApprovalContext 로드 패턴 미러).
 -->
 <template>
   <div class="my-page-view">
@@ -246,10 +251,13 @@
     />
 
     <!-- F-8-3: 근무 정보(기본 근무타입 자기변경) 바텀시트 -->
+    <!-- PRAFTA-003(결재자선택UI 추가): presets/approval-context 를 onDefaultSchClick 시점에 로드해 전달. -->
     <DefaultSchEditSheet
       v-model="defaultSchSheetOpen"
       :current-sch-cd="defaultSchCd"
       :current-label="defaultSchLabel"
+      :presets="defaultSchPresets"
+      :approval-context="defaultSchApprovalContext"
       @requested="onDefaultSchRequested"
     />
 
@@ -354,6 +362,9 @@ const defaultSchLabel = ref('')
 const defaultSchSheetOpen = ref(false)
 // PRAFTA-005(기본근무타입-승인제): 대기중 요청 존재 여부(메뉴 행 배지). 비치명적 → 실패는 false 폴백(미노출).
 const hasPendingDefaultSchReq = ref(false)
+// PRAFTA-003(결재자선택UI 추가): 결재선 프리셋/분기 컨텍스트 — 시트 오픈 시점에 로드해 props 로 전달.
+const defaultSchPresets = ref([])
+const defaultSchApprovalContext = ref(null)
 
 // 사용자연차결재-04: "연차 결재 관리" 대기 건수 배지(경량 조회, 비치명적). 실패 시 0(미노출).
 const pendingApprovalCount = ref(0)
@@ -465,7 +476,10 @@ const onPasswordChange = () => {
   router.push('/PasswordChange')
 }
 // F-8-3: 근무 정보 항목 탭 → 바텀시트 오픈.
+//   PRAFTA-003(결재자선택UI 추가): 오픈 전 프리셋/결재선 컨텍스트를 1회 로드해 시트에 props 로 전달.
 const onDefaultSchClick = () => {
+  loadDefaultSchPresets()
+  loadDefaultSchApprovalContext()
   defaultSchSheetOpen.value = true
 }
 // PRAFTA-005(기본근무타입-승인제): 바텀시트 신청 완료(requested) → "승인 전 미반영" 정책에 따라
@@ -597,6 +611,31 @@ const loadPendingDefaultSchChangeReq = async () => {
   } catch (e) {
     hasPendingDefaultSchReq.value = false
     console.warn('[MyPage] 기본 근무타입 변경 대기 조회 실패:', e?.message)
+  }
+}
+
+// PRAFTA-003(결재자선택UI 추가): 결재선 프리셋 로드(req07 AttdRequestView.vue loadPresets 미러).
+//   실패해도 시트는 빈 프리셋으로 동작(무차단).
+const loadDefaultSchPresets = async () => {
+  try {
+    const { data } = await api.get('/appApi/mypage/approval-presets')
+    defaultSchPresets.value = Array.isArray(data?.presets) ? data.presets : []
+  } catch (e) {
+    console.error('[MyPage] 결재선 프리셋 로드 실패:', e?.message)
+    defaultSchPresets.value = []
+  }
+}
+
+// PRAFTA-003(결재자선택UI 추가): 결재선 분기 컨텍스트 로드(req07 AttdRequestView.vue
+//   loadApprovalContext 미러 — workYmd 없이 호출 가능함을 확인함, AppReq09Controller 는 workYmd 를
+//   실제로 읽지 않는다). 실패 시 null → 시트가 결재선 노출 폴백.
+const loadDefaultSchApprovalContext = async () => {
+  try {
+    const { data } = await api.get('/appApi/req09/approval-context')
+    defaultSchApprovalContext.value = data || null
+  } catch (e) {
+    console.error('[MyPage] 결재선 컨텍스트 로드 실패:', e?.message)
+    defaultSchApprovalContext.value = null
   }
 }
 

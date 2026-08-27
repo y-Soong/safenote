@@ -191,7 +191,7 @@ const showApprovalSection = computed(() => selfApprvYn.value !== 'Y')
 const approvalNotice = computed(() => {
   if (selfApprvYn.value !== 'Y') return ''
   return props.approvalContext?.isNodeAdmin
-    ? '요청하면 즉시 승인 처리돼요.'
+    ? '결재선을 지정하지 않으면 본인이 부서 기본 결재자로 자동 지정돼요. 본인이 직접 승인해야 반영돼요.'
     : '부서 관리자 승인 후 반영돼요. 결재선을 지정하지 않아도 돼요.'
 })
 // 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로).

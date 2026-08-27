@@ -1,10 +1,14 @@
 <!--
-  DefaultSchEditSheet.vue — 기본 근무타입 변경 바텀시트 (F-8-3 → 관리자 승인제 전환)
+  DefaultSchEditSheet.vue — 기본 근무타입 변경 바텀시트 (F-8-3 → 관리자 승인제 전환 → 결재자 선택 UI 추가)
   - 시트 인프라: BaseBottomSheet 재사용 (★신규 시트 인프라 금지 — F-6 원칙 승계)
-  - props: modelValue(v-model), currentSchCd, currentLabel
+  - props: modelValue(v-model), currentSchCd, currentLabel, presets, approvalContext
   - emit : requested(reqId) — 기존 saved(newSchCd, newLabel) 대체. 승인 전까지 현재 근무타입
     라벨은 갱신하지 않는다("승인 전 미반영" 정책 — 작업지시서_기본근무타입-변경-관리자승인제.md §3).
   - 대기중 요청 존재 시 선택 UI 대신 배너만 노출(GET /appApi/req06/my?reqTypes=14&reqStatuses=01 로 조회).
+  - PRAFTA-003(결재자선택UI 추가, 2026-08-27): SchedModifyForm.vue(req07)의 결재선 패턴
+    (ApprovalLineSection/ApproverPickerSheet/selfApprvYn/showApprovalSection/approvalNotice)을 그대로
+    이식. presets/approvalContext 는 부모(MyPageView.vue)가 시트 오픈 시 1회 로드해 props 로 전달한다
+    (AttdRequestView.vue 의 loadPresets/loadApprovalContext 로드 패턴 미러).
 -->
 <template>
   <BaseBottomSheet v-model="open" title="기본 근무타입 변경" :show-footer="!hasPending">
@@ -65,6 +69,21 @@
           ⓘ 승인 시 명일부터 연말까지 근무계획이 자동 생성·갱신됩니다
           (빈 날·자동생성분만, 휴일·연차·교대팀 구간 제외). 신청 후 관리자 승인이 필요합니다.
         </p>
+
+        <!-- 결재선 (PRAFTA-003, req07 SchedModifyForm.vue 패턴 이식) -->
+        <!-- selfApprvYn='N'(또는 미상=폴백) → 결재선 섹션 노출. 'Y' → 안내문만(서버 분기 위임). -->
+        <ApprovalLineSection
+          v-if="showApprovalSection"
+          ref="approvalSectionRef"
+          v-model="approverList"
+          :presets="presets"
+          @open-picker="onOpenApproverPicker"
+        />
+        <p v-else-if="approvalNotice" class="sch-edit__aprv-notice">
+          <span class="sch-edit__aprv-notice-dot" aria-hidden="true">·</span>
+          {{ approvalNotice }}
+        </p>
+
         <p v-if="saveError" class="sch-edit__state sch-edit__state--err">{{ saveError }}</p>
       </template>
     </div>
@@ -73,12 +92,26 @@
       <button
         type="button"
         class="sch-edit__save"
-        :disabled="!selectedSchCd || selectedSchCd === currentSchCd || !reqReason.trim() || saving"
+        :disabled="
+          !selectedSchCd ||
+          selectedSchCd === currentSchCd ||
+          !reqReason.trim() ||
+          (approverRequired && approverList.length === 0) ||
+          saving
+        "
         @click="onSubmit"
       >
         신청하기
       </button>
     </template>
+
+    <!-- 결재자 추가 바텀시트 (PRAFTA-003) -->
+    <ApproverPickerSheet
+      v-if="showApprovalSection"
+      v-model="approverPickerOpen"
+      :excluded-user-cds="approverUserCds"
+      @add="onAddApprovers"
+    />
   </BaseBottomSheet>
 </template>
 
@@ -86,6 +119,8 @@
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
+import ApprovalLineSection from '@/views/req/components/ApprovalLineSection.vue'
+import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
 import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 
@@ -93,6 +128,10 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   currentSchCd: { type: String, default: '' },
   currentLabel: { type: String, default: '' },
+  // PRAFTA-003: 본인 소유 결재선 프리셋([{ presetId, presetNm, defaultYn, steps[] }]) — 부모가 1회 로드.
+  presets: { type: Array, default: () => [] },
+  // PRAFTA-003: 결재선 분기 컨텍스트 { selfApprvYn:'Y'|'N', isNodeAdmin:bool } | null(미상=폴백 노출).
+  approvalContext: { type: Object, default: null },
 })
 const emit = defineEmits(['update:modelValue', 'requested'])
 
@@ -117,6 +156,28 @@ const hasPending = ref(false)
 const pendingLabel = ref('')
 const pendingReqDateDisplay = ref('')
 const pendingCheckLoading = ref(false)
+
+// ── 결재선 상태 (PRAFTA-003, SchedModifyForm.vue 미러) ──────────────────
+// approverList: [{ approverUserCd, userNm, userId, rankNm, nodeNm }] (순서 = 결재 단계)
+const approverList = ref([])
+const approverPickerOpen = ref(false)
+const approvalSectionRef = ref(null)
+
+// 분기값. approvalContext 미상(null)이면 결재선 노출 폴백(서버가 'Y'면 무시).
+const selfApprvYn = computed(() => props.approvalContext?.selfApprvYn || null)
+// 결재선 섹션 노출: 'Y'(자체근태승인)가 아닐 때(= 'N' 또는 미상). 'Y'면 안내문만.
+const showApprovalSection = computed(() => selfApprvYn.value !== 'Y')
+// 'Y' 케이스 안내문(섹션 숨김 시) — PRAFTA-001 문구 정정과 동일 문자열로 통일.
+const approvalNotice = computed(() => {
+  if (selfApprvYn.value !== 'Y') return ''
+  return props.approvalContext?.isNodeAdmin
+    ? '결재선을 지정하지 않으면 본인이 부서 기본 결재자로 자동 지정돼요. 본인이 직접 승인해야 반영돼요.'
+    : '부서 관리자 승인 후 반영돼요. 결재선을 지정하지 않아도 돼요.'
+})
+// 결재자 emit 용 userCd 배열(순서 보존 — 위치 재인덱싱 아님, 표시 순서 그대로).
+const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
+// 결재 필수 여부: 'N'(결재선 사용)일 때만. 미상이면 폴백상 필수 아님(서버가 최종 판정).
+const approverRequired = computed(() => selfApprvYn.value === 'N')
 
 // 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이 명일보다 미래인
 //   근무타입은 노출하지 않는다(최종 판정은 서버 isValidDefaultSch).
@@ -179,7 +240,31 @@ const loadPendingStatus = async () => {
   }
 }
 
-// 시트가 열릴 때마다 현재값으로 선택 초기화 + 옵션/대기여부 재조회.
+// ── 결재자 추가/제거 (PRAFTA-003, SchedModifyForm.vue 패턴 미러) ────────
+const onOpenApproverPicker = () => {
+  approverPickerOpen.value = true
+}
+
+// 시트에서 add(picked[]) 수신 → approverList 에 순서 append. userCd 식별자 dedup.
+const onAddApprovers = (picked) => {
+  const existing = new Set(approverList.value.map((a) => a.approverUserCd))
+  const additions = (picked || [])
+    .filter((p) => p && p.userCd && !existing.has(p.userCd))
+    .map((p) => ({
+      approverUserCd: p.userCd,
+      userNm: p.userNm,
+      userId: p.userId,
+      rankNm: p.rankNm,
+      nodeNm: p.nodeNm,
+    }))
+  if (additions.length > 0) {
+    approverList.value = [...approverList.value, ...additions]
+    approvalSectionRef.value?.resetPreset?.()
+  }
+  approverPickerOpen.value = false
+}
+
+// 시트가 열릴 때마다 현재값으로 선택 초기화 + 옵션/대기여부/결재선 재조회.
 watch(
   () => props.modelValue,
   (isOpen) => {
@@ -187,6 +272,7 @@ watch(
     selectedSchCd.value = props.currentSchCd
     reqReason.value = ''
     saveError.value = ''
+    approverList.value = []
     loadOptions()
     loadPendingStatus()
   },
@@ -194,16 +280,22 @@ watch(
 
 // 신청 — 성공 시 부모(MyPageView)에게 reqId 를 emit 하고 시트를 닫는다.
 //   ★ 승인 전이므로 currentLabel/currentSchCd 를 갱신하지 않는다("승인 전 미반영").
+//   PRAFTA-003: 결재선 노출 케이스만 approverUserCds 전개 전송(SSOT). presetId 는 미전송(SchedModifyForm 관례).
 const onSubmit = async () => {
   if (!selectedSchCd.value || selectedSchCd.value === props.currentSchCd) return
   if (!reqReason.value.trim() || saving.value) return
+  if (approverRequired.value && approverList.value.length === 0) return
 
   saving.value = true
   saveError.value = ''
   try {
+    // TODO(developer): approverUserCds/presetId 전송 조건이 approvalNotice/showApprovalSection 계산과
+    //   일관되는지 최종 확인(applyApprovalFlow 서버 폴백과의 정합).
     const res = await api.post('/appApi/mypage/update-default-sch', {
       defaultSchCd: selectedSchCd.value,
       reqReason: reqReason.value.trim(),
+      approverUserCds: showApprovalSection.value ? approverUserCds.value : undefined,
+      presetId: undefined,
     })
     const reqId = res?.data?.reqId || null
     emit('requested', reqId)
@@ -355,5 +447,21 @@ const onGoToMyRequests = () => {
   font-weight: 600;
   color: var(--color-primary, #16a34a);
   text-decoration: underline;
+}
+
+/* 결재선 안내문('Y' 케이스, PRAFTA-003 — SchedModifyForm .aprv-notice 톤 재사용) */
+.sch-edit__aprv-notice {
+  margin: 0;
+  padding: 0.6rem 0.8rem;
+  background: var(--color-primary-tint, #f0fdf4);
+  border: 1px solid var(--color-primary-tint-border, #dcfce7);
+  border-radius: 8px;
+  font-size: 0.78rem;
+  color: var(--color-primary-text-deep, #15803d);
+  display: flex;
+  gap: 0.35rem;
+}
+.sch-edit__aprv-notice-dot {
+  color: var(--color-primary, #16a34a);
 }
 </style>

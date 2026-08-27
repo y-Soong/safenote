@@ -738,7 +738,7 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
             //   (reflectSelfApprovedDefaultSchChange) 호출은 더 이상 필요 없다(죽은 코드로 판정되어
             //   제거됨 — 실제 반영은 항상 approveDefaultSchChangeRequest 를 통해서만).
             attdApprovalLineService.applyApprovalFlow(
-                    cmpnyCd, siteCd, userCd, reqId, List.of(), null, userCd);
+                    cmpnyCd, siteCd, userCd, reqId, param.approverUserCds(), param.presetId(), userCd);
         } finally {
             releaseDupLock(lockKey);
         }
