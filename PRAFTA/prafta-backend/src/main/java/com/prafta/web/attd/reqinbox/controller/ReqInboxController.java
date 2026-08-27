@@ -34,10 +34,10 @@ public class ReqInboxController {
     private final JwtUtil jwtUtil;
 
     /**
-     * 매니저 스코프 대기 요청 목록 (reqTypeGroup: correction | overtime | schedule).
+     * 매니저 스코프 대기 요청 목록 (reqTypeGroup: correction | overtime | schedule | defaultSchChange).
      *
-     * <p>schedule('10')은 현재→요청 스케줄 비교값을 함께 내려주어 컬럼 세트가 다르므로
-     * 전용 서비스/응답으로 분기한다. 응답 필드명은 {@code pendingList} 로 동일하다.
+     * <p>schedule('10')/defaultSchChange('14')은 현재→요청 스케줄(근무타입) 비교값을 함께 내려주어
+     * 컬럼 세트가 다르므로 전용 서비스/응답으로 분기한다. 응답 필드명은 {@code pendingList} 로 동일하다.
      *
      * @param siteCd (접수함다중사업장권한확장-002) 프론트가 선택한 사업장(선택값). 빈 값이면
      *               토큰 사용자가 접근 가능한 사업장 전체를 대상으로 조회한다.
@@ -57,6 +57,16 @@ public class ReqInboxController {
                     .build();
 
             return ResponseEntity.status(HttpStatus.OK).body(schedResponse);
+        }
+
+        if ("defaultSchChange".equals(reqTypeGroup)) {
+            // PRAFTA-002(기본근무타입-승인제): 컬럼 세트가 스케줄 수정 탭과 동일해 응답 타입을 재사용한다.
+            PendingSchedReqListResponse dscResponse = PendingSchedReqListResponse.builder()
+                    .pendingList(reqInboxService.getPendingDefaultSchChangeRequests(
+                            token.gv_cmpnyCd(), token.gv_siteCd(), token.gv_userCd(), token.gv_authCd(), siteCd))
+                    .build();
+
+            return ResponseEntity.status(HttpStatus.OK).body(dscResponse);
         }
 
         PendingReqListResponse response = PendingReqListResponse.builder()

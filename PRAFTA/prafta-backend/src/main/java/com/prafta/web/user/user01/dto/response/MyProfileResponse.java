@@ -20,6 +20,12 @@ public class MyProfileResponse {
 	private String defaultSchNo;
 	private String defaultSchStrTime;
 	private String defaultSchEndTime;
+	// PRAFTA-001(기본근무타입-승인제, 2026-08-27): 대기중 신청 요약(MyInfoPop 배너용, 없으면 전부 null).
+	//   신규 조회 API 없이 이 필드만으로 배너를 그린다(§조사 근거).
+	private String pendingDefaultSchReqId;
+	private String pendingDefaultSchCd;
+	private String pendingDefaultSchNo;
+	private String pendingDefaultSchReqDate;
 
 	public static MyProfileResponse from(MyProfileResult result) {
 		return MyProfileResponse.builder()
@@ -34,6 +40,10 @@ public class MyProfileResponse {
 				.defaultSchNo(result.defaultSchNo())
 				.defaultSchStrTime(result.defaultSchStrTime())
 				.defaultSchEndTime(result.defaultSchEndTime())
+				.pendingDefaultSchReqId(result.pendingDefaultSchReqId())
+				.pendingDefaultSchCd(result.pendingDefaultSchCd())
+				.pendingDefaultSchNo(result.pendingDefaultSchNo())
+				.pendingDefaultSchReqDate(result.pendingDefaultSchReqDate())
 				.build();
 	}
 }

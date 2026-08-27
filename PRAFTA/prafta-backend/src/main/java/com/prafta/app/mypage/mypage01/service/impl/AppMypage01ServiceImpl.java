@@ -95,6 +95,9 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     /** PRAFTA-002 F15: advisory lock 타임아웃(초). req07 DUP_LOCK_TIMEOUT_SEC 과 동일 정책값. */
     private static final int DUP_LOCK_TIMEOUT_SEC = 3;
 
+    /** 기본 근무타입 변경 신청 사유 최대 길이(TB_USER_ATTD_REQ.REQ_REASON varchar(500)). */
+    private static final int REQ_REASON_MAX_LEN = 500;
+
     // 휴대폰 정규화 후 허용 자리수(10~11). 정책 §3.2.
     private static final int PHONE_MIN_DIGITS = 10;
     private static final int PHONE_MAX_DIGITS = 11;
@@ -694,6 +697,9 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
             throw new ApiException(AttdErrorCode.ATTD_400_141);
         }
         if (!StringUtils.hasText(param.reqReason())) {
+            throw new ApiException(AttdErrorCode.ATTD_400_096);
+        }
+        if (param.reqReason().length() > REQ_REASON_MAX_LEN) {
             throw new ApiException(AttdErrorCode.ATTD_400_096);
         }
 

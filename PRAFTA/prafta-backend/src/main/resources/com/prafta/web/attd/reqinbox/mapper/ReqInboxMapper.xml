@@ -156,6 +156,110 @@
     </select>
 
     <!--
+      기본 근무타입 변경('14') 대기 목록 + 현재→요청 근무타입 비교값(요청 승인 관리 "근무타입 변경" 탭,
+      PRAFTA-002 기본근무타입-승인제).
+
+      위 selectPendingSchedRequests 를 미러하되 "현재(cur*)" 조인 축만 교체한다 — REQ_TYPE='14' 는
+      WORK_YMD 가 NULL 이라 TB_USER_WORK_PLAN(근무일 기준) 축이 성립하지 않는다. 대신 TB_USER 의
+      DEFAULT_SCH_CD(사용자 현재 기본 근무타입)를 사용자축(USER_CD)으로 조인한다.
+      유효버전(TSE/CSE) 판정의 APPLY_DATE 비교 기준은 R.WORK_YMD(NULL) 대신 파라미터 #{asOfYmd}
+      (서비스 계층에서 산출한 "명일" YYYYMMDD — applyDefaultSchChange 의 "명일부터" 정책과 표시 정합)를 쓴다.
+      resultType 은 PendingSchedReqResult 그대로 재사용(신규 클래스 불필요) — workYmd/workSeq 는 REQ 원본이
+      NULL 이라 자연히 NULL 로 매핑된다. 기존 selectPendingSchedRequests 는 무수정(§0 무회귀).
+    -->
+    <select id="selectPendingDefaultSchChangeRequests" resultType="com.prafta.web.attd.reqinbox.result.PendingSchedReqResult">
+    /* ReqInboxMapper.selectPendingDefaultSchChangeRequests */
+    SELECT
+          R.REQ_ID                                                     AS reqId
+        , R.REQ_TYPE                                                   AS reqType
+        , R.USER_CD                                                    AS userCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'USER_NM', R.USER_CD, null)     AS userNm
+        , R.SITE_CD                                                    AS siteCd
+        , R.NODE_CD                                                    AS nodeCd
+        , FNC_CMM_INFO_SRCH(R.CMPNY_CD, 'NODE', R.SITE_CD, R.NODE_CD)   AS nodeNm
+        , R.WORK_YMD                                                   AS workYmd
+        , R.WORK_SEQ                                                   AS workSeq
+        , R.REQ_REASON                                                 AS reqReason
+        , DATE_FORMAT(R.INSERT_DATE, '%Y-%m-%dT%H:%i:%s')              AS reqDate
+        , TS.SCH_CD                                                    AS reqSchCd
+        , TS.SCH_NO                                                    AS reqSchNo
+        , TSE.FST_SCH_STR_TIME                                         AS reqFstStrTime
+        , TSE.FST_SCH_END_TIME                                         AS reqFstEndTime
+        , TSE.SEC_SCH_STR_TIME                                         AS reqSecStrTime
+        , TSE.SEC_SCH_END_TIME                                         AS reqSecEndTime
+        , TSE.PRE_FIXED_OT_STR_TIME                                    AS reqPreFixedOtStrTime
+        , TSE.PRE_FIXED_OT_END_TIME                                    AS reqPreFixedOtEndTime
+        , TSE.FIXED_OT_STR_TIME                                        AS reqFixedOtStrTime
+        , TSE.FIXED_OT_END_TIME                                        AS reqFixedOtEndTime
+        , CS.SCH_CD                                                    AS curSchCd
+        , CS.SCH_NO                                                    AS curSchNo
+        , CSE.FST_SCH_STR_TIME                                         AS curFstStrTime
+        , CSE.FST_SCH_END_TIME                                         AS curFstEndTime
+        , CSE.SEC_SCH_STR_TIME                                         AS curSecStrTime
+        , CSE.SEC_SCH_END_TIME                                         AS curSecEndTime
+        , CSE.PRE_FIXED_OT_STR_TIME                                    AS curPreFixedOtStrTime
+        , CSE.PRE_FIXED_OT_END_TIME                                    AS curPreFixedOtEndTime
+        , CSE.FIXED_OT_STR_TIME                                        AS curFixedOtStrTime
+        , CSE.FIXED_OT_END_TIME                                        AS curFixedOtEndTime
+        , S.SITE_NM                                                    AS siteNm
+      FROM TB_USER_ATTD_REQ R
+      LEFT JOIN TB_SITE S
+        ON S.CMPNY_CD = R.CMPNY_CD
+       AND S.SITE_CD  = R.SITE_CD
+      <!-- 요청 근무타입: SCH_NO 는 이력본에 없는 비-versioned 컬럼이라 현재본(TS)에서, 시각은 유효버전(TSE)에서. -->
+      LEFT JOIN TB_SCH_MGMT TS
+        ON TS.CMPNY_CD = R.CMPNY_CD
+       AND TS.SITE_CD  = R.SITE_CD
+       AND TS.SCH_CD   = R.SCH_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) TSE
+        ON TSE.CMPNY_CD = R.CMPNY_CD
+       AND TSE.SITE_CD  = R.SITE_CD
+       AND TSE.SCH_CD   = R.SCH_CD
+       AND TSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = R.CMPNY_CD
+                  AND SE.SITE_CD     = R.SITE_CD
+                  AND SE.SCH_CD      = R.SCH_CD
+           )
+      <!-- 현재 근무타입: 근무일(WORK_YMD) 축이 아닌 사용자축 — TB_USER.DEFAULT_SCH_CD(현재 기본 근무타입). -->
+      LEFT JOIN TB_USER U2
+        ON U2.CMPNY_CD = R.CMPNY_CD
+       AND U2.SITE_CD  = R.SITE_CD
+       AND U2.USER_CD  = R.USER_CD
+      LEFT JOIN TB_SCH_MGMT CS
+        ON CS.CMPNY_CD = U2.CMPNY_CD
+       AND CS.SITE_CD  = U2.SITE_CD
+       AND CS.SCH_CD   = U2.DEFAULT_SCH_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) CSE
+        ON CSE.CMPNY_CD = U2.CMPNY_CD
+       AND CSE.SITE_CD  = U2.SITE_CD
+       AND CSE.SCH_CD   = U2.DEFAULT_SCH_CD
+       AND CSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = U2.CMPNY_CD
+                  AND SE.SITE_CD     = U2.SITE_CD
+                  AND SE.SCH_CD      = U2.DEFAULT_SCH_CD
+           )
+     WHERE R.CMPNY_CD   = #{cmpnyCd}
+       AND R.SITE_CD IN
+       <foreach collection="siteCds" item="sc" open="(" separator="," close=")">
+           #{sc}
+       </foreach>
+       AND R.REQ_STATUS = '01'
+       AND R.DEL_YN     = 'N'
+       AND R.REQ_TYPE   = #{reqType}
+     ORDER BY R.INSERT_DATE DESC
+    </select>
+
+    <!--
       내 처리 이력(근태보정/초과/스케줄 탭): 결재라인에서 내가 승인('02')/반려('03')한 요청.
       (근태결재선통합 P2-2) 종전 R.PROCESS_USER_CD 기준은 다단계 결재의 중간 단계 승인자 처리 이력이
       영구 누락되는 실결함이 있었다 - 중간 단계 승인 시 advanceOrFinalize 가 REQ 자체(REQ_STATUS/

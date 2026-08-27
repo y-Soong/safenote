@@ -42,6 +42,21 @@ public interface ReqInboxMapper {
                                                            @Param("reqType") String reqType);
 
     /**
+     * 기본 근무타입 변경('14') 대기 목록 + 현재→요청 근무타입 비교값(PRAFTA-002 기본근무타입-승인제).
+     *
+     * <p>{@link #selectPendingSchedRequests} 와 컬럼 세트는 같으나 "현재(cur*)" 조인 축이 다르다
+     * (근무일 축이 아닌 사용자축 TB_USER.DEFAULT_SCH_CD) — statement 를 분리한다(기존 3탭 무회귀).
+     *
+     * @param reqType 조회 대상 REQ_TYPE (AttdReqTypeUtils.REQ_TYPE_DEFAULT_SCH_CHANGE)
+     * @param asOfYmd 유효버전 판정 기준일(YYYYMMDD, 서비스 계층이 산출한 "명일") — R.WORK_YMD 가
+     *                NULL 이라 이 파라미터로 대체한다(요청/현재 스케줄 양쪽 동일 기준일 사용)
+     */
+    List<PendingSchedReqResult> selectPendingDefaultSchChangeRequests(@Param("cmpnyCd") String cmpnyCd,
+                                                                      @Param("siteCds") List<String> siteCds,
+                                                                      @Param("reqType") String reqType,
+                                                                      @Param("asOfYmd") String asOfYmd);
+
+    /**
      * 내가 결재라인에서 승인('02')/반려('03') 처리한 요청 이력
      * (근태보정/초과/스케줄 탭 — TB_USER_ATTD_REQ_APPROVAL.APPROVER_USER_CD 기준, 근태결재선통합 P2-2).
      *

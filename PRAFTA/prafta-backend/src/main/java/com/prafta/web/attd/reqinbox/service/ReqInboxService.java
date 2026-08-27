@@ -44,6 +44,21 @@ public interface ReqInboxService {
                                                         String authCd, String reqSiteCd);
 
     /**
+     * 기본 근무타입 변경('14') 대기 목록(PRAFTA-002 기본근무타입-승인제).
+     *
+     * <p>매니저 전용({@link #getPendingRequests} 와 동일 게이트). 반환 컬럼 세트가
+     * {@link #getPendingSchedRequests} 와 같아(현재→요청 근무타입 비교값 동봉) 같은 응답 타입을 쓰지만,
+     * "현재" 조인 축이 근무일이 아닌 사용자축이라 매퍼 조회는 별도 statement 다. 사업장 스코프 해석은
+     * {@link #getPendingRequests} 와 동일 규칙.
+     *
+     * @param userCd    JWT 기반 본인 사용자코드(사업장 원장 조회 기준). body 위조 불가.
+     * @param authCd    JWT 기반 권한코드(역할 게이트용). body 위조 불가.
+     * @param reqSiteCd 프론트가 선택한 사업장(선택값, 빈 값이면 전체 접근가능 사업장).
+     */
+    List<PendingSchedReqResult> getPendingDefaultSchChangeRequests(String cmpnyCd, String siteCd, String userCd,
+                                                                    String authCd, String reqSiteCd);
+
+    /**
      * 내 처리 이력 — 로그인 관리자가 승인/반려 처리한 요청 목록 (탭별, 최근 300건).
      *
      * <p>매니저 전용({@link #getPendingRequests} 와 동일 게이트). 조회 스코프가
@@ -53,7 +68,7 @@ public interface ReqInboxService {
      *
      * @param userCd       JWT 기반 본인 사용자코드(처리자 필터 + 사업장 원장 조회 기준). body 위조 불가.
      * @param authCd       JWT 기반 권한코드(역할 게이트용).
-     * @param reqTypeGroup "correction" | "overtime" | "schedule" | "leave"
+     * @param reqTypeGroup "correction" | "overtime" | "schedule" | "leave" | "defaultSchChange"
      * @param reqSiteCd    프론트가 선택한 사업장(선택값, 빈 값이면 전체 접근가능 사업장).
      */
     ProcessedReqListResponse getProcessedRequests(String cmpnyCd, String siteCd, String userCd,
@@ -86,7 +101,7 @@ public interface ReqInboxService {
      * @param siteCd       JWT 기반 토큰 사업장(gv_siteCd, IDOR 검증 fast-path 용). body 위조 불가.
      * @param userCd       JWT 기반 본인 사용자코드. body 위조 불가.
      * @param authCd       JWT 기반 권한코드. body 위조 불가.
-     * @param reqTypeGroup "correction" | "overtime" | "schedule" | "leave"
+     * @param reqTypeGroup "correction" | "overtime" | "schedule" | "leave" | "defaultSchChange"
      */
     ApprovalLineResponse getApprovalLine(String cmpnyCd, String siteCd, String userCd, String authCd,
                                          String reqId, String reqTypeGroup);

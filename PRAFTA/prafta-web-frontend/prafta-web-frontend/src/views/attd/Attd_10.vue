@@ -375,12 +375,13 @@
         </section>
       </template>
 
-      <!-- 근태 보정 / 초과근무 / 스케줄 수정: 통합 대기요청 접수함 + 인라인 반려 -->
+      <!-- 근태 보정 / 초과근무 / 스케줄 수정 / 근무타입 변경: 통합 대기요청 접수함 + 인라인 반려 -->
       <template
         v-else-if="
           activeTab === 'correction' ||
           activeTab === 'overtime' ||
-          activeTab === 'schedule'
+          activeTab === 'schedule' ||
+          activeTab === 'defaultSchChange'
         "
       >
         <!-- 접수함 -->
@@ -412,6 +413,10 @@
               <div v-if="activeTab === 'schedule'" class="ra-row__sub">
                 {{ fmtDate(row.workYmd) }}
                 <template v-if="row.workSeq"> · {{ row.workSeq }}차</template> ·
+                {{ schedSummary(row) }}
+              </div>
+              <!-- 근무타입 변경: workYmd 없음(근무일 무관) — 근무타입 비교만 표시. -->
+              <div v-else-if="activeTab === 'defaultSchChange'" class="ra-row__sub">
                 {{ schedSummary(row) }}
               </div>
               <div v-else class="ra-row__sub">
@@ -482,7 +487,7 @@
 
             <!-- 현재 → 요청 스케줄 비교 (스케줄 수정 탭 전용, 재기획서 §5.7 ③) -->
             <AttdSchedCompareSection
-              v-if="activeTab === 'schedule'"
+              v-if="activeTab === 'schedule' || activeTab === 'defaultSchChange'"
               :row="reqSelected"
             />
 
@@ -616,6 +621,7 @@ const tabs = [
   { key: "correction", label: "근태 보정" },
   { key: "overtime", label: "초과근무 상신" },
   { key: "leave", label: "연차 상신" },
+  { key: "defaultSchChange", label: "근무타입 변경" },
 ];
 const activeTab = ref("leave");
 // 접수함다중사업장권한확장-003: 접근 가능 사업장 목록 + 선택값("" = 전체). 연차 탭은 필터 미적용(백엔드 스코프 밖).
@@ -828,6 +834,7 @@ const leaveCount = ref(0);
 const correctionCount = ref(0);
 const overtimeCount = ref(0);
 const scheduleCount = ref(0);
+const defaultSchChangeCount = ref(0);
 
 // "연차 상신" 탭 내 "연차 변경 요청 대기" 소섹션(B안) — approvalList 와 별개 배열, 데이터 병합 없음.
 //   상세/확인/반려는 기존 LeaveChangeConfirmPop 재사용, 중복 컴포넌트 금지.
@@ -914,6 +921,7 @@ const tabCount = (key) => {
   if (key === "correction") return correctionCount.value;
   if (key === "overtime") return overtimeCount.value;
   if (key === "schedule") return scheduleCount.value;
+  if (key === "defaultSchChange") return defaultSchChangeCount.value;
   return 0;
 };
 
@@ -924,6 +932,7 @@ const reqTypeNm = (t) =>
     "02": "근태 수정",
     "03": "초과근무 생성",
     "10": "스케줄 수정",
+    "14": "근무타입 변경",
   }[t] ||
   t ||
   "-");
@@ -938,6 +947,9 @@ const approveNoteText = computed(() => {
   if (activeTab.value === "schedule") {
     return "승인 시 해당 일자 근무계획(스케줄)이 요청 스케줄로 변경되고 요청이 승인됩니다.";
   }
+  if (activeTab.value === "defaultSchChange") {
+    return "승인 시 명일부터 연말까지 근무계획이 자동 생성·갱신되고 요청이 승인됩니다.";
+  }
   return `${approveScreenNm(activeTab.value)}와 동일하게 처리됩니다(근태/초과근무 기록 반영 + 요청 승인).`;
 });
 
@@ -948,6 +960,7 @@ const REQ_TYPE_GROUP_BY_TAB = {
   correction: "correction",
   overtime: "overtime",
   schedule: "schedule",
+  defaultSchChange: "defaultSchChange",
 };
 const reqTypeGroupOf = (tab) => REQ_TYPE_GROUP_BY_TAB[tab] ?? "correction";
 
@@ -1215,6 +1228,16 @@ const fnLoadCounts = async () => {
       console.warn("[Attd_10] 스케줄 수정 요청 카운트 로드 실패", e);
     }
 
+    // 근무타입 변경 대기 건수도 별도 try/catch 로 격리(실패해도 다른 배지 갱신을 막지 않는다).
+    try {
+      const dscRes = await axios.get("/webApi/reqinbox/pending", {
+        params: { reqTypeGroup: "defaultSchChange", siteCd: selectedSiteCd.value || undefined },
+      });
+      defaultSchChangeCount.value = (dscRes.data?.pendingList ?? []).length;
+    } catch (e) {
+      console.warn("[Attd_10] 근무타입 변경 요청 카운트 로드 실패", e);
+    }
+
     // B안 배지 합산 결정(상세설명 5번 근거): 탭 배지는 "이 탭에 처리할 게 총 몇 건" 을 보여줘야 하므로
     //   결재 대기 + 연차 변경 대기를 합산한다. 소섹션별 개별 건수는 각 블록 헤더에서 별도 표시.
     leaveCount.value = approvalCnt + leavechangeCount.value;
@@ -1279,6 +1302,7 @@ const fnApproveReq = async () => {
 
   const isOvertime = activeTab.value === "overtime";
   const isSchedule = activeTab.value === "schedule";
+  const isDefaultSchChange = activeTab.value === "defaultSchChange";
   let url;
   let payload;
   if (isSchedule) {
@@ -1294,6 +1318,11 @@ const fnApproveReq = async () => {
       workSeq: String(r.workSeq),
       nodeCd: r.nodeCd,
     };
+  } else if (isDefaultSchChange) {
+    // 근무타입 변경 승인: 앱 트랙이 이미 만든 API 를 그대로 호출(웹은 신규 승인 백엔드 작성 없음).
+    //   workYmd/workSeq/nodeCd 불필요(이 요청 유형은 근무일 무관, API 계약).
+    url = "/webApi/attd07/approve-default-sch-requests";
+    payload = { reqId: r.reqId, siteCd: r.siteCd, userCd: r.userCd };
   } else if (isOvertime) {
     // 초과근무 승인: 요청 구간 그대로 OT 등록 + 연결 요청 승인 마감.
     url = "/webApi/attd07/update-user-overtime-requests";
@@ -1361,32 +1390,37 @@ const fnRejectReq = async () => {
   const r = reqSelected.value;
   const isOvertime = activeTab.value === "overtime";
   const isSchedule = activeTab.value === "schedule";
+  const isDefaultSchChange = activeTab.value === "defaultSchChange";
   // 반려 엔드포인트는 서버 보관 REQ 와 키필드 일치를 요구한다(변조 방지).
   //   스케줄 수정 반려는 근태 반려와 동일한 body 형태를 쓰되 전용 엔드포인트를 호출한다.
   let url;
   if (isSchedule) {
     url = "/webApi/attd07/reject-sched-modify-requests";
+  } else if (isDefaultSchChange) {
+    // 근무타입 변경 반려: 앱 트랙이 이미 만든 API 를 그대로 호출.
+    url = "/webApi/attd07/reject-default-sch-requests";
   } else if (isOvertime) {
     url = "/webApi/attd07/reject-user-overtime-requests";
   } else {
     url = "/webApi/attd07/reject-user-attd-requests";
   }
-  const payload = isOvertime
-    ? {
-        reqId: r.reqId,
-        siteCd: r.siteCd,
-        userCd: r.userCd,
-        rejectReason: reqRejectReason.value,
-      }
-    : {
-        reqId: r.reqId,
-        siteCd: r.siteCd,
-        userCd: r.userCd,
-        workYmd: r.workYmd,
-        workSeq: String(r.workSeq),
-        nodeCd: r.nodeCd,
-        rejectReason: reqRejectReason.value,
-      };
+  const payload =
+    isOvertime || isDefaultSchChange
+      ? {
+          reqId: r.reqId,
+          siteCd: r.siteCd,
+          userCd: r.userCd,
+          rejectReason: reqRejectReason.value,
+        }
+      : {
+          reqId: r.reqId,
+          siteCd: r.siteCd,
+          userCd: r.userCd,
+          workYmd: r.workYmd,
+          workSeq: String(r.workSeq),
+          nodeCd: r.nodeCd,
+          rejectReason: reqRejectReason.value,
+        };
 
   reqProcessing.value = true;
   try {

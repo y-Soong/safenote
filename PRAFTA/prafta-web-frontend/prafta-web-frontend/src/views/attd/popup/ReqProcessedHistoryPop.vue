@@ -171,6 +171,7 @@ const REQ_TYPE_NM = {
   "05": "연차 사용",
   "06": "연차 수정",
   10: "스케줄 수정",
+  14: "근무타입 변경",
 };
 const reqTypeNm = (t) => REQ_TYPE_NM[t] || t;
 
@@ -239,6 +240,8 @@ const rowSummary = (row) => {
     }
   } else if (props.reqTypeGroup === "schedule") {
     if (row.schNo) parts.push(`요청 스케줄 ${row.schNo}`);
+  } else if (props.reqTypeGroup === "defaultSchChange") {
+    if (row.schNo) parts.push(`요청 근무타입 ${row.schNo}`);
   } else if (row.startTime && row.endTime) {
     parts.push(`${fmtTime(row.startTime)}~${fmtTime(row.endTime)}`);
   }

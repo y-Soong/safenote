@@ -73,7 +73,20 @@
              2026-08-05 사용자 확정(3경로: 관리자/웹 내정보/앱 마이페이지)에 따라 F-8-2 API 를 연결한다. -->
         <div class="section-title">근무 정보</div>
         <div class="form-container">
-          <div class="form-row-max" v-if="!isEditingDefaultSch">
+          <!-- 대기중 신청 있음 — 배너만 노출, 변경 버튼 숨김(PRAFTA-004 신규 3번째 분기). -->
+          <template v-if="pendingDefaultSch.reqId">
+            <div class="form-row-max">
+              <label>기본 근무타입</label>
+              <input :value="defaultSchLabel" disabled placeholder="미설정" />
+            </div>
+            <div class="default-sch-pending">
+              승인 대기 중 — {{ pendingDefaultSch.schNo || pendingDefaultSch.schCd }} 신청함
+              <br />
+              {{ pendingDefaultSch.reqDate }} · 관리자 승인 후 반영됩니다.
+            </div>
+          </template>
+
+          <div class="form-row-max" v-else-if="!isEditingDefaultSch">
             <label>기본 근무타입</label>
             <input :value="defaultSchLabel" disabled placeholder="미설정" />
             <button
@@ -106,24 +119,35 @@
               </BaseSelect>
             </div>
             <p class="default-sch-hint">
-              ⓘ 기본 근무타입 변경 시 내일(명일)부터 당해 연말까지 평일
+              ⓘ 근무타입 변경 신청 시 승인 후 명일(내일)부터 당해 연말까지 평일
               근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
               휴일·연차·교대팀 구간 제외).
             </p>
+            <!-- PRAFTA-004 신규 — 변경 사유 입력(필수, ATTD_400_096 과 매칭). -->
+            <div class="form-row-max">
+              <label>변경 사유</label>
+              <textarea
+                v-model="defaultSchReqReason"
+                class="default-sch-reason"
+                rows="2"
+                maxlength="500"
+                placeholder="변경 사유를 입력해 주세요."
+              ></textarea>
+            </div>
             <span class="form-msg" v-if="defaultSchErrorMsg">{{
               defaultSchErrorMsg
             }}</span>
 
-            <!-- F-10 규약: 왼쪽=진행/확정(저장, primary), 오른쪽=이탈(취소) — 파일 기존 관례상
+            <!-- F-10 규약: 왼쪽=진행/확정(신청, primary), 오른쪽=이탈(취소) — 파일 기존 관례상
                  이탈 버튼은 정의되지 않은 btn-ghost 대신 공용 btn-second 사용(닫기 버튼과 동일). -->
             <div class="default-sch-actions">
               <button
                 type="button"
                 class="btn btn-primary"
                 :disabled="!pendingDefaultSchCd || isSavingDefaultSch"
-                @click="onSaveDefaultSch"
+                @click="onRequestDefaultSch"
               >
-                저장
+                신청
               </button>
               <button
                 type="button"
@@ -292,6 +316,16 @@ const pendingDefaultSchCd = ref("");
 const isSavingDefaultSch = ref(false);
 const defaultSchErrorMsg = ref("");
 
+// PRAFTA-001/004(기본근무타입-승인제, 2026-08-27): 대기중 신청 요약(my-profile 응답 보강 필드,
+//   신규 조회 API 없이 이 값만으로 배너를 그린다) + 신청 사유 입력.
+const pendingDefaultSch = ref({
+  reqId: "",
+  schCd: "",
+  schNo: "",
+  reqDate: "",
+});
+const defaultSchReqReason = ref("");
+
 // 선택약관 동의 설정 — GET /comApi/consent/my-optional-terms 응답(현재버전 + agrYn).
 //   비치명적: 조회 실패 시 빈 목록(섹션 미노출). 토글은 POST /comApi/consent/my-optional-terms-agree.
 const optionalTerms = ref([]);
@@ -339,6 +373,17 @@ const fnLoadMyInfo = async () => {
             info.defaultSchStrTime
           )}~${fnFmtSchTime(info.defaultSchEndTime)})`
         : "";
+      // PRAFTA-001(기본근무타입-승인제) 보강 필드 — 대기중 신청 요약(없으면 전부 null).
+      if (info.pendingDefaultSchReqId) {
+        pendingDefaultSch.value = {
+          reqId: info.pendingDefaultSchReqId,
+          schCd: info.pendingDefaultSchCd || "",
+          schNo: info.pendingDefaultSchNo || "",
+          reqDate: info.pendingDefaultSchReqDate || "",
+        };
+      } else {
+        pendingDefaultSch.value = { reqId: "", schCd: "", schNo: "", reqDate: "" };
+      }
     }
   } catch {
     // 조회 실패 시 userStore 값으로 대체 (이미 세팅됨)
@@ -357,6 +402,7 @@ const onStartEditDefaultSch = async () => {
   isEditingDefaultSch.value = true;
   pendingDefaultSchCd.value = defaultSchCd.value;
   defaultSchErrorMsg.value = "";
+  defaultSchReqReason.value = "";
   await fnLoadDefaultSchOptions();
 };
 
@@ -384,11 +430,17 @@ const fnLoadDefaultSchOptions = async () => {
 const onCancelEditDefaultSch = () => {
   isEditingDefaultSch.value = false;
   defaultSchErrorMsg.value = "";
+  defaultSchReqReason.value = "";
 };
 
-// 저장 — 부작용 고지(명일부터 연말까지 근무계획 자동 생성·갱신) 확인 후 저장.
-const onSaveDefaultSch = async () => {
+// PRAFTA-001/004(기본근무타입-승인제): 저장 → 신청 전환. 승인 전까지 현재값(defaultSchCd/defaultSchLabel)은
+//   갱신하지 않는다(원 요청서 §3) — 성공 시 pendingDefaultSch 를 채워 배너로 즉시 전환한다.
+const onRequestDefaultSch = async () => {
   if (!pendingDefaultSchCd.value) return;
+  if (!(defaultSchReqReason.value || "").trim()) {
+    defaultSchErrorMsg.value = getMessage(MSG.MY_INFO_DEFAULT_SCH_REASON_REQUIRED);
+    return;
+  }
 
   const confirmed = await proxy.$confirm(
     getMessage(MSG.MY_INFO_DEFAULT_SCH_CHANGE_CONFIRM)
@@ -398,20 +450,22 @@ const onSaveDefaultSch = async () => {
   isSavingDefaultSch.value = true;
   defaultSchErrorMsg.value = "";
   try {
-    await axios.post("/webApi/user01/update-my-default-sch", {
+    const { data } = await axios.post("/webApi/user01/update-my-default-sch", {
       defaultSchCd: pendingDefaultSchCd.value,
+      reqReason: defaultSchReqReason.value,
     });
-    // 성공 — 선택된 옵션으로 현재값 표시 갱신 후 인라인 편집 종료.
+    // 성공 — 선택된 옵션에서 schNo 라벨을 파생해 대기 배너를 채운다(defaultSchCd/defaultSchLabel 은 갱신하지 않음).
     const selected = defaultSchOptions.value.find(
       (o) => o.schCd === pendingDefaultSchCd.value
     );
-    defaultSchCd.value = pendingDefaultSchCd.value;
-    if (selected) {
-      defaultSchLabel.value = `${selected.schNo} (${fnFmtSchTime(
-        selected.fstSchStrTime
-      )}~${fnFmtSchTime(selected.fstSchEndTime)})`;
-    }
+    pendingDefaultSch.value = {
+      reqId: data?.reqId || "",
+      schCd: pendingDefaultSchCd.value,
+      schNo: selected?.schNo || "",
+      reqDate: "",
+    };
     isEditingDefaultSch.value = false;
+    defaultSchReqReason.value = "";
   } catch (err) {
     defaultSchErrorMsg.value = resolveApiErrorMessage(
       err,
@@ -596,12 +650,32 @@ const fnChangePassword = async () => {
   background: var(--color-bg, #f9fafb);
 }
 
-/* ===== 근무 정보(기본 근무타입 자기변경, F-8-3) ===== */
+/* ===== 근무 정보(기본 근무타입 자기변경, F-8-3 / PRAFTA-001·004 신청 흐름 전환) ===== */
 .default-sch-hint {
   margin: 0;
   font-size: 0.8rem;
   line-height: 1.5;
   color: var(--color-text-muted, #6b7280);
+}
+
+.default-sch-pending {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--color-text, #374151);
+  background: var(--color-warning-bg, #fffbeb);
+  border: 1px solid var(--color-warning-border, #fde68a);
+  border-radius: 0.4rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.default-sch-reason {
+  width: 100%;
+  resize: vertical;
+  font-family: inherit;
+  font-size: 0.85rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 0.35rem;
 }
 
 .default-sch-actions {

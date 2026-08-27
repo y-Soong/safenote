@@ -5,6 +5,7 @@ import java.util.List;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import com.prafta.web.user.user01.application.command.DefaultSchChangeReqInsertCommand;
 import com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand;
 import com.prafta.web.user.user01.application.command.UserCreateInsertCommand;
 import com.prafta.web.user.user01.application.command.UserCreditDeleteCommand;
@@ -146,4 +147,26 @@ public interface User01Mapper {
 
 	// 자동부여 사업장권한 회수 — 소속 사업장(homeSiteCd) 1건만 잔존, 나머지 USE_YN='N' (D7)
 	int deleteSiteAuthExceptHome(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd, @Param("homeSiteCd") String homeSiteCd, @Param("gvUserCd") String gvUserCd);
+
+	// ===== PRAFTA-001(기본근무타입-승인제, 2026-08-27) - 웹 본인 기본 근무타입 변경 요청등록(REQ_TYPE='14') =====
+
+	/** REQ_ID 채번(AppMypage01Mapper.selectNextDefaultSchReqId 와 동일 시퀀스 'ATTD_REQ_ID' — 단일 PK 공간 공유). */
+	String selectNextDefaultSchReqId(@Param("cmpnyCd") String cmpnyCd);
+
+	/** F15 advisory lock 획득(AppMypage01Mapper.getAdvisoryLock 미러 — MD5 래핑, 락 이름 64자 제한 대응). */
+	Integer getAdvisoryLock(@Param("lockKey") String lockKey, @Param("timeoutSec") int timeoutSec);
+
+	/** F15 advisory lock 해제(AppMypage01Mapper.releaseAdvisoryLock 미러). */
+	Integer releaseAdvisoryLock(@Param("lockKey") String lockKey);
+
+	/**
+	 * 동일 사용자의 대기중(REQ_STATUS='01') 기본 근무타입 변경 요청 개수(P10 중복 차단).
+	 * WORK_YMD 조건 없음(이 요청 유형은 특정 근무일에 종속되지 않음).
+	 */
+	int countPendingDefaultSchChangeReq(@Param("cmpnyCd") String cmpnyCd,
+	                                    @Param("siteCd") String siteCd,
+	                                    @Param("userCd") String userCd);
+
+	/** tb_user_attd_req INSERT(REQ_TYPE='14' 전용). */
+	int insertDefaultSchChangeReq(DefaultSchChangeReqInsertCommand cmd);
 }

@@ -28,6 +28,7 @@ import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.DateTimeUtils;
 import com.prafta.common.util.PasswordHasher;
+import com.prafta.web.user.user01.application.command.DefaultSchChangeReqInsertCommand;
 import com.prafta.web.user.user01.application.command.ScheduleWithdrawalCommand;
 import com.prafta.web.user.user01.application.command.UserCreateInsertCommand;
 import com.prafta.web.user.user01.application.command.UserCreditDeleteCommand;
@@ -61,6 +62,7 @@ import com.prafta.web.user.user01.application.query.SiteNodeAdminCandidateListQu
 import com.prafta.web.user.user01.application.query.UserInfoListQuery;
 import com.prafta.web.user.user01.application.query.UserNodeAdminCheckQuery;
 import com.prafta.web.user.user01.application.query.UserSiteInfoQuery;
+import com.prafta.web.user.user01.dto.response.DefaultSchChangeRequestResponse;
 import com.prafta.web.user.user01.dto.response.HireDateHistoryResponse;
 import com.prafta.web.user.user01.dto.response.HireDateImpactResponse;
 import com.prafta.web.user.user01.dto.response.LeaveInfoResponse;
@@ -90,8 +92,12 @@ import com.prafta.common.cmm.audit.service.AuditLogService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.vo.HireDateAdjustResultVO;
 import com.prafta.common.dto.TokenInfo;
+import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 import com.prafta.web.user.user01.util.UserExcelTemplateBuilder;
 import com.prafta.web.user.user01.util.UserExcelValueRestorer;
+import com.prafta.app.req.req09.service.AttdApprovalLineService;
+
+import org.springframework.util.StringUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -121,9 +127,21 @@ public class User01ServiceImpl implements User01Service{
 	private final com.prafta.web.user.user01.service.UserPendingRequestTerminationService userPendingRequestTerminationService;
 	// 소정-03: 계정 생성 시 소정근로시간 이력 등록(겹침/범위/일용직 검증 포함) 공용 서비스(common.cmm.stdwork).
 	private final com.prafta.common.cmm.stdwork.service.StdWorkHoursService stdWorkHoursService;
+	// PRAFTA-001(기본근무타입-승인제, 2026-08-27): 결재선 INSERT 공용 서비스 재사용(cross-package, app.req.req09).
+	//   결재선 분기 정책(자기지정 게이트·기본결재자 폴백)을 웹에 복제하면 두 트랙 정책이 갈라질 위험이 있어
+	//   재사용한다(웹 원 요청서 §4, plan.md §조사 4번 근거) — 웹이 app.ai.ai01.* 서비스를 이미 여러 모듈에서
+	//   주입하는 선례가 있어(TbmAi01/TbmAi02/RiskAi01ServiceImpl) 신규 패턴 아님, app.req.req09 는 web 을
+	//   역참조하지 않아 순환 의존도 없다(착수 전 확인 완료).
+	private final AttdApprovalLineService attdApprovalLineService;
 
 	private static final int PW_MIN_LEN = 6;
 	private static final int PW_MAX_LEN = 15;
+
+	// PRAFTA-001(기본근무타입-승인제) F15: advisory lock 타임아웃(초). AppMypage01ServiceImpl.DUP_LOCK_TIMEOUT_SEC 과 동일 정책값.
+	private static final int DEFAULT_SCH_DUP_LOCK_TIMEOUT_SEC = 3;
+
+	// 기본 근무타입 변경 신청 사유 최대 길이(TB_USER_ATTD_REQ.REQ_REASON varchar(500)).
+	private static final int DEFAULT_SCH_REQ_REASON_MAX_LEN = 500;
 
 	// F1: 사용자 비활성(useYn→N) 시 관련 대기요청 자동 반려 사유(PII 금지, 처리 코멘트 기록용).
 	private static final String REASON_DEACTIVATED = "신청자/결재자 비활성으로 자동 반려";
@@ -202,50 +220,104 @@ public class User01ServiceImpl implements User01Service{
 	}
 
 	/**
-	 * F-8-2: 본인 기본 근무타입 자기변경 — 저장.
+	 * PRAFTA-001(기본근무타입-승인제, 2026-08-27): 본인 기본 근무타입 자기변경 — 즉시반영 → 요청등록 전환.
 	 *
-	 * <p>LoginServiceImpl.setDefaultSch(로그인 게이트) 패턴을 정상 세션 토큰 경로로 재사용한다.
-	 * 화이트리스트 검증(defaultSchOptionService.isValidDefaultSch) → DEFAULT_SCH_CD 저장
-	 * → 즉시 자동생성(defaultSchGenService.applyDefaultSchChange, 실패는 격리 — 저장 자체엔 영향 없음).
+	 * <p>"승인 전 미반영" 설계 원칙(웹 원 요청서 §3) — 이 메서드는 {@code TB_USER_ATTD_REQ} 에 요청
+	 * 레코드만 INSERT 하고 결재선을 적용한다. {@code TB_USER.DEFAULT_SCH_CD}/{@code TB_USER_WORK_PLAN}
+	 * 등 실제 반영 대상은 전혀 건드리지 않는다 — 반영은 승인 시점({@code Attd07ServiceImpl.approveDefaultSchChangeRequest},
+	 * 앱 트랙 기완료, §0 무회귀 대상)에서만 수행된다.
+	 *
+	 * <p>{@code AppMypage01ServiceImpl.updateDefaultSch}(앱 트랙 최종 구현)와 동일 골격이나 웹 전용
+	 * 매퍼로 독립 구현한다(D2 원칙): 구조 검증 → 화이트리스트 검증 → advisory lock 획득 → 중복 신청
+	 * 차단(P10) → INSERT → 결재선 적용({@code AttdApprovalLineService} 재사용) → lock 해제.
 	 */
 	@Override
 	@Transactional(rollbackFor = Exception.class)
-	public void updateMyDefaultSch(UpdateMyDefaultSchParam param) {
+	public DefaultSchChangeRequestResponse updateMyDefaultSch(UpdateMyDefaultSchParam param) {
 
+		String cmpnyCd = param.cmpnyCd();
+		String userCd = param.userCd();
+		String nodeCd = param.nodeCd();
+
+		// ----- 구조 검증 -----
 		String defaultSchCd = (param.defaultSchCd() == null || param.defaultSchCd().isBlank())
 				? null : param.defaultSchCd().trim();
 		if (defaultSchCd == null) {
 			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_141);
 		}
+		if (!StringUtils.hasText(param.reqReason())) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_096);
+		}
+		if (param.reqReason().length() > DEFAULT_SCH_REQ_REASON_MAX_LEN) {
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_096);
+		}
 
 		// 사업장은 세션에서만 도출(본인 사업장 변경은 소속이동 전용 — 여기서 받지 않음).
-		String siteCd = defaultSchGenMapper.selectUserSiteCd(param.cmpnyCd(), param.userCd());
+		String siteCd = defaultSchGenMapper.selectUserSiteCd(cmpnyCd, userCd);
 		if (siteCd == null || siteCd.isBlank()) {
 			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
 		}
 
-		// 화이트리스트 검증(클라 제출값 신뢰 금지).
-		if (!defaultSchOptionService.isValidDefaultSch(param.cmpnyCd(), siteCd, defaultSchCd)) {
+		// 화이트리스트 검증(클라 제출값 신뢰 금지). 승인 시점에도 재검증(이중 검증, 웹 원 요청서 §3).
+		if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, defaultSchCd)) {
 			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
 		}
 
-		int updated = defaultSchGenMapper.updateUserDefaultSch(param.cmpnyCd(), param.userCd(), defaultSchCd, param.userCd());
-		if (updated == 0) {
-			throw new ApiException(LoginErrorCode.LOGIN_400_002);
-		}
-
-		// 즉시 자동생성(미래 스케줄 갱신) — 실패는 격리(사용자 저장에 영향 없음, 기존 관례 승계).
-		if (defaultSchGenEnabled) {
-			try {
-				defaultSchGenService.applyDefaultSchChange(param.cmpnyCd(), siteCd, param.userCd(), defaultSchCd);
-			} catch (Exception e) {
-				log.error("본인 기본 근무타입 변경 자동생성 실패(설정은 저장됨) - userCd={}, defaultSchCd={}",
-						param.userCd(), defaultSchCd, e);
+		// ----- F15 advisory lock(중복 차단 race window 직렬화) -----
+		// 앱 트랙과 동일 lockKey 형식 — 락 이름이 겹쳐도 무방하다(의도된 공유, 동일 사용자가 웹/앱에서
+		// 동시에 같은 요청을 시도할 때 오히려 직렬화되어야 정합적이다).
+		String lockKey = "ATTD_REQ:" + cmpnyCd + ":" + siteCd + ":" + userCd + ":"
+				+ AttdReqTypeUtils.REQ_TYPE_DEFAULT_SCH_CHANGE;
+		acquireDefaultSchDupLock(lockKey);
+		String reqId;
+		try {
+			// ----- 중복 요청 차단 (P10) — WORK_YMD 조건 없음(이 요청 유형은 근무일 무관). -----
+			int dup = user01Mapper.countPendingDefaultSchChangeReq(cmpnyCd, siteCd, userCd);
+			if (dup > 0) {
+				throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_090);
 			}
+
+			// ----- INSERT -----
+			reqId = user01Mapper.selectNextDefaultSchReqId(cmpnyCd);
+			DefaultSchChangeReqInsertCommand cmd = new DefaultSchChangeReqInsertCommand(
+					reqId, cmpnyCd, siteCd, userCd, nodeCd, defaultSchCd, param.reqReason(), userCd);
+			user01Mapper.insertDefaultSchChangeReq(cmd);
+
+			// ----- 결재선 적용(app.req.req09.AttdApprovalLineService 재사용 — 결재자 미지정 → 기본 결재자 폴백) -----
+			attdApprovalLineService.applyApprovalFlow(
+					cmpnyCd, siteCd, userCd, reqId, java.util.List.of(), null, userCd);
+		} finally {
+			releaseDefaultSchDupLock(lockKey);
 		}
 
-		log.info("본인 기본 근무타입 변경(자기결정) 완료 - userCd={}, siteCd={}, defaultSchCd={}",
-				param.userCd(), siteCd, defaultSchCd);
+		log.info("웹 본인 기본 근무타입 변경 요청 등록(승인제) - reqId={}, userCd={}, siteCd={}, defaultSchCd={}",
+				reqId, userCd, siteCd, defaultSchCd);
+
+		return DefaultSchChangeRequestResponse.builder()
+				.reqId(reqId)
+				.reqStatus(AttdReqTypeUtils.REQ_STATUS_REQUESTED)
+				.build();
+	}
+
+	/**
+	 * F15 advisory lock 획득(AppMypage01ServiceImpl.acquireDupLock 미러). 타임아웃/오류면 동시 처리로 보고
+	 * ATTD_400_090(중복 요청)으로 변환.
+	 */
+	private void acquireDefaultSchDupLock(String lockKey) {
+		Integer got = user01Mapper.getAdvisoryLock(lockKey, DEFAULT_SCH_DUP_LOCK_TIMEOUT_SEC);
+		if (got == null || got != 1) {
+			log.info("[PRAFTA-001] 중복차단 advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_090);
+		}
+	}
+
+	/** advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+	private void releaseDefaultSchDupLock(String lockKey) {
+		try {
+			user01Mapper.releaseAdvisoryLock(lockKey);
+		} catch (Exception e) {
+			log.warn("[PRAFTA-001] 중복차단 advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+		}
 	}
 
 	public UserInfoListResponse selectUserInfoList(UserInfoListParam param) {

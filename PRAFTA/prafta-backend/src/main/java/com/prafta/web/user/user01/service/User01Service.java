@@ -71,5 +71,6 @@ public interface User01Service {
 	// ===== F-8-2 - 본인 기본 근무타입 자기변경(웹 내정보, 세션 사업장 고정) =====
 	java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getMyDefaultSchOptions(String cmpnyCd, String userCd);
 
-	void updateMyDefaultSch(UpdateMyDefaultSchParam param);
+	// PRAFTA-001(기본근무타입-승인제, 2026-08-27): 즉시반영 → 요청등록 전환. 등록된 요청 식별값/상태 반환.
+	com.prafta.web.user.user01.dto.response.DefaultSchChangeRequestResponse updateMyDefaultSch(UpdateMyDefaultSchParam param);
 }

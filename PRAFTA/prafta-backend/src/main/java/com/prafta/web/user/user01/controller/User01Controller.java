@@ -273,16 +273,19 @@ public class User01Controller {
     }
 
     /**
-     * 저장 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지). 사업장 변경은 여기서 다루지 않는다(소속이동 전용).
+     * 신청 등록 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지). 사업장 변경은 여기서 다루지 않는다(소속이동 전용).
+     *
+     * <p>PRAFTA-001(기본근무타입-승인제, 2026-08-27): 즉시반영 → 요청등록 전환. 응답 바디에
+     * 등록된 요청 식별값/상태(reqId/reqStatus)를 반환한다(URL 무변경).
      */
     @PostMapping("/update-my-default-sch")
     public ResponseEntity<?> updateMyDefaultSch(
             @RequestBody UpdateMyDefaultSchRequest request,
             @RequestHeader(value = "Authorization", required = true) String authorization) {
 
-        user01Service.updateMyDefaultSch(UpdateMyDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-
-        return ResponseEntity.status(HttpStatus.OK).build();
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(user01Service.updateMyDefaultSch(
+                        UpdateMyDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 
     // ===== PRAFTA-036 - 관리자 단건 사용자 생성 (UserInfoPop callmethod_p='C' 모드) =====

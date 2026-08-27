@@ -87,6 +87,26 @@ public class ReqInboxServiceImpl implements ReqInboxService {
     }
 
     @Override
+    public List<PendingSchedReqResult> getPendingDefaultSchChangeRequests(String cmpnyCd, String siteCd,
+                                                                            String userCd, String authCd,
+                                                                            String reqSiteCd) {
+        // 매니저 전용 게이트 — getPendingSchedRequests 와 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
+        if (!AuthRoleUtils.isManager(authCd)) {
+            log.warn("reqinbox pending rejected - insufficient privilege. authCd={}", authCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+        List<String> siteCds = resolveSiteCds(cmpnyCd, userCd, authCd, siteCd, reqSiteCd);
+        if (siteCds.isEmpty()) {
+            return List.of();
+        }
+        // 유효버전 판정 기준일 = 명일(applyDefaultSchChange 의 "명일부터" 정책과 표시 정합, §조사 2번 근거).
+        String asOfYmd = java.time.LocalDate.now().plusDays(1)
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd"));
+        return reqInboxMapper.selectPendingDefaultSchChangeRequests(
+                cmpnyCd, siteCds, AttdReqTypeUtils.REQ_TYPE_DEFAULT_SCH_CHANGE, asOfYmd);
+    }
+
+    @Override
     public ProcessedReqListResponse getProcessedRequests(String cmpnyCd, String siteCd, String userCd,
                                                          String authCd, String reqTypeGroup, String reqSiteCd) {
         // 매니저 전용 게이트 — 대기 목록과 동일 규칙(JWT 기반 authCd, body 위조로 escalation 불가).
@@ -121,6 +141,9 @@ public class ReqInboxServiceImpl implements ReqInboxService {
             reqTypes = List.of("03", "04");
         } else if ("schedule".equals(reqTypeGroup)) {
             reqTypes = List.of(AttdReqTypeUtils.REQ_TYPE_SCHED_MODIFY);
+        } else if ("defaultSchChange".equals(reqTypeGroup)) {
+            // selectProcessedRequests SQL 자체는 REQ_TYPE 필터가 제네릭하다(§조사 1번 근거) — 신규 쿼리 불필요.
+            reqTypes = List.of(AttdReqTypeUtils.REQ_TYPE_DEFAULT_SCH_CHANGE);
         } else {
             // 미지원 그룹 — fail-closed(대기 목록과 동일).
             throw new ApiException(CommonErrorCode.COMMON_400_001);
@@ -146,7 +169,7 @@ public class ReqInboxServiceImpl implements ReqInboxService {
                                                 String reqId, String reqTypeGroup) {
         boolean isLeave = "leave".equals(reqTypeGroup);
         if (!isLeave && !"correction".equals(reqTypeGroup) && !"overtime".equals(reqTypeGroup)
-                && !"schedule".equals(reqTypeGroup)) {
+                && !"schedule".equals(reqTypeGroup) && !"defaultSchChange".equals(reqTypeGroup)) {
             // 미지원 그룹 - fail-closed(다른 reqinbox 조회 endpoint 와 동일 원칙).
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
@@ -225,7 +248,8 @@ public class ReqInboxServiceImpl implements ReqInboxService {
     /**
      * QA 재작업(P3-1) - reqTypeGroup(클라이언트 주장 라벨)이 실제 REQ_TYPE 과 대응하는지 검증한다.
      * 매핑은 {@link AttdReqTypeUtils} 의 기존 allow-list(다른 reqinbox/근태 endpoint 와 공유하는
-     * 단일 출처)를 그대로 재사용한다: correction↔01/02, overtime↔03/04, schedule↔10, leave↔05/06.
+     * 단일 출처)를 그대로 재사용한다: correction↔01/02, overtime↔03/04, schedule↔10, leave↔05/06,
+     * defaultSchChange↔14(PRAFTA-002).
      */
     private boolean reqTypeGroupMatchesActualType(String reqTypeGroup, String actualReqType) {
         if ("leave".equals(reqTypeGroup)) {
@@ -239,6 +263,9 @@ public class ReqInboxServiceImpl implements ReqInboxService {
         }
         if ("schedule".equals(reqTypeGroup)) {
             return AttdReqTypeUtils.isScheduleModifyReqType(actualReqType);
+        }
+        if ("defaultSchChange".equals(reqTypeGroup)) {
+            return AttdReqTypeUtils.isDefaultSchChangeReqType(actualReqType);
         }
         return false;
     }

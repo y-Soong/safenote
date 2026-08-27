@@ -10,11 +10,16 @@ import com.prafta.web.user.user01.dto.request.UpdateMyDefaultSchRequest;
  *
  * <p>대상 회사/사용자는 세션 토큰(gv_cmpnyCd/gv_userCd)에서만 도출한다(IDOR 방지).
  * 사업장(SITE_CD)은 파라미터로 받지 않는다 — 본인 사업장 변경은 소속이동 전용.
+ *
+ * <p>PRAFTA-001(기본근무타입-승인제, 2026-08-27): 요청등록 전환에 따라 reqReason(변경 사유,
+ * 필수) 과 nodeCd(REQ INSERT 의 NODE_CD 컬럼용, 세션 토큰에서만 도출)를 추가한다.
  */
 public record UpdateMyDefaultSchParam(
       String cmpnyCd
     , String userCd
+    , String nodeCd
     , String defaultSchCd
+    , String reqReason
 ) {
     public static UpdateMyDefaultSchParam from(UpdateMyDefaultSchRequest request, TokenInfo tokenInfo) {
         if (request == null)
@@ -29,7 +34,9 @@ public record UpdateMyDefaultSchParam(
         return new UpdateMyDefaultSchParam(
               tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
+            , tokenInfo.gv_nodeCd()
             , request.getDefaultSchCd()
+            , request.getReqReason()
         );
     }
 }
