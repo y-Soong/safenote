@@ -39,6 +39,7 @@ import com.prafta.app.tbm.tbm01.dto.response.TbmSessionListResponse;
 import com.prafta.app.tbm.tbm01.dto.response.TbmSessionStateResponse;
 import com.prafta.app.tbm.tbm01.mapper.AppTbm01Mapper;
 import com.prafta.app.tbm.tbm01.result.TbmAttendanceResult;
+import com.prafta.app.tbm.tbm01.result.TbmAttendanceSlotResult;
 import com.prafta.app.tbm.tbm01.result.TbmAttendeeResult;
 import com.prafta.app.tbm.tbm01.result.TbmCompletionResult;
 import com.prafta.app.tbm.tbm01.result.TbmContentItemResult;
@@ -217,21 +218,47 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         // D5: GPS 거리 계산/검증 — 암호화 전 원본 Double 좌표로 기존 위치에서 수행(판정 무변경).
         Integer distanceM = resolveDistanceAndVerify(session, param.lat(), param.lon());
 
-        // 출결 INSERT (UNIQUE 충돌 = 동시성 멱등).
+        // 출결 슬롯(UNIQUE 키) 선조회 → INSERT(신규)/RESTORE(내보내기 후 재입실) 분기.
+        // (managerEnter 의 동일 패턴 이식 — 관리자 "내보내기"가 소프트삭제(DEL_YN='Y')라
+        //  UNIQUE 키가 여전히 점유돼 있어, 무조건 INSERT 하면 중복키 충돌 후 갈 곳이 없어 500 이 났었다.)
         // GPS좌표-암호화-전환-07: 좌표는 암호문만 저장(BigDecimal.valueOf 경유 정규화 — 좌표 결측이면 null).
         TbmEnterCommand command = TbmEnterCommand.of(
                 cmpnyCd, sessionCd, userCd,
                 gpsCoordCrypto.encrypt(param.lat()), gpsCoordCrypto.encrypt(param.lon()), distanceM);
-        try {
-            appTbm01Mapper.insertAttendance(command);
-        } catch (DuplicateKeyException dke) {
-            // 동시 요청으로 이미 입실 처리됨 → 기존 출결로 멱등 응답.
+
+        TbmAttendanceSlotResult slot = appTbm01Mapper.selectAttendanceSlot(command);
+        if (slot == null) {
+            try {
+                appTbm01Mapper.insertAttendance(command);
+            } catch (DuplicateKeyException dke) {
+                // 동시 요청으로 이미 입실 처리됨 → 기존 출결로 멱등 응답.
+                TbmAttendanceResult after = appTbm01Mapper.selectMyAttendance(query);
+                if (after != null && after.getEntryAt() != null) {
+                    return idempotentEnterResponse(after);
+                }
+                log.error("[tbm01] 입실 UNIQUE 충돌 후 출결 재조회 실패: sessionCd={}", sessionCd, dke);
+                throw new ApiException(CommonErrorCode.COMMON_500_001);
+            }
+        } else if ("N".equals(slot.delYn())) {
+            // 이미 입실됨(위의 existing 선조회와 사실상 동시 진입 케이스만 남음) → 멱등 응답.
             TbmAttendanceResult after = appTbm01Mapper.selectMyAttendance(query);
             if (after != null && after.getEntryAt() != null) {
                 return idempotentEnterResponse(after);
             }
-            log.error("[tbm01] 입실 UNIQUE 충돌 후 출결 재조회 실패: sessionCd={}", sessionCd, dke);
+            log.error("[tbm01] 입실 슬롯 DEL_YN=N 인데 출결 재조회 실패: sessionCd={}", sessionCd);
             throw new ApiException(CommonErrorCode.COMMON_500_001);
+        } else {
+            // 관리자 "내보내기"(soft delete) 후 본인 재입실 → RESTORE.
+            int affected = appTbm01Mapper.restoreAttendance(command);
+            if (affected == 0) {
+                // 경합으로 슬롯 상태 변경됨(예: 그 사이 관리자가 대리입실시킴) → 재조회 후 멱등 응답, 없으면 500.
+                TbmAttendanceResult after = appTbm01Mapper.selectMyAttendance(query);
+                if (after != null && after.getEntryAt() != null) {
+                    return idempotentEnterResponse(after);
+                }
+                log.error("[tbm01] 입실 RESTORE 경합 후 출결 재조회 실패: sessionCd={}", sessionCd);
+                throw new ApiException(CommonErrorCode.COMMON_500_001);
+            }
         }
 
         // 채번된 출결 재조회(응답 ATTENDANCE_CD/ENTRY_AT 확정).

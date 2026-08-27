@@ -111,6 +111,22 @@
       AND DEL_YN = 'N'
     </select>
 
+    <!-- 출결 슬롯(UNIQUE 키) 점유 행 조회 — 재입실 시 INSERT/RESTORE 분기용(Tbm02Mapper.selectAttendanceSlot 동형). -->
+    <select id="selectAttendanceSlot"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmEnterCommand"
+            resultType="com.prafta.app.tbm.tbm01.result.TbmAttendanceSlotResult">
+    /* AppTbm01Mapper.selectAttendanceSlot */
+    SELECT
+          ATTENDANCE_CD AS attendanceCd
+        , DEL_YN         AS delYn
+    FROM TB_TBM_ATTENDANCE
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+    LIMIT 1
+    </select>
+
     <!-- 출결 INSERT(입실). ATTENDANCE_CD = 'A'+YYYYMMDD+SEQ 채번.
          GPS좌표-암호화-전환-07: 좌표는 암호문 컬럼(ENTRY_GPS_LAT_ENC/LON_ENC)에만 저장(평문 기록 중단).
          좌표 결측(측위 실패)이면 암호문도 NULL(기존 동작 미러). ENTRY_DISTANCE_M 은 정수 m - 대상 외. -->
@@ -154,6 +170,41 @@
         , NOW()
     )
     </insert>
+
+    <!-- 출결 RESTORE(재입실): 관리자 내보내기로 DEL_YN='Y' 된 행을 본인 재입실 정보로 복원
+         (Tbm02Mapper.restoreManagerEntry 동형 — 단, GPS/거리/유형은 이번 재입실 실측값으로 채운다). -->
+    <update id="restoreAttendance"
+            parameterType="com.prafta.app.tbm.tbm01.application.command.TbmEnterCommand">
+    /* AppTbm01Mapper.restoreAttendance */
+    UPDATE TB_TBM_ATTENDANCE
+    SET
+          DEL_YN                    = 'N'
+        , ENTRY_TYPE_CD              = #{entryTypeCd}
+        , ENTRY_BY_MANAGER_USER_CD   = NULL
+        , ENTRY_AT                   = NOW()
+        , ENTRY_GPS_LAT              = NULL
+        , ENTRY_GPS_LON              = NULL
+        , ENTRY_GPS_LAT_ENC          = #{latEnc}
+        , ENTRY_GPS_LON_ENC          = #{lonEnc}
+        , ENTRY_DISTANCE_M           = #{distanceM}
+        , APP_FOREGROUND_SEC         = NULL
+        , EXIT_TYPE_CD               = NULL
+        , EXIT_BY_MANAGER_USER_CD    = NULL
+        , EXIT_AT                    = NULL
+        , EXIT_SIGN_FILE_MGMT_CD     = NULL
+        , EXIT_FORCED_REASON         = NULL
+        , COMPLETION_STATUS_CD       = NULL
+        , NOT_COMPLETED_REASON       = NULL
+        , STATUS_UPDATED_BY          = NULL
+        , STATUS_UPDATED_AT          = NULL
+        , UPDATE_NO                  = #{insertNo}
+        , UPDATE_DATE                = NOW()
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SESSION_CD = #{sessionCd}
+      AND USER_TYPE_CD = #{userTypeCd}
+      AND USER_CD = #{userCd}
+      AND DEL_YN = 'Y'
+    </update>
 
     <!-- 출결 UPDATE(종료). 본인+미종료만 갱신(IDOR/중복종료 차단). -->
     <update id="updateExit"

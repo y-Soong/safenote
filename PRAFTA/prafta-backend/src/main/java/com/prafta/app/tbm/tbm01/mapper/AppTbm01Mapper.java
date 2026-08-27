@@ -12,6 +12,7 @@ import com.prafta.app.tbm.tbm01.application.query.TbmDetailQuery;
 import com.prafta.app.tbm.tbm01.application.query.TbmSessionListQuery;
 import com.prafta.app.tbm.tbm01.application.query.TbmSessionQuery;
 import com.prafta.app.tbm.tbm01.result.TbmAttendanceResult;
+import com.prafta.app.tbm.tbm01.result.TbmAttendanceSlotResult;
 import com.prafta.app.tbm.tbm01.result.TbmAttendeeResult;
 import com.prafta.app.tbm.tbm01.result.TbmCompletionResult;
 import com.prafta.app.tbm.tbm01.result.TbmContentItemResult;
@@ -34,8 +35,14 @@ public interface AppTbm01Mapper {
     /** 본인 출결 단건 조회(세션+REGULAR+userCd). 기입실/미종료 판정. */
     TbmAttendanceResult selectMyAttendance(TbmSessionQuery query);
 
+    /** 출결 슬롯(UNIQUE 키) 점유 행 조회 — INSERT/RESTORE 분기용. */
+    TbmAttendanceSlotResult selectAttendanceSlot(TbmEnterCommand command);
+
     /** 출결 INSERT(입실). ATTENDANCE_CD 채번은 SQL 내부. UNIQUE 충돌 시 호출부에서 멱등 처리. */
     int insertAttendance(TbmEnterCommand command);
+
+    /** 출결 RESTORE(재입실): 관리자에게 내보내진(DEL_YN='Y') 행을 본인 재입실 정보로 복원. */
+    int restoreAttendance(TbmEnterCommand command);
 
     /** 출결 UPDATE(종료). 본인+미종료만 갱신. 영향 행수로 성공 판정. */
     int updateExit(TbmExitCommand command);
