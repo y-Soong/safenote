@@ -9,6 +9,7 @@ import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
+import com.prafta.app.mypage.mypage01.dto.response.DefaultSchChangeRequestResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileVerifyResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MypageProfileEditResponse;
@@ -64,6 +65,9 @@ public interface AppMypage01Service {
     /** 선택지 조회 — 대상 사업장은 세션 토큰 식별 사용자의 SITE_CD 로만 도출(파라미터 없음). */
     java.util.List<com.prafta.common.cmm.sch.vo.SchOptionVO> getDefaultSchOptions(TokenInfo tokenInfo);
 
-    /** 저장 — 화이트리스트 검증 후 저장 + 즉시 자동생성(실패는 격리). */
-    void updateDefaultSch(UpdateDefaultSchParam param);
+    /**
+     * PRAFTA-002(기본근무타입-승인제): 화이트리스트 검증 후 요청 등록(TB_USER_ATTD_REQ INSERT + 결재선
+     * 적용). 즉시 반영하지 않는다 — 실제 반영은 승인 시점(Attd07Service.approveDefaultSchChangeRequest).
+     */
+    DefaultSchChangeRequestResponse updateDefaultSch(UpdateDefaultSchParam param);
 }

@@ -29,6 +29,10 @@ import lombok.extern.slf4j.Slf4j;
  * <p>연차 {@code AppLeaveFlowServiceImpl#submitLeave}(336~392) 의 결재라인 생성 패턴을 미러한다
  * (신규 발명 최소). 근태결재선통합 P1-2(2026-08-23)로 구 'Y'/'N' 조직도 위임 분기를 폐지하고
  * 항상 결재선(다단계) 경로로 통일했다 — {@link #resolveApprovers} 참조.
+ *
+ * <p>PRAFTA-001(2026-08-27, 결재선 필수화): "본인 + 자체근태승인 ON" 이어도 그 결재 단계를
+ * 신청 즉시 자동확정하지 않는다. 본인 지정 자격 게이트(ATTD_400_056)는 그대로 유지하되, 단계
+ * 생성은 항상 정상 결재 단계(첫 단계 APPLIED / 나머지 WAIT)로 통일한다 — 명시적 승인 액션 필수.
  */
 @Slf4j
 @Service
@@ -40,14 +44,9 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
     private final AppMypage01Mapper appMypage01Mapper;
     private final AttdApprovalNotiService attdApprovalNotiService;
 
-    // 요청 상태 [SYS033]
-    private static final String REQ_APPROVED = "02";
     // 결재 단계 상태 [SYS044]
     private static final String STEP_WAIT = "00";
     private static final String STEP_APPLIED = "01";
-    private static final String STEP_APPROVED = "02";
-
-    private static final String SELF_APPROVE_COMMENT = "자체근태승인 자동 승인";
 
     @Override
     public void applyApprovalFlow(String cmpnyCd, String siteCd, String userCd, String reqId,
@@ -55,14 +54,18 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
 
         // 근태결재선통합 P1-2(2026-08-23): 'Y'/'N' 분기 폐지, 항상 결재선 경로로 통일.
         //   구 'Y' 즉시확정(D4)은 결재자 미지정 시 resolveApprovers 3번째 폴백(기본 결재자)이
-        //   결재선 1단계로 재현한다 — 신청자가 그 노드 관리자 본인이면 자기지정 자동승인(D7) 규칙에
-        //   따라 즉시 확정되어 체감이 동일하다. 구 'Y' + 일반근로자 위임 경로(D3)는 폐기한다
+        //   결재선 1단계로 재현한다. 구 'Y' + 일반근로자 위임 경로(D3)는 폐기한다
         //   (실사용 0건, 요청서 §1 — 조직도 위임 모델은 결재선으로 완전 대체).
+        //   PRAFTA-001/004(2026-08-27): 자기지정이어도 신청 즉시 자동확정되지 않는다 — 본인이 결재선
+        //   1단계 approver 로 지정되면, 다른 결재자와 동일하게 명시적 승인 액션을 거쳐야 확정된다.
         applyApprovalLine(cmpnyCd, siteCd, userCd, reqId, approverUserCds, presetId, insertNo);
     }
 
     /**
      * 'N' 결재라인 다단계 생성(D6/D7/D8). 연차 submitLeave 336~392 미러.
+     *
+     * <p>PRAFTA-001/004(2026-08-27): 신청 즉시 자동확정 개념 제거 — 항상 정상 결재 단계로 생성한다
+     * (결재선 생성만 수행, REQ_STATUS 즉시확정 없음).
      */
     private void applyApprovalLine(String cmpnyCd, String siteCd, String userCd, String reqId,
                                    List<String> approverUserCds, String presetId, String insertNo) {
@@ -85,48 +88,33 @@ public class AttdApprovalLineServiceImpl implements AttdApprovalLineService {
         }
 
         // D7 자기승인 자격: 본인 지정은 노드 자체근태승인 + 노드관리자일 때만.
+        //   PRAFTA-001(2026-08-27): 자격 게이트(본인 지정 가능 여부)만 유지 — "즉시확정" 효과는 제거.
         boolean selfAllowed = isYes(appReq09Mapper.selectUserNodeSelfApproveYn(cmpnyCd, userCd));
 
-        int currentIdx = -1; // 첫 수동(비-자동승인) 단계 인덱스
         for (int i = 0; i < approvers.size(); i++) {
             boolean isSelf = userCd.equals(approvers.get(i));
             if (isSelf && !selfAllowed) {
                 throw new ApiException(AttdErrorCode.ATTD_400_056);
             }
-            if (!isSelf && currentIdx < 0) {
-                currentIdx = i;
-            }
         }
 
+        // PRAFTA-001(2026-08-27): self 여부와 무관하게 배열상 첫 번째 approver 가 STEP_APPLIED,
+        //   나머지는 STEP_WAIT — self 도 다른 결재자와 동일하게 차례를 받아 명시적 승인이 필요하다.
         for (int i = 0; i < approvers.size(); i++) {
             String approver = approvers.get(i);
-            boolean isSelf = userCd.equals(approver);
             ApprovalStepVO s = new ApprovalStepVO();
             s.setReqId(reqId);
             s.setApprovalStep(i + 1);
             s.setCmpnyCd(cmpnyCd);
             s.setApproverUserCd(approver);
-            if (isSelf) {
-                s.setApprovalStatus(STEP_APPROVED); // 본인 + 자체근태승인 ON → 자동 승인
-                s.setApprovalComment(SELF_APPROVE_COMMENT);
-            } else {
-                s.setApprovalStatus(i == currentIdx ? STEP_APPLIED : STEP_WAIT);
-            }
+            s.setApprovalStatus(i == 0 ? STEP_APPLIED : STEP_WAIT);
             s.setInsertNo(insertNo);
             approvalLineMapper.insertApprovalStep(s);
         }
 
-        boolean fullyAutoApproved = (currentIdx < 0); // 전 단계가 본인 자동승인 → 즉시 확정
-        if (fullyAutoApproved) {
-            appReq09Mapper.updateReqStatus(cmpnyCd, reqId, REQ_APPROVED, userCd, SELF_APPROVE_COMMENT);
-            log.info("[attdAprvLine] 'N' 결재라인 전 단계 자동승인 → 즉시 확정 (reqId={}, 단계수={})",
-                    reqId, approvers.size());
-            return;
-        }
-
-        // 차례가 도래한 첫 수동 단계 결재자에게 차례 도래 PUSH(예외 격리는 noti 내부).
-        String turnApprover = approvers.get(currentIdx);
-        int turnStep = currentIdx + 1; // approvalStep 은 1-based
+        // 차례가 도래한 첫 단계(항상 index 0, self 포함) 결재자에게 차례 도래 PUSH(예외 격리는 noti 내부).
+        String turnApprover = approvers.get(0);
+        int turnStep = 1; // approvalStep 은 1-based
         attdApprovalNotiService.notifyAttdApprovalTurn(cmpnyCd, siteCd, userCd, reqId, turnStep, turnApprover, insertNo);
         log.info("[attdAprvLine] 'N' 결재라인 생성 완료 (reqId={}, 단계수={}, 차례단계={})",
                 reqId, approvers.size(), turnStep);

@@ -201,6 +201,11 @@ public class AppReq06ServiceImpl implements AppReq06Service {
             //   스케줄명 라벨(SCH_NO) 조인은 후속(§7-3) — 1차는 코드 표시.
             String sch = (r.schCd() == null || r.schCd().isBlank()) ? "미지정" : r.schCd();
             lines.add("스케줄 변경 · " + sch);
+        } else if ("14".equals(reqType)) {
+            // PRAFTA-003(기본근무타입-승인제): 기본 근무타입 변경 요청. '10' 분기 미러 — 변경 대상 SCH_CD 1줄.
+            //   START/END_TIME/WORK_YMD 는 이 유형에서 항상 null 이므로 시각/일자 줄 미생성.
+            String sch = (r.schCd() == null || r.schCd().isBlank()) ? "미지정" : r.schCd();
+            lines.add("기본 근무타입 변경 · " + sch);
         } else if ("LC_MOVE".equals(reqType)) {
             // 연차 이동: "이동 전 원래 연차일(startDate) → 이동 대상일(workYmd)"
             lines.add("연차 이동 · " + formatYmdSlash(r.startDate()) + " → " + formatYmdSlash(r.workYmd()));

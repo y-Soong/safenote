@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
+import com.prafta.web.attd.attd07.application.param.RejectDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 
@@ -52,6 +53,26 @@ public record RejectUserAttdRequestCommand(
 
         if (param == null) {
             log.warn("RejectUserAttdRequestCommand.from - OT param is null");
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        return new RejectUserAttdRequestCommand(
+              param.reqId()
+            , param.siteCd()
+            , param.rejectReason()
+            , param.gvCmpnyCd()
+            , param.gvUserCd()
+        );
+    }
+
+    /**
+     * PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청 반려용 팩토리.
+     * 처리 컬럼 집합과 status 전이가 근태 반려와 동일하므로(REQ_TYPE 무관 UPDATE) 동일 command 를 재사용한다.
+     */
+    public static RejectUserAttdRequestCommand from(RejectDefaultSchChangeRequestParam param) {
+
+        if (param == null) {
+            log.warn("RejectUserAttdRequestCommand.from - DefaultSchChange param is null");
             throw new ApiException(CommonErrorCode.COMMON_400_001);
         }
 

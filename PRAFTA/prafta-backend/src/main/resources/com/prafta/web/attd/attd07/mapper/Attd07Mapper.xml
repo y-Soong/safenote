@@ -2009,6 +2009,15 @@
      LIMIT 1
     </select>
 
+    <select id="selectUserDefaultSchCdForApproval" resultType="string">
+    /* Attd07Mapper.selectUserDefaultSchCdForApproval - PRAFTA-003 기본근무타입-승인제 승인 직전 현재값 캡처 */
+    SELECT U.DEFAULT_SCH_CD
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{gvCmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
     <update id="upsertUserWorkPlan" parameterType="com.prafta.web.attd.attd07.application.command.UpsertUserWorkPlanCommand">
     /* Attd07Mapper.upsertUserWorkPlan - PRAFTA-APP-007 스케줄 수정(10) 승인 시 근무계획 한 칸 교체 (Attd05.saveUserWorkPlans 동형) */
     INSERT INTO TB_USER_WORK_PLAN (

@@ -82,23 +82,6 @@
     </select>
 
     <!-- ============================================================
-         REQ_STATUS 갱신: 'Y'+노드관리자 즉시 자동승인(D4) / 'N' 전 단계 본인 자동승인.
-         tb_user_attd_req 의 상태/처리자/처리시각만 갱신(CMPNY_CD+REQ_ID 스코프).
-         ============================================================ -->
-    <update id="updateReqStatus">
-    /* AppReq09Mapper.updateReqStatus */
-    UPDATE TB_USER_ATTD_REQ
-       SET REQ_STATUS      = #{reqStatus}
-         , PROCESS_USER_CD = #{processUserCd}
-         , PROCESS_COMMENT = #{processComment}
-         , PROCESS_DATE    = NOW()
-         , UPDATE_NO       = #{processUserCd}
-         , UPDATE_DATE     = NOW()
-     WHERE CMPNY_CD = #{cmpnyCd}
-       AND REQ_ID   = #{reqId}
-    </update>
-
-    <!-- ============================================================
          근태결재선통합 P1-2(§0-5 3번째 폴백): 신청자 소속 노드의 기본 결재자 — 정 관리자 우선,
          없으면 부 관리자. 공용 ApprovalLineMapper.selectDefaultApproverOfNode 와 동일 형식(MAIN→SUB,
          모듈 독립 위해 복제) — 두 로직이 갈리면 lazy 폴백과 신규 신청의 기본 결재자가 달라진다.

@@ -156,15 +156,15 @@
             </dl>
           </div>
 
-          <!-- 스케줄수정: 현재 → 요청 스케줄 비교(근태보정 ap-compare 패턴 재사용) -->
-          <div v-else-if="detail.group === 'SCHEDULE'" class="ap-compare">
+          <!-- 스케줄수정 / 기본근무타입변경(PRAFTA-003): 현재 → 요청 스케줄 비교(근태보정 ap-compare 패턴 재사용) -->
+          <div v-else-if="detail.group === 'SCHEDULE' || detail.group === 'DEFAULT_SCH_CHANGE'" class="ap-compare">
             <div class="ap-compare__row">
               <div class="ap-compare__col ap-compare__col--before">
-                <span class="ap-compare__label">현재 스케줄</span>
+                <span class="ap-compare__label">{{ detail.group === 'DEFAULT_SCH_CHANGE' ? '현재 기본 근무타입' : '현재 스케줄' }}</span>
                 <p class="ap-compare__val">{{ detail.body.beforeDisplay || '없음' }}</p>
               </div>
               <div class="ap-compare__col ap-compare__col--after">
-                <span class="ap-compare__label">요청 스케줄</span>
+                <span class="ap-compare__label">{{ detail.group === 'DEFAULT_SCH_CHANGE' ? '요청 기본 근무타입' : '요청 스케줄' }}</span>
                 <p class="ap-compare__val">{{ detail.body.afterDisplay || '-' }}</p>
               </div>
             </div>
@@ -504,8 +504,9 @@ const normalizeDetail = (data) => {
         body.stepDisplay = 'HR 최종 승인 단계'
       else if (meta.approvalStep != null) body.stepDisplay = `결재 ${meta.approvalStep}단계`
     }
-  } else if (group === 'SCHEDULE') {
-    // 현재(승인 전 work_plan) → 요청(REQ.SCH_CD) 스케줄. 서버 before/after = { schCd, schNm, rangeText }.
+  } else if (group === 'SCHEDULE' || group === 'DEFAULT_SCH_CHANGE') {
+    // 현재(승인 전 work_plan / TB_USER.DEFAULT_SCH_CD) → 요청(REQ.SCH_CD) 스케줄.
+    //   서버 before/after = { schCd, schNm, rangeText } — PRAFTA-003 도 동일 shape 재사용.
     body.beforeDisplay = rawBody.beforeDisplay || buildSchedDisplay(rawBody.before)
     body.afterDisplay = rawBody.afterDisplay || buildSchedDisplay(rawBody.after)
   }

@@ -256,6 +256,23 @@
        AND REQ_ID   = #{reqId}
     </update>
 
+    <!-- 연차승인 동시성갭 보강(2026-08-27): updateReqStatus 는 갱신 전 상태 조건이 없어 동시 처리 시
+         이미 처리된 요청(REQ_STATUS)을 재차 덮어쓸 수 있다. ApprovalLineMapper.updateStepStatusGuarded
+         와 동일 패턴(fromStatus 를 WHERE 절에 명시 + 영향행수 0 을 호출부가 판정)으로 보강한다. -->
+    <update id="updateReqStatusGuarded">
+    /* LeaveFlowMapper.updateReqStatusGuarded */
+    UPDATE TB_USER_ATTD_REQ
+       SET REQ_STATUS      = #{reqStatus}
+         , PROCESS_USER_CD = #{processUserCd}
+         , PROCESS_COMMENT = #{processComment}
+         , PROCESS_DATE    = NOW()
+         , UPDATE_NO       = #{processUserCd}
+         , UPDATE_DATE     = NOW()
+     WHERE CMPNY_CD   = #{cmpnyCd}
+       AND REQ_ID     = #{reqId}
+       AND REQ_STATUS = #{fromStatus}
+    </update>
+
     <select id="selectLeaveReq" resultType="com.prafta.web.attd.leaveflow.vo.LeaveReqRowVO">
     /* LeaveFlowMapper.selectLeaveReq */
     /* PRAFTA-025: 연차사용('05')/연차수정('06') 모두 결재 흐름을 공유하므로 둘 다 조회한다.

@@ -144,10 +144,12 @@
               <use href="#i-mp-chev-right" />
             </svg>
           </button>
-          <!-- F-8-3: 근무 정보(기본 근무타입 자기변경). 현재값은 GET /appApi/mypage/profile 보강 응답. -->
+          <!-- F-8-3: 근무 정보(기본 근무타입 자기변경) → PRAFTA-005(관리자 승인제): 대기중 요청 있으면
+               현재값 대신 "승인 대기 중" 배지 노출(승인 전 미반영 — 현재값은 그대로 유효). -->
           <button type="button" class="mp-menu__row" @click="onDefaultSchClick">
             <span class="mp-menu__text">근무 정보</span>
-            <span class="mp-menu__meta">{{ defaultSchLabel || '미설정' }}</span>
+            <span v-if="hasPendingDefaultSchReq" class="mp-menu__meta">승인 대기 중</span>
+            <span v-else class="mp-menu__meta">{{ defaultSchLabel || '미설정' }}</span>
             <svg class="icon mp-menu__chev" width="20" height="20" aria-hidden="true">
               <use href="#i-mp-chev-right" />
             </svg>
@@ -248,7 +250,7 @@
       v-model="defaultSchSheetOpen"
       :current-sch-cd="defaultSchCd"
       :current-label="defaultSchLabel"
-      @saved="onDefaultSchSaved"
+      @requested="onDefaultSchRequested"
     />
 
     <!-- 인라인 SVG sprite (본 화면 전용) -->
@@ -350,6 +352,8 @@ const presetCount = ref(0)
 const defaultSchCd = ref('')
 const defaultSchLabel = ref('')
 const defaultSchSheetOpen = ref(false)
+// PRAFTA-005(기본근무타입-승인제): 대기중 요청 존재 여부(메뉴 행 배지). 비치명적 → 실패는 false 폴백(미노출).
+const hasPendingDefaultSchReq = ref(false)
 
 // 사용자연차결재-04: "연차 결재 관리" 대기 건수 배지(경량 조회, 비치명적). 실패 시 0(미노출).
 const pendingApprovalCount = ref(0)
@@ -464,10 +468,10 @@ const onPasswordChange = () => {
 const onDefaultSchClick = () => {
   defaultSchSheetOpen.value = true
 }
-// F-8-3: 바텀시트 저장 완료(saved) → 목록 항목 표시값 갱신(재조회 없이 즉시 반영).
-const onDefaultSchSaved = (newSchCd, newLabel) => {
-  defaultSchCd.value = newSchCd
-  if (newLabel) defaultSchLabel.value = newLabel
+// PRAFTA-005(기본근무타입-승인제): 바텀시트 신청 완료(requested) → "승인 전 미반영" 정책에 따라
+//   defaultSchLabel/defaultSchCd 는 갱신하지 않는다(현재값 그대로 유효). 대신 대기 배지를 재조회해 반영한다.
+const onDefaultSchRequested = (/* reqId */) => {
+  loadPendingDefaultSchChangeReq()
 }
 // 'HHmm' → 'HH:mm' (근무 정보 메뉴 항목 표시용)
 const fmtSchTime = (t) => {
@@ -581,6 +585,21 @@ const loadPendingApprovalCount = async () => {
   }
 }
 
+// PRAFTA-005(기본근무타입-승인제): 근무 정보 메뉴 "승인 대기 중" 배지(경량 조회, PRAFTA-004 확장분 재사용).
+//   비치명적 → 실패는 false 폴백(미노출, 서버가 최종 중복 검증).
+const loadPendingDefaultSchChangeReq = async () => {
+  try {
+    const { data } = await api.get('/appApi/req06/my', {
+      params: { reqTypes: '14', reqStatuses: '01', limit: 1 },
+    })
+    const items = Array.isArray(data?.items) ? data.items : []
+    hasPendingDefaultSchReq.value = items.length > 0
+  } catch (e) {
+    hasPendingDefaultSchReq.value = false
+    console.warn('[MyPage] 기본 근무타입 변경 대기 조회 실패:', e?.message)
+  }
+}
+
 // ───────────────────────────────────────────────────────────
 // prafta-app-028: 연차 요약 로드 (GET /appApi/leave01/my-leave-summary, 기존 EP 재사용)
 //   비치명적: 실패하면 leaveSummaryFailed=true → 섹션 미노출(전체 화면 에러로 키우지 않음).
@@ -685,11 +704,13 @@ const loadAll = async ({ showLoading = true } = {}) => {
   // 최초 진입(showLoading=true)에서만 전체 로딩 표시. 당겨서 새로고침은 카드 유지 + 자체 인디케이터.
   if (showLoading) isLoading.value = true
 
-  // 비치명적 3종은 먼저 병렬 시작(각자 내부에서 예외 흡수 → reject 없음).
+  // 비치명적 4종은 먼저 병렬 시작(각자 내부에서 예외 흡수 → reject 없음).
   const adminP = loadAdminEntryFlag()
   const pendingP = loadPendingApprovalCount()
   const leaveP = loadLeaveSummary()
   const termsP = loadOptionalTerms()
+  // PRAFTA-005(기본근무타입-승인제): 근무 정보 메뉴 배지(비치명적).
+  const defaultSchPendingP = loadPendingDefaultSchChangeReq()
 
   // 프로필(주 데이터)은 try/catch 로 직접 처리.
   //   GET /appApi/mypage/profile (마스킹 응답 D1). 메인 화면은 마스킹 PII를 사용하지 않고
@@ -717,8 +738,8 @@ const loadAll = async ({ showLoading = true } = {}) => {
     if (showLoading) isLoading.value = false
   }
 
-  // 비치명적 4종 완료 대기(내부에서 예외 흡수되어 reject 없음).
-  await Promise.all([adminP, pendingP, leaveP, termsP])
+  // 비치명적 5종 완료 대기(내부에서 예외 흡수되어 reject 없음).
+  await Promise.all([adminP, pendingP, leaveP, termsP, defaultSchPendingP])
 }
 
 onMounted(() => {

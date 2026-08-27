@@ -1,10 +1,12 @@
 package com.prafta.web.attd.attd07.service;
 
+import com.prafta.web.attd.attd07.application.param.ApproveDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
+import com.prafta.web.attd.attd07.application.param.RejectDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdInfosParam;
@@ -82,4 +84,26 @@ public interface Attd07Service {
      * 공유한다(RejectUserAttdRequest*).
      */
     void rejectSchedModifyRequest(RejectUserAttdRequestParam param);
+
+    /**
+     * PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청(REQ_TYPE='14')을 승인한다.
+     *
+     * <p>스케줄 수정 승인(approveSchedModifyRequest)과 동일한 권위 검증(REQ row 로더 / REQ_TYPE 가드 /
+     * 결재선 현재 단계 소유권 / 신청('01') 상태 가드 / body-REQ 변조검증 / 대상 사용자 scope)을 거치되,
+     * 특정 근무일에 종속되지 않으므로 마감 가드 / 교차일 겹침 가드 / shift 잠금 가드는 적용하지 않는다
+     * (E3 연차 잠금은 applyDefaultSchChange 내부 가드가 승인 반영 시점에 자동으로 보존 처리).
+     *
+     * <p>화이트리스트 재검증(DefaultSchOptionService.isValidDefaultSch) 후 결재선 단계 전진, 최종 단계일
+     * 때만 {@code DefaultSchGenService.applyDefaultSchChange} 로 반영하고 REQ 를 승인('02') 상태로 전이한다.
+     */
+    void approveDefaultSchChangeRequest(ApproveDefaultSchChangeRequestParam param);
+
+    /**
+     * PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청(REQ_TYPE='14')을 반려한다.
+     *
+     * <p>승인과 동일한 권위 검증을 거치되 {@code TB_USER.DEFAULT_SCH_CD}/{@code TB_USER_WORK_PLAN} 은
+     * 일절 건드리지 않고, TB_USER_ATTD_REQ 를 반려('03') 상태로 전이하며 처리자/반려사유(필수)/처리일시를
+     * 기록한다. 처리 이력(HIST)은 남기지 않는다(스케줄 수정 반려와 동일 관례).
+     */
+    void rejectDefaultSchChangeRequest(RejectDefaultSchChangeRequestParam param);
 }

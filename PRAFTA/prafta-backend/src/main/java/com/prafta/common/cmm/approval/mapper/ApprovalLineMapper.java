@@ -23,11 +23,10 @@ public interface ApprovalLineMapper {
                                                    @Param("reqId") String reqId);
 
     /**
-     * 단계 상태 갱신 (승인/반려/신청 전환 — 작업 E).
-     *
-     * <p>leave 도메인({@code LeaveFlowServiceImpl}) 전용. 갱신 전 상태 조건이 없어 동시 처리
-     * 방지를 스스로 보장하지 않는다(P1 Medium 이슈 — 근태결재선통합 §0-3). attd07 계열은
-     * {@link #updateStepStatusGuarded} 를 사용한다.
+     * 단계 상태 갱신(비가드 버전, 작업 E). 갱신 전 상태 조건이 없어 동시 처리 시 이미 처리된
+     * 단계를 재차 덮어쓸 수 있다(P1 Medium 이슈 — 근태결재선통합 §0-3). 연차승인 동시성갭
+     * 보강(2026-08-27)으로 {@code LeaveFlowServiceImpl} 도 {@link #updateStepStatusGuarded} 로
+     * 전환해 현재 직접 호출부는 없다(다른 도메인에서 필요 시를 위해 존치).
      */
     int updateStepStatus(@Param("cmpnyCd") String cmpnyCd,
                          @Param("reqId") String reqId,
@@ -41,8 +40,9 @@ public interface ApprovalLineMapper {
      * 갱신 전 상태가 {@code fromStatus} 일 때만 UPDATE 한다(WHERE 절에 APPROVAL_STATUS 조건 추가).
      * 영향행수가 0이면(동시 처리로 이미 다른 상태로 전이됨) 호출부가 {@code ApiException
      * (AttdErrorCode.ATTD_409_001)} 을 던져야 한다 — 같은 파일 다른 UPDATE 들의 "영향행수 가드"
-     * 패턴과 동일. attd07/{@code ApprovalStepGateServiceImpl} 전용, leave 도메인은 여전히
-     * {@link #updateStepStatus} 를 사용한다(이번 작업 범위 밖).
+     * 패턴과 동일. attd07/{@code ApprovalStepGateServiceImpl} 전용이었으나, 연차승인 동시성갭
+     * 보강(2026-08-27)으로 leave 도메인({@code LeaveFlowServiceImpl.approveStep/rejectStep})도
+     * 이 가드 버전을 사용한다.
      */
     int updateStepStatusGuarded(@Param("cmpnyCd") String cmpnyCd,
                                 @Param("reqId") String reqId,

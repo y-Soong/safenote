@@ -140,7 +140,6 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private static final String HALF_PART_END = "END";
 
     private static final String USE_CONFIRMED = "CONFIRMED";
-    private static final String SELF_APPROVE_COMMENT = "자체근태승인 자동 승인";
 
     @Override
     public LeaveApplyMetaResponse selectApplyMeta(LeaveApplyMetaParam param) {
@@ -1054,9 +1053,11 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                 // prafta-leavemulti: 기간신청 묶음 ID. 단일일 신청은 null → 컬럼 NULL(종전과 동일).
                 p.groupId()));
 
-        // 7) 결재 Y → 라인 일괄 생성 + 자기 승인 원칙(§9.5, 웹 161~200 미러)
-        boolean fullyAutoApproved = false;
-        // PRAFTA-COM-004 시나리오 A hook 용: 차례가 도래한 첫 수동 단계의 결재자/단계번호.
+        // 7) 결재 Y → 라인 일괄 생성. PRAFTA-003(2026-08-27, 결재선 필수화, 웹 LeaveFlowServiceImpl
+        //    submitLeave 미러): "본인 + 자체근태승인 ON" 이어도 신청 즉시 자동확정하지 않는다. 본인
+        //    지정 자격 게이트(ATTD_400_056)는 유지하되, 단계 생성은 self 여부 무관 항상 첫 단계
+        //    APPLIED/나머지 WAIT 로 통일한다 — 명시적 승인 액션(2026-08-16 "관리자 본인결재 허용")이 필요.
+        // PRAFTA-COM-004 시나리오 A hook 용: 차례가 도래한 첫 단계의 결재자/단계번호.
         String turnApprover = null;
         int turnStep = -1;
         if (aprvRequired) {
@@ -1077,39 +1078,26 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
             boolean selfAllowed = isYes(appLeaveFlowMapper.selectUserNodeSelfApproveYn(cmpny, user));
 
-            int currentIdx = -1; // 첫 수동(비-자동승인) 단계 인덱스
             for (int i = 0; i < approvers.size(); i++) {
                 boolean isSelf = user.equals(approvers.get(i));
                 if (isSelf && !selfAllowed) {
                     throw new ApiException(AttdErrorCode.ATTD_400_056);
                 }
-                if (!isSelf && currentIdx < 0) {
-                    currentIdx = i;
-                }
             }
             for (int i = 0; i < approvers.size(); i++) {
                 String approver = approvers.get(i);
-                boolean isSelf = user.equals(approver);
                 ApprovalStepVO s = new ApprovalStepVO();
                 s.setReqId(reqId);
                 s.setApprovalStep(i + 1);
                 s.setCmpnyCd(cmpny);
                 s.setApproverUserCd(approver);
-                if (isSelf) {
-                    s.setApprovalStatus(STEP_APPROVED); // 본인 + 자체근태승인 ON → 자동 승인
-                    s.setApprovalComment(SELF_APPROVE_COMMENT);
-                } else {
-                    s.setApprovalStatus(i == currentIdx ? STEP_APPLIED : STEP_WAIT);
-                }
+                s.setApprovalStatus(i == 0 ? STEP_APPLIED : STEP_WAIT);
                 s.setInsertNo(user);
                 approvalLineMapper.insertApprovalStep(s);
             }
-            fullyAutoApproved = (currentIdx < 0); // 전 단계가 본인 자동승인 → 즉시 확정
-            if (currentIdx >= 0) {
-                // 차례가 도래한 첫 수동 단계(STEP_APPLIED) — 시나리오 A 발송 대상.
-                turnApprover = approvers.get(currentIdx);
-                turnStep = currentIdx + 1; // approvalStep 은 1-based
-            }
+            // 차례가 도래한 첫 단계(항상 index 0, self 포함) — 시나리오 A 발송 대상.
+            turnApprover = approvers.get(0);
+            turnStep = 1; // approvalStep 은 1-based
         }
 
         // 8) 차감 예약(CONFIRMED) + 부여 USED_DAYS 동기화(웹 202~212).
@@ -1142,17 +1130,16 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
         }
 
-        // 9) 즉시확정
+        // 9) PRAFTA-003(2026-08-27): 결재 Y 는 이제 신청 즉시 확정되는 경로가 없다(본인 결재자
+        //   포함 전 건 정상 결재 단계로 생성 — §7 참조). REQ_STATUS 확정은 웹 approveStep(명시적
+        //   승인 API 호출)을 통해서만 이뤄진다(앱에는 연차 승인 경로 자체가 없음).
         //   prafta-com-008-E-2: 연차-스케줄 모델 전환 — work_plan 에 LEAVE_CD 를 더 이상 쓰지 않는다.
         //   출근 차단(§8.3)은 leave_use(CONFIRMED 종일) 존재로 판정하므로 위 insertLeaveUse 가 곧 차단 근거다.
         //   (work_plan 은 SCH_CD 유지 → 연차 취소 시 자동 근무일 복귀).
-        if (aprvRequired && fullyAutoApproved) {
-            appLeaveFlowMapper.updateReqStatus(cmpny, reqId, REQ_APPROVED, user, SELF_APPROVE_COMMENT);
-        }
 
         // PRAFTA-COM-004 PUSH 적재 hook (예외 격리 — @Transactional 본 흐름에 예외 전파 금지).
-        //  - 시나리오 A: 결재 Y + 차례 도래 단계(첫 수동) 결재자 1인. fullyAutoApproved 면 미발송(D1).
-        //  - 시나리오 B: 순수 무결재(!aprvRequired)만. fullyAutoApproved 제외(D1).
+        //  - 시나리오 A: 결재 Y 이면 항상 첫 단계 결재자(self 포함) 1인에게 차례 도래 통보.
+        //  - 시나리오 B: 순수 무결재(!aprvRequired)만.
         //  앱에는 연차 승인 경로가 없으므로 "다음 단계" hook 은 없다(웹 approveStep 단일 경로).
         try {
             // prafta-leavemulti: 기간(From-To) 신청은 날짜별 REQ N건으로 분해되므로 묶음 ID 를 함께 넘겨

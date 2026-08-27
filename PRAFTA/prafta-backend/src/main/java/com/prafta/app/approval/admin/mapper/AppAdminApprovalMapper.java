@@ -111,6 +111,19 @@ public interface AppAdminApprovalMapper {
                                  @Param("reqSchCd") String reqSchCd);
 
     /**
+     * PRAFTA-003(기본근무타입-승인제): 기본 근무타입 변경(14) 상세 본문 — 현재(TB_USER.DEFAULT_SCH_CD) +
+     * 요청(REQ.SCH_CD) 을 TB_SCH_MGMT 조인해 시각 range 로 산출(1행). {@link #selectSchedBody} 와 동형이되
+     * "현재" 소스만 TB_USER_WORK_PLAN 대신 TB_USER.DEFAULT_SCH_CD 를 사용한다.
+     *
+     * @param asOfYmd 표시 기준일(YYYYMMDD) — 서비스가 "명일"로 계산해 전달(applyDefaultSchChange 정책 정합).
+     */
+    SchedBodyRow selectDefaultSchChangeBody(@Param("cmpnyCd") String cmpnyCd,
+                                            @Param("siteCd") String siteCd,
+                                            @Param("userCd") String userCd,
+                                            @Param("reqSchCd") String reqSchCd,
+                                            @Param("asOfYmd") String asOfYmd);
+
+    /**
      * 초과근무 승인 상세 — 당일 배정 스케줄(소정 구간 + 고정연장) 1행 (2026-08-17 요청).
      * 근무계획이 없거나 WORK_PLAN_CD 가 연차코드면 schCd NULL(스케줄 없음).
      */

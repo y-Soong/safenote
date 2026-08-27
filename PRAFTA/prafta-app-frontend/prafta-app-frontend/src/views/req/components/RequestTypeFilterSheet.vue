@@ -76,6 +76,7 @@ const OPTIONS = [
   { code: '05', label: '연차 사용' },
   { code: '06', label: '연차 수정' },
   { code: '10', label: '스케줄수정' },
+  { code: '14', label: '기본 근무타입 변경' },
   { code: 'LC_MOVE', label: '연차 이동' },
 ]
 

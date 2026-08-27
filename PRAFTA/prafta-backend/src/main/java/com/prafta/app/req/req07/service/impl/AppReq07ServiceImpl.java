@@ -205,6 +205,10 @@ public class AppReq07ServiceImpl implements AppReq07Service {
                 );
                 mapper.insertAttdReq(cmd);
                 // prafta-app-009: 슬롯(REQ_ID)마다 결재 분기/라인 처리(같은 @Transactional).
+                // PRAFTA-004(2026-08-27, 결재선 필수화): applyApprovalFlow 는 이제 결재선 생성만
+                //   수행하며 신청 즉시 REQ_STATUS 를 확정하는 경로가 없다(PRAFTA-001) — 즉시확정
+                //   전용 반영 훅(reflectSelfApprovedSchedModifyChange) 호출은 더 이상 필요 없다
+                //   (죽은 코드로 판정되어 제거됨 — 실제 반영은 항상 approveSchedModifyRequest 를 통해서만).
                 attdApprovalLineService.applyApprovalFlow(
                         param.cmpnyCd(), param.siteCd(), param.userCd(), slotReqId,
                         param.approverUserCds(), param.presetId(), param.userCd());

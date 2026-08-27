@@ -37,11 +37,13 @@ import com.prafta.web.attd.attd07.application.command.UpdateUserAttdRequestComma
 import com.prafta.web.attd.attd07.application.command.UpsertUserWorkPlanCommand;
 import com.prafta.web.attd.attd07.application.model.OvertimeItemModel;
 import com.prafta.web.attd.attd07.application.model.UpdateUserAttdInfosModel;
+import com.prafta.web.attd.attd07.application.param.ApproveDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
+import com.prafta.web.attd.attd07.application.param.RejectDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdInfosParam;
@@ -111,6 +113,10 @@ public class Attd07ServiceImpl implements Attd07Service {
     private final ApprovalStepGateService approvalStepGateService;
     /** 근태결재선통합 P1-3: 반려 시 결재선 현재 단계를 직접 반려 상태로 종결하기 위한 매퍼(leave 와 동일 관례). */
     private final ApprovalLineMapper approvalLineMapper;
+    /** PRAFTA-003(기본근무타입-승인제): 승인 시점 화이트리스트 재검증(공용 cmm 빈, 앱 신청 경로와 판정 단일 출처). */
+    private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+    /** PRAFTA-003(기본근무타입-승인제): 승인 시점 반영 로직(§0 무회귀 대상 — 무수정 재사용). */
+    private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
 
     /**
      * 출퇴근 방법(METHOD) 기본값. SYS031 '01'(사용자/앱). 근태 보정 승인 시 METHOD 미전달(앱 관리자 경로)일 때
@@ -1257,59 +1263,9 @@ public class Attd07ServiceImpl implements Attd07Service {
             throw new ApiException(AttdErrorCode.ATTD_400_005);
         }
 
-        // 5-0. 2026-08-14: 근무타입 시점 적법성(effective-dating) 검증 — fail-closed(최종 방어선).
-        //      REQ 의 권위값(schCd/siteCd/workYmd)으로 "그 근무일에 유효한 버전이 있고 사용중인지"를 본다.
-        //      null = 유효 버전 없음(최초 적용일 이전 날짜 또는 SCH_CD 부재), 'N' = 그날 미사용 기간 → 둘 다 차단.
-        //      발의 측(앱 registerSchedModify)에도 동일 가드가 있으나, 발의 이후 근무타입 적용일이 변경되는
-        //      경우와 구버전 앱/직접 호출로 들어온 기존 대기 요청까지 막으려면 승인 측 재검증이 필요하다.
-        //      판정은 웹 Attd_05 validateSchCell(BEFORE_CREATE / USE_YN_N)과 동형(공용 매퍼 단일 출처).
-        //      upsert(work_plan 갱신) 이전에 차단하여 레코드 오염을 막는다.
-        String effUseYn = scheduleGuardMapper.selectEffectiveSchUseYn(
-                param.gvCmpnyCd(), reqRow.siteCd(), schCd, reqRow.workYmd());
-        if (!"Y".equals(effUseYn)) {
-            log.warn("sched-modify approve rejected - 근무일 기준 유효하지 않은 근무타입. reqId={}, workYmd={}, schCd={}, effUseYn={}",
-                    reqRow.reqId(), reqRow.workYmd(), schCd, effUseYn);
-            throw new ApiException(AttdErrorCode.ATTD_400_203);
-        }
-
-        // 5-1. [D15] upsert 로 덮어쓰기 전에 "변경 전 근무계획 코드"를 캡처한다(같은 트랜잭션).
-        //      이 값을 PROCESS_COMMENT 마커에 직렬화하여, 처리 이력에서 변경 전→후 스케줄을 복원한다(무마이그).
-        //      해당 일자에 근무계획이 없으면 null → 마커는 OLD= 빈값(변경 전 "없음")으로 남는다.
-        String oldWorkPlanCd = attd07Mapper.selectUserWorkPlanCd(
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
-
-        // 5-2. prafta-com-008-D: 교대 잠금 가드 — 해당 근무일이 교대팀 소속 구간이면 스케줄수정 승인(반영)을 차단한다.
-        //      관리자 예외 없음(요구 1-2: 관리자·사용자 모두 변경 불가). REQ 의 권위값(site/user/workYmd) 사용.
-        //      upsert(work_plan 갱신) 이전에 차단하여 레코드 변경을 막는다.
-        shiftMembershipService.assertNotShiftLocked(
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd());
-
-        // 5-3. 교차일 겹침 가드 — 승인(반영) 시 앞뒤 근무일의 스케줄과 시각이 겹치면(야간 오버나이트 포함)
-        //      차단한다. work_plan upsert 이전에 검사하여 레코드 변경을 막는다. 단건 처리이므로 pending 없음(null).
-        if (scheduleOverlapGuardService.hasCrossDayOverlap(
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, null)) {
-            log.warn("sched-modify approve rejected - 교차일 스케줄 겹침. reqId={}, workYmd={}, schCd={}",
-                    reqRow.reqId(), reqRow.workYmd(), schCd);
-            throw new ApiException(AttdErrorCode.ATTD_400_115);
-        }
-
-        // 5-4. E3(당일분모 전환, W4): 연차 잠금일(확정 연차 전 단위 + 미결 시간차 신청) 스케줄수정 승인 하드
-        //      차단(ATTD_400_164). 시간차 분모(E1)가 당일 배정 스케줄이므로, 잠금일의 스케줄을 바꾸면 차감
-        //      분모가 훼손된다. 판정 입력은 REQ 권위값(reqRow.siteCd/userCd/workYmd)만 사용(body 위조 무력).
-        //      OT 잠금은 본 가드의 대상이 아니다(기존 경로 정책 불변 — 연차 잠금만 신설 차단).
-        //      관리자 탈출구 = 연차 취소·처리 → 재승인. upsert(work_plan 갱신) 이전에 차단.
-        List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> leaveLocks =
-                scheduleChangeGuardService.findLockedDays(
-                        param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), List.of(reqRow.workYmd()));
-        boolean leaveLocked = leaveLocks.stream()
-                .anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.LEAVE);
-        if (leaveLocked) {
-            log.warn("sched-modify approve rejected - 연차 잠금일(확정/미결 시간차) 스케줄 변경 차단(E3). reqId={}, workYmd={}",
-                    reqRow.reqId(), reqRow.workYmd());
-            // F-7(2026-08-06): 잠금 원인(확정 연차 / 미결 시간차)에 맞는 문구를 동적 주입한다(코드 번호는 유지).
-            throw new ApiException(AttdErrorCode.ATTD_400_164,
-                    com.prafta.common.cmm.schedule.ScheduleLockMessages.scheduleChangeBlockedMessage(leaveLocks));
-        }
+        // 5-0~5-4. 반영 가드 4종(효력검증/교대잠금/교차일겹침/연차잠금) — PRAFTA-001(2026-08-27) 순수 추출.
+        //   work_plan upsert 이전에 검사하여 레코드 오염을 막는다(추출 전후 실행 순서·시점·throw 지점 무변경).
+        validateSchedModifyReflectGuards(param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd);
 
         // 6. 근태결재선통합 P1-4(§0-3): 결재선 단계 전진. 최종 단계일 때만 아래 work_plan upsert/REQ 를 반영한다.
         //    중간 단계면 REQ_STATUS·근무계획 모두 그대로 두고(다음 결재자 대기) 여기서 반환한다.
@@ -1321,9 +1277,10 @@ public class Attd07ServiceImpl implements Attd07Service {
             return;
         }
 
-        // 6-1. tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert (D1/D2).
-        attd07Mapper.upsertUserWorkPlan(UpsertUserWorkPlanCommand.of(
-                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, param.gvUserCd()));
+        // 6-1. [D15] 변경 전 WORK_PLAN_CD 캡처 → tb_user_work_plan 의 (cmpny, site, user, ymd) 한 칸
+        //      WORK_PLAN_CD 를 SCH_CD 로 upsert(D1/D2) — PRAFTA-001(2026-08-27) 순수 추출.
+        String oldWorkPlanCd = applySchedModifyWorkPlan(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.workYmd(), schCd, param.gvUserCd());
 
         // 7. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향(REQ_STATUS='01' 가드). 0행이면 동시 처리 충돌 → 롤백.
         //    [D15] 승인 마커: 'SCHED_MODIFY_APPROVED:OLD=<oldWorkPlanCd>' (oldWorkPlanCd null 이면 빈값).
@@ -1350,6 +1307,80 @@ public class Attd07ServiceImpl implements Attd07Service {
         } catch (Exception e) {
             log.error("스케줄 수정 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
         }
+    }
+
+    /**
+     * PRAFTA-001(2026-08-27, 스케줄수정 자체근태승인 반영누락 결함수정) - 스케줄 수정 반영 가드 4종
+     * (효력검증 + 교대잠금 + 교차일겹침 + 연차잠금)을 검증한다. 정상 승인 경로
+     * ({@link #approveSchedModifyRequest}) 전용으로 순수 추출됐다(PRAFTA-004(2026-08-27)로 자체근태승인
+     * 즉시확정 경로는 죽은 코드로 판정되어 제거됨 — 동작 무변경).
+     *
+     * <p>위반 시 throw(반환값 없음). work_plan upsert 이전에 호출해 레코드 오염을 막는다.
+     */
+    private void validateSchedModifyReflectGuards(String cmpnyCd, String siteCd, String userCd,
+                                                   String workYmd, String schCd) {
+
+        // 5-0. 2026-08-14: 근무타입 시점 적법성(effective-dating) 검증 — fail-closed(최종 방어선).
+        //      REQ 의 권위값(schCd/siteCd/workYmd)으로 "그 근무일에 유효한 버전이 있고 사용중인지"를 본다.
+        //      null = 유효 버전 없음(최초 적용일 이전 날짜 또는 SCH_CD 부재), 'N' = 그날 미사용 기간 → 둘 다 차단.
+        //      발의 측(앱 registerSchedModify)에도 동일 가드가 있으나, 발의 이후 근무타입 적용일이 변경되는
+        //      경우와 구버전 앱/직접 호출로 들어온 기존 대기 요청까지 막으려면 승인 측 재검증이 필요하다.
+        //      판정은 웹 Attd_05 validateSchCell(BEFORE_CREATE / USE_YN_N)과 동형(공용 매퍼 단일 출처).
+        //      upsert(work_plan 갱신) 이전에 차단하여 레코드 오염을 막는다.
+        String effUseYn = scheduleGuardMapper.selectEffectiveSchUseYn(cmpnyCd, siteCd, schCd, workYmd);
+        if (!"Y".equals(effUseYn)) {
+            log.warn("sched-modify reflect rejected - 근무일 기준 유효하지 않은 근무타입. workYmd={}, schCd={}, effUseYn={}",
+                    workYmd, schCd, effUseYn);
+            throw new ApiException(AttdErrorCode.ATTD_400_203);
+        }
+
+        // 5-2. prafta-com-008-D: 교대 잠금 가드 — 해당 근무일이 교대팀 소속 구간이면 스케줄수정 승인(반영)을 차단한다.
+        //      관리자 예외 없음(요구 1-2: 관리자·사용자 모두 변경 불가). upsert(work_plan 갱신) 이전에 차단.
+        shiftMembershipService.assertNotShiftLocked(cmpnyCd, siteCd, userCd, workYmd);
+
+        // 5-3. 교차일 겹침 가드 — 승인(반영) 시 앞뒤 근무일의 스케줄과 시각이 겹치면(야간 오버나이트 포함)
+        //      차단한다. work_plan upsert 이전에 검사하여 레코드 변경을 막는다. 단건 처리이므로 pending 없음(null).
+        if (scheduleOverlapGuardService.hasCrossDayOverlap(cmpnyCd, siteCd, userCd, workYmd, schCd, null)) {
+            log.warn("sched-modify reflect rejected - 교차일 스케줄 겹침. workYmd={}, schCd={}", workYmd, schCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_115);
+        }
+
+        // 5-4. E3(당일분모 전환, W4): 연차 잠금일(확정 연차 전 단위 + 미결 시간차 신청) 스케줄수정 승인 하드
+        //      차단(ATTD_400_164). 시간차 분모(E1)가 당일 배정 스케줄이므로, 잠금일의 스케줄을 바꾸면 차감
+        //      분모가 훼손된다. OT 잠금은 본 가드의 대상이 아니다(기존 경로 정책 불변 — 연차 잠금만 신설 차단).
+        //      관리자 탈출구 = 연차 취소·처리 → 재승인. upsert(work_plan 갱신) 이전에 차단.
+        List<com.prafta.common.cmm.schedule.vo.ScheduleLockVO> leaveLocks =
+                scheduleChangeGuardService.findLockedDays(cmpnyCd, siteCd, userCd, List.of(workYmd));
+        boolean leaveLocked = leaveLocks.stream()
+                .anyMatch(l -> l.getReason() == com.prafta.common.cmm.schedule.vo.ScheduleLockVO.Reason.LEAVE);
+        if (leaveLocked) {
+            log.warn("sched-modify reflect rejected - 연차 잠금일(확정/미결 시간차) 스케줄 변경 차단(E3). workYmd={}", workYmd);
+            // F-7(2026-08-06): 잠금 원인(확정 연차 / 미결 시간차)에 맞는 문구를 동적 주입한다(코드 번호는 유지).
+            throw new ApiException(AttdErrorCode.ATTD_400_164,
+                    com.prafta.common.cmm.schedule.ScheduleLockMessages.scheduleChangeBlockedMessage(leaveLocks));
+        }
+    }
+
+    /**
+     * PRAFTA-001(2026-08-27) - 변경 전 WORK_PLAN_CD 를 캡처한 뒤 tb_user_work_plan 의 (cmpny, site,
+     * user, ymd) 한 칸 WORK_PLAN_CD 를 SCH_CD 로 upsert 한다(D1/D2). 정상 승인 경로
+     * ({@link #approveSchedModifyRequest}) 전용으로 순수 추출됐다(PRAFTA-004(2026-08-27)로 자체근태승인
+     * 즉시확정 경로는 죽은 코드로 판정되어 제거됨 — 동작 무변경).
+     *
+     * @return 변경 전 WORK_PLAN_CD(마커 직렬화용, 없으면 null)
+     */
+    private String applySchedModifyWorkPlan(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                             String schCd, String actorUserCd) {
+
+        // [D15] upsert 로 덮어쓰기 전에 "변경 전 근무계획 코드"를 캡처한다(같은 트랜잭션).
+        //      이 값을 PROCESS_COMMENT 마커에 직렬화하여, 처리 이력에서 변경 전→후 스케줄을 복원한다(무마이그).
+        //      해당 일자에 근무계획이 없으면 null → 마커는 OLD= 빈값(변경 전 "없음")으로 남는다.
+        String oldWorkPlanCd = attd07Mapper.selectUserWorkPlanCd(cmpnyCd, siteCd, userCd, workYmd);
+
+        attd07Mapper.upsertUserWorkPlan(UpsertUserWorkPlanCommand.of(
+                cmpnyCd, siteCd, userCd, workYmd, schCd, actorUserCd));
+
+        return oldWorkPlanCd;
     }
 
     @Override
@@ -1444,6 +1475,226 @@ public class Attd07ServiceImpl implements Attd07Service {
                     param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), false, param.gvUserCd());
         } catch (Exception e) {
             log.error("스케줄 수정 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
+    }
+
+    // ============================================================
+    // PRAFTA-003(기본근무타입-승인제, 2026-08-26) - 기본 근무타입 변경 요청(REQ_TYPE='14') 승인/반려
+    //   웹 Attd_10 신규 탭과 앱 관리자 승인 인박스(AppAdminApprovalServiceImpl)가 공용으로 호출한다.
+    //   특정 근무일에 종속되지 않으므로 마감/교차일 겹침/shift 잠금 가드는 의도적으로 생략한다(웹 문서 §4).
+    // ============================================================
+
+    /**
+     * [기본근무타입-승인제] 승인 시 PROCESS_COMMENT 에 저장하는 구조화 마커의 접두.
+     * 전체 형식은 'DEFAULT_SCH_APPROVED:OLD=<변경 전 DEFAULT_SCH_CD>' 이며 사용자에게 노출하지 않는다
+     * (SCHED_MODIFY_APPROVED_MARKER_PREFIX 와 동일 관례).
+     */
+    private static final String DEFAULT_SCH_APPROVED_MARKER_PREFIX = "DEFAULT_SCH_APPROVED:OLD=";
+
+    @Override
+    @Transactional
+    public void approveDefaultSchChangeRequest(ApproveDefaultSchChangeRequestParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
+        // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
+        UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
+        if (reqRow == null) {
+            log.warn("default-sch-change approve rejected - REQ not found. reqId={}, cmpnyCd={}", param.reqId(), param.gvCmpnyCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_001);
+        }
+
+        // SEC-018: REQ_TYPE 가드. 본 endpoint 는 기본 근무타입 변경 요청('14')만 처리한다.
+        if (!AttdReqTypeUtils.isDefaultSchChangeReqType(reqRow.reqType())) {
+            log.warn("default-sch-change approve rejected - wrong REQ_TYPE. reqId={}, reqType={}",
+                    reqRow.reqId(), reqRow.reqType());
+            throw new ApiException(AttdErrorCode.ATTD_400_006);
+        }
+
+        // 근태결재선통합 P1-4 패턴: 결재선 현재 단계 소유권 게이트. 권한 판정 대상 부서/사업장은
+        //   클라 body 가 아닌 REQ 의 권위값(reqRow)을 사용한다.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
+
+        // 2. 대기(pending '01' 신청) 상태의 요청만 승인 가능 (UPDATE 측에서도 REQ_STATUS='01' 가드).
+        if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
+            log.warn("default-sch-change approve rejected - REQ already processed. reqId={}, status={}",
+                    reqRow.reqId(), reqRow.reqStatus());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 3. body 의 키 필드가 저장된 REQ row 와 일치하는지 검증한다(변조/IDOR 차단).
+        //    이 요청 유형은 workYmd/workSeq/nodeCd 가 무의미하므로 siteCd/userCd 만 검증한다.
+        if (StringEqualsUtils.isMismatched(param.userCd(), reqRow.userCd())
+            || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())) {
+            log.warn("default-sch-change approve rejected - body/REQ mismatch. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 4. 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 로 재확인한다.
+        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+        if (userExists <= 0) {
+            log.warn("default-sch-change approve rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 5. 목표 근무타입 코드는 서버 권위 값(REQ row 의 SCH_CD)만 사용한다(클라 미신뢰).
+        String schCd = reqRow.schCd();
+        if (schCd == null || schCd.isEmpty()) {
+            log.warn("default-sch-change approve rejected - REQ.SCH_CD missing. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 6. 근태결재선통합 P1-4 패턴: 결재선 단계 전진. 최종 단계일 때만 아래 반영/REQ 전이를 수행한다.
+        //    중간 단계면 REQ_STATUS·DEFAULT_SCH_CD 모두 그대로 두고(다음 결재자 대기) 여기서 반환한다.
+        boolean finalStep = approvalStepGateService.advanceOrFinalize(
+                param.gvCmpnyCd(), reqRow.reqId(), currentStep, null, param.gvUserCd());
+        if (!finalStep) {
+            log.info("기본 근무타입 변경 요청 결재선 중간 단계 승인(반영 보류). reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
+            return;
+        }
+
+        // 5-1/6-1/6-2. 화이트리스트 재검증(웹 문서 §3 "이중 검증") → 변경 전 DEFAULT_SCH_CD 캡처 →
+        //   실제 반영(§0 무회귀 대상: applyDefaultSchChange 자체는 무수정 재사용). private 메서드로
+        //   추출됐다(reflectDefaultSchChange) — 이 경로의 동작/순서는 무변경.
+        String oldDefaultSchCd = reflectDefaultSchChange(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), schCd, reqRow.reqId());
+
+        // 7. TB_USER_ATTD_REQ UPDATE - 정확히 1행만 영향(REQ_STATUS='01' 가드). 0행이면 동시 처리 충돌 → 롤백.
+        String approveMarker = DEFAULT_SCH_APPROVED_MARKER_PREFIX
+                + (oldDefaultSchCd == null ? "" : oldDefaultSchCd);
+        int updated = attd07Mapper.updateUserSchedModifyReqApprove(
+                reqRow.reqId(), param.gvCmpnyCd(), reqRow.siteCd(), param.gvUserCd(), approveMarker);
+        if (updated == 0) {
+            log.warn("default-sch-change approve rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        log.info("기본 근무타입 변경 요청 승인 완료. reqId={}, userCd={}, siteCd={}, schCd={}",
+                reqRow.reqId(), reqRow.userCd(), reqRow.siteCd(), schCd);
+
+        // afterCommit 격리 — 신청자 본인에게 승인 결과 통보(스케줄 수정 승인과 동일 경로 재사용).
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), true, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("기본 근무타입 변경 승인 결과 통보 PUSH 적재 hook 실패(승인 영향 없음). reqId={}", reqRow.reqId(), e);
+        }
+    }
+
+    /**
+     * 기본 근무타입 변경 반영 공통 로직(PRAFTA-003 보안수정 2026-08-27 추출) - 정상 결재 경로
+     * ({@link #approveDefaultSchChangeRequest}) 전용으로 순수 추출됐다(PRAFTA-004(2026-08-27)로
+     * 자체근태승인 즉시확정 경로는 죽은 코드로 판정되어 제거됨 — 동작 무변경).
+     *
+     * <p>화이트리스트 재검증(웹 문서 §3 "이중 검증") 후 변경 전 DEFAULT_SCH_CD 를 캡처하고,
+     * §0 무회귀 대상인 {@code DefaultSchGenService.applyDefaultSchChange} 로 실제 반영한다
+     * (그 메서드 자체는 무수정 재사용 — 내부 E3 잠금 가드 그대로 보존).
+     *
+     * @return 변경 전 DEFAULT_SCH_CD(마커 직렬화용, 없으면 null)
+     */
+    private String reflectDefaultSchChange(String cmpnyCd, String siteCd, String userCd, String schCd, String reqId) {
+        if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, schCd)) {
+            log.warn("default-sch-change reflect rejected - 화이트리스트 재검증 실패. reqId={}, siteCd={}, schCd={}",
+                    reqId, siteCd, schCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_140);
+        }
+
+        // 변경 전 DEFAULT_SCH_CD 캡처(마커 직렬화용) → applyDefaultSchChange 로 실제 반영.
+        String oldDefaultSchCd = attd07Mapper.selectUserDefaultSchCdForApproval(cmpnyCd, userCd);
+        defaultSchGenService.applyDefaultSchChange(cmpnyCd, siteCd, userCd, schCd);
+        return oldDefaultSchCd;
+    }
+
+    @Override
+    @Transactional
+    public void rejectDefaultSchChangeRequest(RejectDefaultSchChangeRequestParam param) {
+
+        // SEC-017 - 사업장 접근 인가(User_03 원장 기반, 구 토큰 사업장 등식 가드 대체).
+        siteAccessService.assertSiteAccess(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), param.siteCd());
+
+        // 1. 회사 scope 으로 권위 있는 REQ row 를 로드한다. 없으면 거부한다.
+        UserAttdReqResult reqRow = attd07Mapper.selectUserAttdReqByReqId(param.reqId(), param.gvCmpnyCd());
+        if (reqRow == null) {
+            log.warn("default-sch-change reject rejected - REQ not found. reqId={}, cmpnyCd={}", param.reqId(), param.gvCmpnyCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_001);
+        }
+
+        // SEC-018: REQ_TYPE 가드. 본 endpoint 는 기본 근무타입 변경 요청('14')만 반려한다.
+        if (!AttdReqTypeUtils.isDefaultSchChangeReqType(reqRow.reqType())) {
+            log.warn("default-sch-change reject rejected - wrong REQ_TYPE. reqId={}, reqType={}",
+                    reqRow.reqId(), reqRow.reqType());
+            throw new ApiException(AttdErrorCode.ATTD_400_006);
+        }
+
+        // 근태결재선통합 P1-4 패턴: 결재선 현재 단계 소유권 게이트(REQ 권위 부서 기준).
+        //   반려는 결재선 단계 무관 즉시 REQ 전체 반려 — 현재 단계 소유권 검증만 이 게이트로 수행.
+        ApprovalStepVO currentStep = approvalStepGateService.resolveProcessableStep(
+                param.gvCmpnyCd(), reqRow.reqId(), reqRow.siteCd(), reqRow.nodeCd(),
+                param.gvUserCd(), param.gvAuthCd(), param.gvUserCd());
+
+        // 2. 대기('01' 신청) 상태의 요청만 반려 가능 (UPDATE 측에서도 REQ_STATUS='01' 가드).
+        if (!AttdReqTypeUtils.REQ_STATUS_REQUESTED.equals(reqRow.reqStatus())) {
+            log.warn("default-sch-change reject rejected - REQ already processed. reqId={}, status={}",
+                    reqRow.reqId(), reqRow.reqStatus());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 3. body 의 키 필드가 저장된 REQ row 와 일치하는지 검증한다(변조/IDOR 차단). siteCd/userCd 만 검증.
+        if (StringEqualsUtils.isMismatched(param.userCd(), reqRow.userCd())
+            || StringEqualsUtils.isMismatched(param.siteCd(), reqRow.siteCd())) {
+            log.warn("default-sch-change reject rejected - body/REQ mismatch. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 4. 대상 사용자가 호출자의 회사/사이트 scope 안에 실재하는지 DB 로 재확인한다.
+        int userExists = attd07Mapper.selectUserExistInCmpnySite(
+                param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+        if (userExists <= 0) {
+            log.warn("default-sch-change reject rejected - target user not in scope. cmpnyCd={}, siteCd={}, userCd={}",
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd());
+            throw new ApiException(AttdErrorCode.ATTD_404_011);
+        }
+
+        // 5. 반려 사유 필수(§9.5). Param.from 에서 이미 @NotBlank/rejectReason 비어있음 검증되나
+        //    defence-in-depth 로 service 에서도 재확인한다.
+        if (param.rejectReason() == null || param.rejectReason().isBlank()) {
+            log.warn("default-sch-change reject rejected - empty rejectReason. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_400_005);
+        }
+
+        // 6. TB_USER_ATTD_REQ UPDATE(반려 '03', 사유 기록). TB_USER.DEFAULT_SCH_CD 는 미변경(설계상 원래
+        //    건드리지 않으므로 자동 충족). 근태/스케줄 수정 반려와 동일 command/mapper 재사용.
+        int updated = attd07Mapper.updateUserAttdReqReject(RejectUserAttdRequestCommand.from(param));
+        if (updated == 0) {
+            log.warn("default-sch-change reject rejected - REQ status changed concurrently. reqId={}", reqRow.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        // 근태결재선통합 P1-4 패턴: 결재선 현재 단계도 반려로 종결(REQ 는 위에서 이미 전체 반려됨).
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(param.gvCmpnyCd(), reqRow.reqId(),
+                currentStep.getApprovalStep(), currentStep.getApprovalStatus(),
+                APPROVAL_STEP_REJECTED, param.rejectReason(), param.gvUserCd());
+        if (stepUpdated == 0) {
+            log.warn("default-sch-change reject rejected - approval step changed concurrently. reqId={}, step={}",
+                    reqRow.reqId(), currentStep.getApprovalStep());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+
+        log.info("기본 근무타입 변경 요청 반려 완료. reqId={}, userCd={}, siteCd={}",
+                reqRow.reqId(), reqRow.userCd(), reqRow.siteCd());
+
+        // afterCommit 격리 — 신청자 본인에게 반려 결과 통보(스케줄 수정 반려와 동일 경로 재사용).
+        try {
+            approvalResultNotiService.notifyAttdResult(
+                    param.gvCmpnyCd(), reqRow.siteCd(), reqRow.userCd(), reqRow.reqId(), false, param.gvUserCd());
+        } catch (Exception e) {
+            log.error("기본 근무타입 변경 반려 결과 통보 PUSH 적재 hook 실패(반려 영향 없음). reqId={}", reqRow.reqId(), e);
         }
     }
 

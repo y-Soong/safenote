@@ -61,16 +61,6 @@ public interface AppReq09Mapper {
                                        @Param("userCd") String userCd);
 
     /**
-     * 'Y'+노드관리자 즉시 자동승인(D4) / 'N' 전 단계 본인 자동승인 시 REQ_STATUS 갱신.
-     * tb_user_attd_req.REQ_STATUS 와 처리자/처리시각만 갱신한다.
-     */
-    int updateReqStatus(@Param("cmpnyCd") String cmpnyCd,
-                        @Param("reqId") String reqId,
-                        @Param("reqStatus") String reqStatus,
-                        @Param("processUserCd") String processUserCd,
-                        @Param("processComment") String processComment);
-
-    /**
      * 근태결재선통합 P1-2(§0-5 3번째 폴백): approverUserCds/presetId 둘 다 없을 때 신청자 소속 노드의
      * 기본 결재자(정 관리자 MAIN_ADMIN_CD 우선, 없으면 부 관리자 SUB_ADMIN_CD).
      *

@@ -9,7 +9,9 @@ import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import com.prafta.app.mypage.mypage01.application.command.DefaultSchChangeReqInsertCommand;
 import com.prafta.app.mypage.mypage01.application.param.ApprovalCandidateParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileSendParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileVerifyParam;
@@ -20,6 +22,7 @@ import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateItem;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
+import com.prafta.app.mypage.mypage01.dto.response.DefaultSchChangeRequestResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileVerifyResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MypageProfileEditResponse;
@@ -34,6 +37,7 @@ import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.app.mypage.mypage01.result.UserProfileResult;
 import com.prafta.app.mypage.mypage01.service.AppMypage01Service;
+import com.prafta.app.req.req09.service.AttdApprovalLineService;
 import com.prafta.common.cmm.sms.AuthCodeSmsDispatcher;
 import com.prafta.common.cmm.sms.policy.SmsRateLimitGuard;
 import com.prafta.common.cmm.sms.policy.SmsSendContext;
@@ -49,6 +53,7 @@ import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.common.security.crypto.HmacSigner;
 import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.PasswordHasher;
+import com.prafta.web.attd.attd07.util.AttdReqTypeUtils;
 
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
@@ -79,13 +84,16 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     private final SmsVerifyGuard smsVerifyGuard;
 
     // F-8-2: 본인 기본 근무타입 자기변경 — 검증/자동생성 공용 서비스(common.cmm.sch). 웹 User01ServiceImpl 과 동일 재사용.
+    // PRAFTA-002(승인제 전환) 이후 defaultSchGenService/defaultSchGenMapper 의 즉시반영 호출부는 제거됐으며,
+    // defaultSchOptionService(화이트리스트 검증)만 신청 시점에 계속 사용한다. 승인 시점 반영은
+    // Attd07ServiceImpl.approveDefaultSchChangeRequest(PRAFTA-003)에서 defaultSchGenService 를 재사용한다.
     private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
-    private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
     private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
+    /** PRAFTA-002: 결재 분기/라인 INSERT 공용 서비스(req07 과 동일 재사용, 같은 @Transactional 참여). */
+    private final AttdApprovalLineService attdApprovalLineService;
 
-    // F-8-2: 자동생성 트리거 운영 게이트(LoginServiceImpl/User01ServiceImpl 과 동일 프로퍼티, 기본값 true).
-    @org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:true}")
-    private boolean defaultSchGenEnabled;
+    /** PRAFTA-002 F15: advisory lock 타임아웃(초). req07 DUP_LOCK_TIMEOUT_SEC 과 동일 정책값. */
+    private static final int DUP_LOCK_TIMEOUT_SEC = 3;
 
     // 휴대폰 정규화 후 허용 자리수(10~11). 정책 §3.2.
     private static final int PHONE_MIN_DIGITS = 10;
@@ -663,18 +671,30 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     }
 
     /**
-     * LoginServiceImpl.setDefaultSch(로그인 게이트)·User01ServiceImpl.updateMyDefaultSch(웹 내정보)와
-     * 동일 패턴: 화이트리스트 검증 → DEFAULT_SCH_CD 저장 → 즉시 자동생성(실패는 격리).
+     * PRAFTA-002(기본근무타입-승인제, 2026-08-26): 즉시 반영 → 요청 등록 전환.
+     *
+     * <p>"승인 전 미반영" 설계 원칙(웹 문서 §3) — 이 메서드는 {@code TB_USER_ATTD_REQ} 에 요청
+     * 레코드만 INSERT 하고 결재선을 적용한다. {@code TB_USER.DEFAULT_SCH_CD}/{@code TB_USER_WORK_PLAN}
+     * 등 실제 반영 대상은 전혀 건드리지 않는다 — 반영은 승인 시점(Attd07Service.approveDefaultSchChangeRequest)
+     * 에서만 수행된다(§0 무회귀 대상: applyDefaultSchChange 자체는 무수정 재사용).
+     *
+     * <p>req07(AppReq07ServiceImpl.registerSchedModify)와 동일 골격: 구조 검증 → 화이트리스트 검증 →
+     * advisory lock 획득 → 중복 신청 차단(P10) → INSERT → 결재선 적용(AttdApprovalLineService 재사용) → lock 해제.
      */
     @Override
     @Transactional(rollbackFor = Exception.class)
-    public void updateDefaultSch(UpdateDefaultSchParam param) {
+    public DefaultSchChangeRequestResponse updateDefaultSch(UpdateDefaultSchParam param) {
         String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
         String userCd = param.tokenInfo().gv_userCd();
+        String nodeCd = param.tokenInfo().gv_nodeCd();
 
+        // ----- 구조 검증 -----
         String defaultSchCd = trimToNull(param.defaultSchCd());
         if (defaultSchCd == null) {
             throw new ApiException(AttdErrorCode.ATTD_400_141);
+        }
+        if (!StringUtils.hasText(param.reqReason())) {
+            throw new ApiException(AttdErrorCode.ATTD_400_096);
         }
 
         // 사업장은 세션에서만 도출(본인 사업장 변경은 이 흐름 범위 밖).
@@ -683,28 +703,68 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
             throw new ApiException(AttdErrorCode.ATTD_400_140);
         }
 
-        // 화이트리스트 검증(클라 제출값 신뢰 금지).
+        // 화이트리스트 검증(클라 제출값 신뢰 금지). 승인 시점에도 재검증(이중 검증, 웹 문서 §3).
         if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, defaultSchCd)) {
             throw new ApiException(AttdErrorCode.ATTD_400_140);
         }
 
-        int updated = defaultSchGenMapper.updateUserDefaultSch(cmpnyCd, userCd, defaultSchCd, userCd);
-        if (updated == 0) {
-            throw new ApiException(CommonErrorCode.COMMON_400_004);
-        }
-
-        // 즉시 자동생성(미래 스케줄 갱신) — 실패는 격리(사용자 저장에 영향 없음, 기존 관례 승계).
-        if (defaultSchGenEnabled) {
-            try {
-                defaultSchGenService.applyDefaultSchChange(cmpnyCd, siteCd, userCd, defaultSchCd);
-            } catch (Exception e) {
-                log.error("앱 본인 기본 근무타입 변경 자동생성 실패(설정은 저장됨) - userCd={}, defaultSchCd={}",
-                        userCd, defaultSchCd, e);
+        // ----- F15 advisory lock(중복 차단 race window 직렬화) -----
+        String lockKey = "ATTD_REQ:" + cmpnyCd + ":" + siteCd + ":" + userCd + ":"
+                + AttdReqTypeUtils.REQ_TYPE_DEFAULT_SCH_CHANGE;
+        acquireDupLock(lockKey);
+        String reqId;
+        try {
+            // ----- 중복 요청 차단 (P10) — WORK_YMD 조건 없음(이 요청 유형은 근무일 무관). -----
+            int dup = appMypage01Mapper.countPendingDefaultSchChangeReq(cmpnyCd, siteCd, userCd);
+            if (dup > 0) {
+                throw new ApiException(AttdErrorCode.ATTD_400_090);
             }
+
+            // ----- INSERT -----
+            reqId = appMypage01Mapper.selectNextDefaultSchReqId(cmpnyCd);
+            DefaultSchChangeReqInsertCommand cmd = new DefaultSchChangeReqInsertCommand(
+                    reqId, cmpnyCd, siteCd, userCd, nodeCd, defaultSchCd, param.reqReason(), userCd);
+            appMypage01Mapper.insertDefaultSchChangeReq(cmd);
+
+            // ----- 결재선 적용(req07 과 동일 재사용 — approverUserCds/presetId 미지정 → 기본 결재자 폴백) -----
+            // PRAFTA-004(2026-08-27, 결재선 필수화): applyApprovalFlow 는 이제 결재선 생성만 수행하며
+            //   신청 즉시 REQ_STATUS 를 확정하는 경로가 없다(PRAFTA-001) — 즉시확정 전용 반영 훅
+            //   (reflectSelfApprovedDefaultSchChange) 호출은 더 이상 필요 없다(죽은 코드로 판정되어
+            //   제거됨 — 실제 반영은 항상 approveDefaultSchChangeRequest 를 통해서만).
+            attdApprovalLineService.applyApprovalFlow(
+                    cmpnyCd, siteCd, userCd, reqId, List.of(), null, userCd);
+        } finally {
+            releaseDupLock(lockKey);
         }
 
-        log.info("앱 본인 기본 근무타입 변경(자기결정) 완료 - userCd={}, siteCd={}, defaultSchCd={}",
-                userCd, siteCd, defaultSchCd);
+        log.info("앱 본인 기본 근무타입 변경 요청 등록(승인제) - reqId={}, userCd={}, siteCd={}, defaultSchCd={}",
+                reqId, userCd, siteCd, defaultSchCd);
+
+        return DefaultSchChangeRequestResponse.builder()
+                .reqId(reqId)
+                .reqStatus(AttdReqTypeUtils.REQ_STATUS_REQUESTED)
+                .build();
+    }
+
+    /**
+     * F15 advisory lock 획득(AppReq07ServiceImpl.acquireDupLock 미러). 타임아웃/오류면 동시 처리로 보고
+     * ATTD_400_090(중복 요청)으로 변환.
+     */
+    private void acquireDupLock(String lockKey) {
+        Integer got = appMypage01Mapper.getAdvisoryLock(lockKey, DUP_LOCK_TIMEOUT_SEC);
+        if (got == null || got != 1) {
+            log.info("[PRAFTA-002] 중복차단 advisory lock 미획득 — lockKey={}, got={}", lockKey, got);
+            throw new ApiException(AttdErrorCode.ATTD_400_090);
+        }
+    }
+
+    /** advisory lock 해제(예외 무시 — 세션 종료 시 자동 해제됨). */
+    private void releaseDupLock(String lockKey) {
+        try {
+            appMypage01Mapper.releaseAdvisoryLock(lockKey);
+        } catch (Exception e) {
+            log.warn("[PRAFTA-002] 중복차단 advisory lock 해제 실패(무시) — lockKey={}", lockKey, e);
+        }
     }
 
     /** 세션 클레임(gv_siteCd) 우선, 비어 있으면 DB 조회로 폴백(레거시 토큰 대비, setDefaultSch 패턴 미러). */

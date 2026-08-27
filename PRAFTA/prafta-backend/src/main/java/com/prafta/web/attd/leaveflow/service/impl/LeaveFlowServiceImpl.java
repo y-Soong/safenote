@@ -404,11 +404,12 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 reqId, cmpny, site, user, reqStatus, p.reason(), workYmd, reqNodeCd,
                 workYmd, startTime, workYmd, endTime, p.leaveType(), leaveDays, user));
 
-        // 6) 결재 Y → 라인 일괄 생성. 자기 승인 원칙(§9.5): 본인이 결재자인 단계는
-        //    소속 노드 자체근태승인(SELF_ATTD_APPRV_YN) ON + 본인이 그 노드 담당 정/부일 때만
-        //    자동승인('02'), 자격 미달이면 본인 지정 불가(ATTD_400_056).
-        boolean fullyAutoApproved = false;
-        // PRAFTA-COM-004 시나리오 A hook 용: 차례가 도래한(=STEP_APPLIED) 첫 수동 단계의 결재자/단계번호.
+        // 6) 결재 Y → 라인 일괄 생성. PRAFTA-002(2026-08-27, 결재선 필수화): "본인 + 자체근태승인
+        //    ON" 이어도 신청 즉시 자동확정하지 않는다. 본인 지정 자격 게이트(소속 노드 자체근태승인
+        //    ON + 본인이 그 노드 담당 정/부일 때만 지정 가능, 미달이면 ATTD_400_056)는 유지하되,
+        //    단계 생성은 self 여부와 무관하게 항상 첫 단계 APPLIED/나머지 WAIT 로 통일한다 — 본인이
+        //    결재선 1단계 approver 여도 명시적 승인 액션(2026-08-16 "관리자 본인결재 허용")이 필요하다.
+        // PRAFTA-COM-004 시나리오 A hook 용: 차례가 도래한(=STEP_APPLIED) 첫 단계의 결재자/단계번호.
         String turnApprover = null;
         int turnStep = -1;
         if (aprvRequired) {
@@ -429,39 +430,26 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
             boolean selfAllowed = "Y".equals(leaveFlowMapper.selectUserNodeSelfApproveYn(cmpny, user));
 
-            int currentIdx = -1; // 첫 수동(비-자동승인) 단계 인덱스
             for (int i = 0; i < approvers.size(); i++) {
                 boolean isSelf = user.equals(approvers.get(i));
                 if (isSelf && !selfAllowed) {
                     throw new ApiException(AttdErrorCode.ATTD_400_056);
                 }
-                if (!isSelf && currentIdx < 0) {
-                    currentIdx = i;
-                }
             }
             for (int i = 0; i < approvers.size(); i++) {
                 String approver = approvers.get(i);
-                boolean isSelf = user.equals(approver);
                 ApprovalStepVO s = new ApprovalStepVO();
                 s.setReqId(reqId);
                 s.setApprovalStep(i + 1);
                 s.setCmpnyCd(cmpny);
                 s.setApproverUserCd(approver);
-                if (isSelf) {
-                    s.setApprovalStatus(STEP_APPROVED); // 본인 + 자체근태승인 ON → 자동 승인
-                    s.setApprovalComment("자체근태승인 자동 승인");
-                } else {
-                    s.setApprovalStatus(i == currentIdx ? STEP_APPLIED : STEP_WAIT);
-                }
+                s.setApprovalStatus(i == 0 ? STEP_APPLIED : STEP_WAIT);
                 s.setInsertNo(user);
                 approvalLineMapper.insertApprovalStep(s);
             }
-            fullyAutoApproved = (currentIdx < 0); // 전 단계가 본인 자동승인 → 즉시 확정
-            if (currentIdx >= 0) {
-                // 차례가 도래한 첫 수동 단계(STEP_APPLIED) — 시나리오 A 발송 대상.
-                turnApprover = approvers.get(currentIdx);
-                turnStep = currentIdx + 1; // approvalStep 은 1-based
-            }
+            // 차례가 도래한 첫 단계(항상 index 0, self 포함) — 시나리오 A 발송 대상.
+            turnApprover = approvers.get(0);
+            turnStep = 1; // approvalStep 은 1-based
         }
 
         // 7) 차감 예약 (CONFIRMED) + 부여 USED_DAYS 동기화.
@@ -494,18 +482,17 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
         }
 
-        // 결재 Y인데 전 단계가 본인 자동승인이면 요청 즉시 확정(§9.5 자기 승인 원칙)
-        if (aprvRequired && fullyAutoApproved) {
-            leaveFlowMapper.updateReqStatus(cmpny, reqId, REQ_APPROVED, user, "자체근태승인 자동 승인");
-        }
+        // PRAFTA-002(2026-08-27): 결재 Y 는 이제 신청 즉시 확정되는 경로가 없다(본인 결재자 포함
+        //   전 건 정상 결재 단계로 생성 — §6 참조). REQ_STATUS 확정은 오직 approveStep(명시적 승인
+        //   API 호출)을 통해서만 이뤄진다.
         // prafta-com-008-E-2: 연차-스케줄 모델 전환 — work_plan 에 LEAVE_CD 를 더 이상 쓰지 않는다.
         //   출근 차단(§8.3)은 leave_use(CONFIRMED 종일) 존재 기준으로 판정한다(work_plan 은 SCH_CD 유지).
         //   따라서 위 insertLeaveUse 가 곧 차단 근거 — 별도 work_plan 연차 덮어쓰기 불필요.
 
         // PRAFTA-COM-004 PUSH 적재 hook (예외 격리 — 연차 신청 본 흐름에 영향 금지).
-        //  - 시나리오 A: 결재 Y + 차례 도래 단계(첫 수동)가 있을 때 그 결재자 1인에게.
-        //    fullyAutoApproved(전건 본인 자동승인)면 turnApprover=null → 미발송(D1).
-        //  - 시나리오 B: 순수 무결재(!aprvRequired) 즉시확정만. fullyAutoApproved 는 제외(D1).
+        //  - 시나리오 A: 결재 Y 이면 항상 첫 단계 결재자(self 포함) 1인에게 차례 도래 통보(PRAFTA-002
+        //    이후 turnApprover 는 approvers 가 비어있지 않은 한 항상 non-null).
+        //  - 시나리오 B: 순수 무결재(!aprvRequired) 즉시확정만.
         try {
             if (aprvRequired && turnApprover != null) {
                 leaveApprovalNotiService.notifyApprovalTurn(cmpny, site, user, reqId, turnStep, turnApprover, user);
@@ -833,12 +820,28 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         // PRAFTA-028 - 마감된 기간(신청자 부서)의 연차 결재 승인 차단
         ensureLeaveNotClosed(p.gvCmpnyCd(), req);
 
-        approvalLineMapper.updateStepStatus(p.gvCmpnyCd(), p.reqId(), p.approvalStep(), STEP_APPROVED, p.comment(), p.gvUserCd());
+        // 연차승인 동시성갭 보강(2026-08-27): 갱신 전 상태(APPLIED)를 WHERE 조건으로 명시하고
+        //   영향행수를 검사한다(attd07/ApprovalStepGateServiceImpl.advanceOrFinalize 동일 패턴).
+        //   지금까지는 MySQL 격리수준 + REQ_STATUS 낙관적 락이 동시 처리를 우연히 막고 있었을
+        //   뿐, 이 UPDATE 자체는 조건 없이 항상 성공했다.
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(p.gvCmpnyCd(), p.reqId(), p.approvalStep(),
+                STEP_APPLIED, STEP_APPROVED, p.comment(), p.gvUserCd());
+        if (stepUpdated == 0) {
+            log.warn("[leaveflow] 현재 단계 승인 갱신 실패(동시 처리 충돌/이미 처리됨). reqId={}, step={}",
+                    p.reqId(), p.approvalStep());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
 
         // 다음 대기('00') 단계로 진행(자기승인 자동승인 '02' 단계는 자동 skip). 없으면 최종 승인.
         Integer nextStep = approvalLineMapper.selectFirstWaitingStep(p.gvCmpnyCd(), p.reqId());
         if (nextStep != null) {
-            approvalLineMapper.updateStepStatus(p.gvCmpnyCd(), p.reqId(), nextStep, STEP_APPLIED, null, p.gvUserCd());
+            int nextUpdated = approvalLineMapper.updateStepStatusGuarded(p.gvCmpnyCd(), p.reqId(), nextStep,
+                    STEP_WAIT, STEP_APPLIED, null, p.gvUserCd());
+            if (nextUpdated == 0) {
+                log.warn("[leaveflow] 다음 단계 신청 전환 실패(동시 처리 충돌/이미 처리됨). reqId={}, nextStep={}",
+                        p.reqId(), nextStep);
+                throw new ApiException(AttdErrorCode.ATTD_409_001);
+            }
             // PRAFTA-COM-004 시나리오 A hook: 다음 단계로 차례가 도래한 결재자 1인에게 PUSH 적재(예외 격리).
             //  단계 번호↔결재자 매핑은 selectApprovalStep 으로 정확히 조회(인덱스 위치밀림 방지).
             try {
@@ -853,7 +856,15 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                         p.reqId(), nextStep, e);
             }
         } else {
-            leaveFlowMapper.updateReqStatus(p.gvCmpnyCd(), p.reqId(), REQ_APPROVED, p.gvUserCd(), p.comment());
+            // 연차승인 동시성갭 보강(2026-08-27): REQ_STATUS 갱신도 갱신 전 상태(APPLIED)를 WHERE
+            //   조건으로 명시해 동시 처리 시 이미 처리된 요청의 재처리를 차단한다(위 단계 가드와
+            //   동일 트랜잭션 내 순서대로 실행 — 하나만 실패해도 트랜잭션 롤백으로 반쪽 상태 없음).
+            int reqUpdated = leaveFlowMapper.updateReqStatusGuarded(
+                    p.gvCmpnyCd(), p.reqId(), REQ_APPLIED, REQ_APPROVED, p.gvUserCd(), p.comment());
+            if (reqUpdated == 0) {
+                log.warn("[leaveflow] 최종 승인 REQ_STATUS 갱신 실패(동시 처리 충돌/이미 처리됨). reqId={}", p.reqId());
+                throw new ApiException(AttdErrorCode.ATTD_409_001);
+            }
             // PRAFTA-025: 06(연차수정)은 최종 승인 시 기존 사용기록(TARGET_ID)을 새 값으로 in-place 갱신,
             //   05(연차사용)는 기존대로 일 단위 출근 차단을 적용한다.
             if (REQ_TYPE_LEAVE_MODIFY.equals(req.reqType())) {
@@ -901,8 +912,22 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             throw new ApiException(AttdErrorCode.ATTD_400_057);
         }
 
-        approvalLineMapper.updateStepStatus(p.gvCmpnyCd(), p.reqId(), p.approvalStep(), STEP_REJECTED, p.comment(), p.gvUserCd());
-        leaveFlowMapper.updateReqStatus(p.gvCmpnyCd(), p.reqId(), REQ_REJECTED, p.gvUserCd(), p.comment());
+        // 연차승인 동시성갭 보강(2026-08-27): approveStep 과 동일 가드(갱신 전 상태 조건 + 영향행수
+        //   검사). 두 UPDATE 는 같은 트랜잭션 안에서 순서대로 실행되므로 하나만 성공하고 다른
+        //   하나가 실패하는 반쪽 상태는 없다(실패 시 트랜잭션 전체 롤백).
+        int stepUpdated = approvalLineMapper.updateStepStatusGuarded(p.gvCmpnyCd(), p.reqId(), p.approvalStep(),
+                STEP_APPLIED, STEP_REJECTED, p.comment(), p.gvUserCd());
+        if (stepUpdated == 0) {
+            log.warn("[leaveflow] 반려 단계 갱신 실패(동시 처리 충돌/이미 처리됨). reqId={}, step={}",
+                    p.reqId(), p.approvalStep());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
+        int reqUpdated = leaveFlowMapper.updateReqStatusGuarded(
+                p.gvCmpnyCd(), p.reqId(), REQ_APPLIED, REQ_REJECTED, p.gvUserCd(), p.comment());
+        if (reqUpdated == 0) {
+            log.warn("[leaveflow] 반려 REQ_STATUS 갱신 실패(동시 처리 충돌/이미 처리됨). reqId={}", p.reqId());
+            throw new ApiException(AttdErrorCode.ATTD_409_001);
+        }
 
         // PRAFTA-025: 06(연차수정) 반려는 기존 사용기록을 절대 건드리지 않는다.
         //   수정은 '최종 승인 시에만' 반영되므로, 반려 시점엔 되돌릴 변경이 없다.

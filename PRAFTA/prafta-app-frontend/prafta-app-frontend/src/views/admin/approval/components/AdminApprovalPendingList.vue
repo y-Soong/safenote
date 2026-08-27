@@ -162,6 +162,7 @@ const chips = [
   { key: 'CORRECTION', label: '근태보정', disabled: false },
   { key: 'OVERTIME', label: '초과근무', disabled: false },
   { key: 'LEAVE', label: '연차', disabled: false },
+  { key: 'DEFAULT_SCH_CHANGE', label: '기본근무타입변경', disabled: false },
 ]
 const activeGroup = ref('ALL')
 

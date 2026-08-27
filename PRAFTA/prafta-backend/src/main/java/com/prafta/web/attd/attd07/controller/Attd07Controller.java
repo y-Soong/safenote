@@ -15,21 +15,25 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.attd.attd07.application.param.ApproveDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.ApproveSchedModifyRequestParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailDeleteParam;
 import com.prafta.web.attd.attd07.application.param.DailyAttdDetailsParam;
 import com.prafta.web.attd.attd07.application.param.DeleteUserOvertimeParam;
 import com.prafta.web.attd.attd07.application.param.MonthlyAttdListParam;
+import com.prafta.web.attd.attd07.application.param.RejectDefaultSchChangeRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.RejectUserOvertimeRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdInfosParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserAttdRequestParam;
 import com.prafta.web.attd.attd07.application.param.UpdateUserOvertimeRequestParam;
+import com.prafta.web.attd.attd07.dto.request.ApproveDefaultSchChangeRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.ApproveSchedModifyRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailDeleteRequest;
 import com.prafta.web.attd.attd07.dto.request.DailyAttdDetailsRequest;
 import com.prafta.web.attd.attd07.dto.request.DeleteUserOvertimeRequest;
 import com.prafta.web.attd.attd07.dto.request.MonthlyAttdListRequest;
+import com.prafta.web.attd.attd07.dto.request.RejectDefaultSchChangeRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.RejectUserAttdRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.RejectUserOvertimeRequestRequest;
 import com.prafta.web.attd.attd07.dto.request.UpdateUserAttdInfosRequest;
@@ -181,6 +185,30 @@ public class Attd07Controller {
 
         attd07Service.rejectSchedModifyRequest(
                 RejectUserAttdRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청('14') 승인. 웹 Attd_10 신규 탭도 재사용. */
+    @PostMapping("/approve-default-sch-requests")
+    public ResponseEntity<?> approveDefaultSchChangeRequest(
+            @RequestBody @Valid ApproveDefaultSchChangeRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.approveDefaultSchChangeRequest(
+                ApproveDefaultSchChangeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    /** PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청('14') 반려. 웹 Attd_10 신규 탭도 재사용. */
+    @PostMapping("/reject-default-sch-requests")
+    public ResponseEntity<?> rejectDefaultSchChangeRequest(
+            @RequestBody @Valid RejectDefaultSchChangeRequestRequest request,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        attd07Service.rejectDefaultSchChangeRequest(
+                RejectDefaultSchChangeRequestParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).build();
     }

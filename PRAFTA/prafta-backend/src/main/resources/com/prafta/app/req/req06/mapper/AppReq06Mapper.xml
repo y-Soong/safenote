@@ -5,7 +5,8 @@
     <!-- ============ 본인 요청 통합 소스 (UNION ALL 파생 테이블) ============
       prafta-내승인요청연차통합-1: 기존 TB_USER_ATTD_REQ(01~06,10) 단일 소스에
       근로자 본인 발의 연차 이동 요청(TB_LEAVE_CHANGE_REQUEST, INITIATOR_TYPE='WORKER')을 통합.
-      - 소스 1: TB_USER_ATTD_REQ (REQ_TYPE IN '01'~'06','10', SYS032 07~09 예약 코드 응답 차단)
+      - 소스 1: TB_USER_ATTD_REQ (REQ_TYPE IN '01'~'06','10','14', SYS032 07~09/11~13 예약 코드 응답 차단.
+        '14'=PRAFTA-003 기본 근무타입 변경 요청, 2026-08-26 추가 — WORK_YMD/SCH_CD 등은 이 유형 그대로 NULL/값 사용)
       - 소스 2: TB_LEAVE_CHANGE_REQUEST (근로자 본인 발의만. 관리자 발의(ADMIN)+근로자 동의대기 건은
         LeaveChangeConsentPopup.vue 가 별도 처리 중이라 여기 포함하지 않는다)
         · reqType 은 'MOVE'/'DELETE' 원본을 'LC_MOVE'/'LC_DELETE' 로 합성(SYS032 비등록, 서비스 레이어 하드코딩 라벨)
@@ -33,7 +34,7 @@
              WHERE A.CMPNY_CD = #{cmpnyCd}
                AND A.USER_CD  = #{userCd}
                AND A.DEL_YN   = 'N'
-               AND A.REQ_TYPE IN ('01','02','03','04','05','06','10')
+               AND A.REQ_TYPE IN ('01','02','03','04','05','06','10','14')
 
             UNION ALL
 

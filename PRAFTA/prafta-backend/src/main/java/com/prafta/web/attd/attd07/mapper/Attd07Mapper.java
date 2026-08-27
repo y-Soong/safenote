@@ -102,6 +102,14 @@ public interface Attd07Mapper {
     List<MonthlyAttdReqResult> selectMonthlyAttdReq(DailyAttdDetailsQuery query);
 
     /**
+     * PRAFTA-003(기본근무타입-승인제) - 기본 근무타입 변경 요청 승인 직전 현재 값(DEFAULT_SCH_CD) 조회.
+     * applyDefaultSchChange 로 덮어쓰기 전에 "변경 전 근무타입"을 캡처한다(향후 이력 표기용, 무마이그).
+     */
+    String selectUserDefaultSchCdForApproval(
+            @Param("gvCmpnyCd") String gvCmpnyCd,
+            @Param("userCd") String userCd);
+
+    /**
      * PRAFTA-APP-018-F - 그날(workYmd) 확정 연차 사용내역(TB_USER_LEAVE_USE, CONFIRMED).
      *   결재 유무 무관. 단, 미처리(01) 결재대기분은 D 의 '근로자 요청' 카드가 소유하므로 제외(이중표시 방지).
      *   자동확정(02)/직접 적용(REQ_ID NULL)/직접 사용분만 표시 전용 섹션에 내린다.

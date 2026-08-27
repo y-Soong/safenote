@@ -34,6 +34,13 @@ public final class AttdReqTypeUtils {
     public static final String REQ_TYPE_LEAVE_USE     = "05";
     /** 연차 수정 요청 (SYS032=06). LeaveFlowServiceImpl.REQ_TYPE_LEAVE_MODIFY 와 동일 코드값. */
     public static final String REQ_TYPE_LEAVE_MODIFY  = "06";
+    /**
+     * 기본 근무타입 변경 요청 (SYS032=14, 2026-08-26 기본근무타입-승인제 전환).
+     *
+     * <p>특정 근무일(WORK_YMD)/구간(WORK_SEQ)에 종속되지 않는다 — 승인 시 명일부터 연말까지
+     * {@code DefaultSchGenService.applyDefaultSchChange} 로 반영한다.
+     */
+    public static final String REQ_TYPE_DEFAULT_SCH_CHANGE = "14";
 
     // REQ_STATUS 코드값 (SYS033)
     public static final String REQ_STATUS_REQUESTED   = "01";
@@ -96,5 +103,16 @@ public final class AttdReqTypeUtils {
         if (reqType == null || reqType.isEmpty()) return false;
         return REQ_TYPE_LEAVE_USE.equals(reqType)
             || REQ_TYPE_LEAVE_MODIFY.equals(reqType);
+    }
+
+    /**
+     * SEC-018 패턴 승계 — 기본 근무타입 변경 처리 endpoint 에서 사용하는 REQ_TYPE allow-list.
+     * 기본 근무타입 변경 요청('14') 값에 대해서만 true 를 반환한다. 다른 유형(그리고 알 수 없는 값)은
+     * false 를 반환하여 타입 혼동(type confusion)을 차단한다 — 승인 시 DEFAULT_SCH_CD 를 갱신하므로
+     * 다른 유형의 REQ row 가 이 경로로 흘러들면 잘못된 근무타입 반영이 발생할 수 있다.
+     */
+    public static boolean isDefaultSchChangeReqType(String reqType) {
+        if (reqType == null || reqType.isEmpty()) return false;
+        return REQ_TYPE_DEFAULT_SCH_CHANGE.equals(reqType);
     }
 }

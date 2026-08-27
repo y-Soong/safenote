@@ -201,15 +201,16 @@ public class AppMypage01Controller {
         return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.getDefaultSchOptions(tokenInfo));
     }
 
-    /** 저장 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지). */
+    /**
+     * PRAFTA-002(기본근무타입-승인제): 요청 등록 — 대상 회사/사용자는 세션 토큰에서만 도출(IDOR 방지).
+     * URL/메서드 무변경(2026-08-26 확정, 구버전 앱 호환) — 응답 바디만 요청 식별값/상태로 교체.
+     */
     @PostMapping("/update-default-sch")
     public ResponseEntity<?> updateDefaultSch(
             @RequestBody UpdateDefaultSchRequest request,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
-        appMypage01Service.updateDefaultSch(
-                UpdateDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
-
-        return ResponseEntity.status(HttpStatus.OK).body(java.util.Map.of("success", true));
+        return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.updateDefaultSch(
+                UpdateDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 }

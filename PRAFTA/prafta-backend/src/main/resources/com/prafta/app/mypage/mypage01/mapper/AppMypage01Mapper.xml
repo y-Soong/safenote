@@ -548,4 +548,88 @@
      LIMIT 1
     </select>
 
+    <!-- ============================================================
+         PRAFTA-002: 기본 근무타입 변경 요청(REQ_TYPE='14') — 요청등록 전환
+         ============================================================ -->
+
+    <!-- AppReq07Mapper.selectNextReqId 와 동일 시퀀스('ATTD_REQ_ID') — REQ_ID 는 테이블 단일 PK 공간. -->
+    <select id="selectNextDefaultSchReqId" resultType="string" flushCache="true">
+    /* AppMypage01Mapper.selectNextDefaultSchReqId */
+    SELECT CONCAT(DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'ATTD_REQ_ID')) FROM DUAL
+    </select>
+
+    <!-- F15 advisory lock(중복 차단 race window 직렬화). 락 이름 64자 제한(MySQL) 대응: MD5 해시로 32자 고정
+         (feedback_mysql_getlock_64char_limit — 셀프가입 20자 회사코드 키가 제한 초과한 운영 실증). -->
+    <select id="getAdvisoryLock" resultType="java.lang.Integer">
+    /* AppMypage01Mapper.getAdvisoryLock */
+    SELECT GET_LOCK(MD5(#{lockKey}), #{timeoutSec})
+    </select>
+
+    <select id="releaseAdvisoryLock" resultType="java.lang.Integer">
+    /* AppMypage01Mapper.releaseAdvisoryLock */
+    SELECT RELEASE_LOCK(MD5(#{lockKey}))
+    </select>
+
+    <!-- P10 중복 요청 차단: WORK_YMD 조건 없음(이 요청 유형은 특정 근무일에 종속되지 않음).
+         IDX_ATTD_REQ_USER(CMPNY_CD,SITE_CD,USER_CD,REQ_STATUS) 인덱스 활용. -->
+    <select id="countPendingDefaultSchChangeReq" resultType="int">
+    /* AppMypage01Mapper.countPendingDefaultSchChangeReq */
+    SELECT COUNT(1)
+      FROM TB_USER_ATTD_REQ A
+     WHERE A.CMPNY_CD   = #{cmpnyCd}
+       AND A.SITE_CD    = #{siteCd}
+       AND A.USER_CD    = #{userCd}
+       AND A.REQ_TYPE   = '14'
+       AND A.REQ_STATUS = '01'
+       AND A.DEL_YN     = 'N'
+    </select>
+
+    <!-- tb_user_attd_req INSERT(REQ_TYPE='14' 전용). TARGET_ID/WORK_YMD/NODE_CD 는 요청자 노드만 채우고
+         WORK_SEQ/시각 4종은 NULL(이 요청 유형은 특정 근무일/구간에 종속되지 않음). -->
+    <insert id="insertDefaultSchChangeReq" parameterType="com.prafta.app.mypage.mypage01.application.command.DefaultSchChangeReqInsertCommand">
+    /* AppMypage01Mapper.insertDefaultSchChangeReq */
+    INSERT INTO TB_USER_ATTD_REQ (
+          REQ_ID
+        , CMPNY_CD
+        , SITE_CD
+        , USER_CD
+        , REQ_TYPE
+        , TARGET_ID
+        , REQ_STATUS
+        , REQ_REASON
+        , WORK_YMD
+        , NODE_CD
+        , WORK_SEQ
+        , START_DATE
+        , START_TIME
+        , END_DATE
+        , END_TIME
+        , SCH_CD
+        , DEL_YN
+        , INSERT_NO
+        , INSERT_DATE
+    )
+    VALUES (
+          #{reqId}
+        , #{cmpnyCd}
+        , #{siteCd}
+        , #{userCd}
+        , '14'
+        , NULL
+        , '01'
+        , #{reqReason}
+        , NULL
+        , #{nodeCd}
+        , NULL
+        , NULL
+        , NULL
+        , NULL
+        , NULL
+        , #{schCd}
+        , 'N'
+        , #{insertNo}
+        , NOW()
+    )
+    </insert>
+
 </mapper>

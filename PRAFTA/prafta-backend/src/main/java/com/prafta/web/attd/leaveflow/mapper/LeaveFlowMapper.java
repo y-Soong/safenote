@@ -123,6 +123,20 @@ public interface LeaveFlowMapper {
                         @Param("processUserCd") String processUserCd,
                         @Param("processComment") String processComment);
 
+    /**
+     * 요청 상태 전이(가드 버전, 연차승인 동시성갭 보강 — 근태결재선통합 P1
+     * {@code ApprovalLineMapper.updateStepStatusGuarded} 와 동일 패턴). 갱신 전 상태가
+     * {@code fromStatus} 일 때만 UPDATE 한다(WHERE 절에 REQ_STATUS 조건 추가). 영향행수가 0이면
+     * (동시 처리로 이미 다른 상태로 전이됨) 호출부가 {@code ApiException(AttdErrorCode.ATTD_409_001)}
+     * 을 던져야 한다.
+     */
+    int updateReqStatusGuarded(@Param("cmpnyCd") String cmpnyCd,
+                               @Param("reqId") String reqId,
+                               @Param("fromStatus") String fromStatus,
+                               @Param("reqStatus") String reqStatus,
+                               @Param("processUserCd") String processUserCd,
+                               @Param("processComment") String processComment);
+
     /** 요청 단건 조회(소유권/상태 확인). 없으면 null. */
     LeaveReqRowVO selectLeaveReq(@Param("cmpnyCd") String cmpnyCd,
                                  @Param("reqId") String reqId);

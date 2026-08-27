@@ -67,8 +67,9 @@
          갱신 전 상태 조건이 없어 동시 처리 시 이미 처리된 단계를 재차 덮어써도 UPDATE 자체는
          조건 없이 항상 성공한다(현재는 REQ_STATUS 낙관적 락이 우연히 막고 있을 뿐, 이 UPDATE가
          스스로 보장하지 않음). fromStatus 를 명시적으로 검증해 영향행수 0 을 호출부가 판정할 수
-         있게 한다. leave 도메인의 updateStepStatus 호출(LeaveFlowServiceImpl)은 이번 작업 범위
-         밖이라 변경하지 않고, attd07/ApprovalStepGateServiceImpl 만 이 가드 버전으로 전환한다. -->
+         있게 한다. attd07/ApprovalStepGateServiceImpl 에서 먼저 적용됐고, 연차승인 동시성갭
+         보강(2026-08-27)으로 leave 도메인(LeaveFlowServiceImpl.approveStep/rejectStep)도
+         동일하게 이 가드 버전으로 전환했다. -->
     <update id="updateStepStatusGuarded">
     /* ApprovalLineMapper.updateStepStatusGuarded */
     UPDATE TB_USER_ATTD_REQ_APPROVAL

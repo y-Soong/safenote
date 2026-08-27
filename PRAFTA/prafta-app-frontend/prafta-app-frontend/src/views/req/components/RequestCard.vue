@@ -29,7 +29,7 @@
 
     <!-- 본문: 대상일자 + 요약 -->
     <div class="req-card__body">
-      <p class="req-card__target-ymd">{{ item.targetYmdDisplay }}</p>
+      <p v-if="item.targetYmdDisplay" class="req-card__target-ymd">{{ item.targetYmdDisplay }}</p>
       <p
         v-for="(line, idx) in item.summaryLines || []"
         :key="idx"

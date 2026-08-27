@@ -537,6 +537,80 @@
      LIMIT 1
     </select>
 
+    <!-- PRAFTA-003(기본근무타입-승인제, 2026-08-26): 기본 근무타입 변경(14) 상세 본문.
+      - 요청 스케줄(req*): REQ.SCH_CD 를 회사/사업장 스코프로 TB_SCH_MGMT(TS) 조인(selectSchedBody 와 동일).
+      - 현재 스케줄(cur*): selectSchedBody 는 TB_USER_WORK_PLAN(특정 근무일) → TB_SCH_MGMT 조인이지만,
+        이 요청 유형은 특정 근무일에 종속되지 않으므로 TB_USER.DEFAULT_SCH_CD → TB_SCH_MGMT(CS) 조인으로 바꾼다.
+      - 표시 시각(req*/cur*)은 #{asOfYmd}(서비스가 "명일"로 계산) 기준 유효 버전(effective-dating)으로 해석한다
+        (applyDefaultSchChange 가 명일부터 반영하는 정책과 표시 정합).
+    -->
+    <select id="selectDefaultSchChangeBody" resultType="com.prafta.app.approval.admin.result.SchedBodyRow">
+    /* AppAdminApprovalMapper.selectDefaultSchChangeBody */
+    SELECT
+          CS.SCH_CD             AS curSchCd
+        , CS.SCH_NO             AS curSchNo
+        , CSE.FST_SCH_STR_TIME  AS curFstStrTime
+        , CSE.FST_SCH_END_TIME  AS curFstEndTime
+        , CSE.SEC_SCH_STR_TIME  AS curSecStrTime
+        , CSE.SEC_SCH_END_TIME  AS curSecEndTime
+        , TS.SCH_CD             AS reqSchCd
+        , TS.SCH_NO             AS reqSchNo
+        , TSE.FST_SCH_STR_TIME  AS reqFstStrTime
+        , TSE.FST_SCH_END_TIME  AS reqFstEndTime
+        , TSE.SEC_SCH_STR_TIME  AS reqSecStrTime
+        , TSE.SEC_SCH_END_TIME  AS reqSecEndTime
+        <!-- PRAFTA-FIXEDOT-2: 현재/요청 스케줄 고정연장(전방·후방) — 상세 비교 표기용.
+             record(SchedBodyRow) 끝 8필드와 동일 순서로 SELECT 끝에 둔다(위치 기반 매핑). -->
+        , CSE.PRE_FIXED_OT_STR_TIME  AS curPreFixedOtStrTime
+        , CSE.PRE_FIXED_OT_END_TIME  AS curPreFixedOtEndTime
+        , CSE.FIXED_OT_STR_TIME      AS curFixedOtStrTime
+        , CSE.FIXED_OT_END_TIME      AS curFixedOtEndTime
+        , TSE.PRE_FIXED_OT_STR_TIME  AS reqPreFixedOtStrTime
+        , TSE.PRE_FIXED_OT_END_TIME  AS reqPreFixedOtEndTime
+        , TSE.FIXED_OT_STR_TIME      AS reqFixedOtStrTime
+        , TSE.FIXED_OT_END_TIME      AS reqFixedOtEndTime
+      FROM TB_SCH_MGMT TS
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) TSE
+        ON TSE.CMPNY_CD = TS.CMPNY_CD
+       AND TSE.SITE_CD  = TS.SITE_CD
+       AND TSE.SCH_CD   = TS.SCH_CD
+       AND TSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = TS.CMPNY_CD
+                  AND SE.SITE_CD     = TS.SITE_CD
+                  AND SE.SCH_CD      = TS.SCH_CD
+           )
+      LEFT JOIN TB_USER U2
+        ON U2.CMPNY_CD = #{cmpnyCd}
+       AND U2.USER_CD  = #{userCd}
+      LEFT JOIN TB_SCH_MGMT CS
+        ON CS.CMPNY_CD = #{cmpnyCd}
+       AND CS.SITE_CD  = #{siteCd}
+       AND CS.SCH_CD   = U2.DEFAULT_SCH_CD
+      LEFT JOIN ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchVersion"/> ) CSE
+        ON CSE.CMPNY_CD = #{cmpnyCd}
+       AND CSE.SITE_CD  = #{siteCd}
+       AND CSE.SCH_CD   = U2.DEFAULT_SCH_CD
+       AND CSE.APPLY_DATE = (
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> #{asOfYmd} THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM ( <include refid="com.prafta.common.cmm.sch.mapper.SchEffectiveMapper.effectiveSchApplyKeys"/> ) SE
+                WHERE SE.CMPNY_CD    = #{cmpnyCd}
+                  AND SE.SITE_CD     = #{siteCd}
+                  AND SE.SCH_CD      = U2.DEFAULT_SCH_CD
+           )
+     WHERE TS.CMPNY_CD = #{cmpnyCd}
+       AND TS.SITE_CD  = #{siteCd}
+       AND TS.SCH_CD   = #{reqSchCd}
+     LIMIT 1
+    </select>
+
     <!-- 초과근무 승인 상세: 당일 배정 스케줄(소정 구간 + 고정연장) — 2026-08-17 요청.
          selectSchedBody 의 현재(cur*) 측과 동일 규칙(근무일 기준 유효버전 우선, 없으면 최이른 적용버전 폴백)이되
          루트를 WP 로 바꿔 요청 SCH_CD 없이(초과근무 REQ 는 SCH_CD 미보유) 당일 스케줄만 1행 조회한다.
