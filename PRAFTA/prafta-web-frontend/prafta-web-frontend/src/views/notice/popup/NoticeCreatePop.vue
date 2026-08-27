@@ -313,7 +313,7 @@
           </div>
         </div>
 
-        <!-- 액션 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(취소), 폭 균등) -->
+        <!-- 액션 (왼쪽=진행/확정(저장), 오른쪽=이탈(취소), 버튼은 텍스트 길이에 맞춰 우측 정렬) -->
         <div class="modal-footer">
           <button class="btn-primary" @click="fnSave">저장</button>
           <button class="btn-secondary" @click="$emit('close')">취소</button>
@@ -912,11 +912,12 @@ const fnSave = async () => {
   border-top: 1px solid var(--color-border, #e5e7eb);
 }
 
-/* 취소/저장 버튼 공통 규격 — 동일 크기로 우측 하단 정렬 (footer 가 flex-end) */
+/* 취소/저장 버튼 공통 규격 — 텍스트 길이만큼 크기로 우측 하단 정렬 (footer 가 flex-end) */
 .btn-primary,
 .btn-secondary {
   box-sizing: border-box;
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   min-width: 72px;
@@ -942,11 +943,5 @@ const fnSave = async () => {
   border: 1px solid var(--color-border-strong, #d1d5db);
   background: var(--color-surface, #ffffff);
   color: var(--color-text, #374151);
-}
-
-/* F-10 규약: 좌우 버튼 폭 균등 */
-.modal-footer .btn-primary,
-.modal-footer .btn-secondary {
-  flex: 1;
 }
 </style>

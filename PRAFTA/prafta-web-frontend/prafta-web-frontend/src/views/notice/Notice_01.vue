@@ -423,6 +423,13 @@ const fnOpenInfoPop = (item) => {
   row-gap: 1rem;
 }
 
+/* 제목/내용은 줄바꿈되어 다음 줄의 첫 항목이 되지만 DOM상 첫 자식이 아니라
+   전역 좌측 여백 규칙(form.css .viewSearch > div:first-child)이 적용되지 않는다.
+   사업장과 동일하게 좌측 여백을 맞춘다. */
+.viewSearch > div:last-child {
+  margin-left: var(--space-md, 0.75rem);
+}
+
 /* 049-02: 첨부 개수 표시 */
 .file-cnt {
   font-size: var(--font-size-sm, 0.875rem);
