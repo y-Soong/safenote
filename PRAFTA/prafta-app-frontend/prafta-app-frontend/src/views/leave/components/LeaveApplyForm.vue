@@ -58,9 +58,9 @@
           class="type-item"
           :class="{
             'type-item--on': selectedLeaveCd === lt.leaveCd,
-            'type-item--off': !lt.applicable,
+            'type-item--off': !lt.applicable && !lt.borrowable,
           }"
-          :disabled="!lt.applicable"
+          :disabled="!lt.applicable && !lt.borrowable"
           @click="onSelectType(lt)"
         >
           <span class="type-item__name">{{ lt.leaveNm }}</span>
@@ -1073,7 +1073,9 @@ const resolveDefaultUnit = (type) => {
 //   선택 후에는 리스트를 접는다(화면 길이 절약). 이미 선택된 종류 재탭은 입력 리셋 없이
 //   접힘/펼침 토글만 한다(접힘 상태의 단일 항목 탭 = 펼치기).
 const onSelectType = (lt) => {
-  if (!lt?.applicable) return
+  // 잔여 0(applicable=false)이어도 가불 가능(borrowable)하면 선택 허용 — 가불은 잔여 부족/0일 때가
+  //   본래 대상이라(showBorrowToggle), 여기서 막으면 그 케이스에 영영 도달할 수 없었다.
+  if (!lt?.applicable && !lt?.borrowable) return
   if (selectedLeaveCd.value === lt.leaveCd) {
     typeListCollapsed.value = !typeListCollapsed.value
     return
