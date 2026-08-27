@@ -215,10 +215,10 @@ const onSubmit = async () => {
   }
 }
 
-// "내 요청 확인하기" — MyRequestsView 로 이동.
+// "내 요청 확인하기" — MyRequestsView 로 이동(router/index.js 등록 경로는 /MyRequests).
 const onGoToMyRequests = () => {
   open.value = false
-  router.push('/MyRequestsView')
+  router.push('/MyRequests')
 }
 </script>
 
