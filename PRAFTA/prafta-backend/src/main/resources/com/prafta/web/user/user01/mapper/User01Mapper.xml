@@ -808,6 +808,18 @@
 	  AND A.NODE_CD  = #{nodeCd}
 	</select>
 
+	<!-- 직급코드[COM007] 화이트리스트 검증(회사 스코프). 클라이언트 제출 코드 신뢰 금지.
+	     User09Mapper.selectRankCdExists 와 동일 쿼리(모듈 간 매퍼 의존 방지 위해 이식). -->
+	<select id="selectRankCdExists" resultType="int">
+	/* User01Mapper.selectRankCdExists */
+	SELECT COUNT(1)
+	FROM TB_BAIM_VAL_D D
+	WHERE D.CMPNY_CD      = #{cmpnyCd}
+	  AND D.BAIM_VAL_CD   = 'COM007'
+	  AND D.BAIM_VAL_D_CD = #{rankCd}
+	  AND D.USE_YN        = 'Y'
+	</select>
+
 	<!-- PRAFTA-046: 노드에 정/부 관리자가 존재하면 1, 아니면(노드 미존재 포함) 0. -->
 	<select id="selectNodeHasAdmin" resultType="int">
 	/* User01Mapper.selectNodeHasAdmin */

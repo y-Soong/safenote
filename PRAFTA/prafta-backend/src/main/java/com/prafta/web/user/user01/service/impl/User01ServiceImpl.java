@@ -499,6 +499,12 @@ public class User01ServiceImpl implements User01Service{
             throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
         }
 
+        // 직급코드[COM007] 화이트리스트 검증(입력 시만, 클라 신뢰 금지) — User09 selectRankCdExists 패턴 이식(security 후속, 2026-08-28).
+        String editRankCd = (model.rankCd() == null || model.rankCd().isBlank()) ? null : model.rankCd();
+        if (editRankCd != null && user01Mapper.selectRankCdExists(model.cmpnyCd(), editRankCd) == 0) {
+            throw new ApiException(UserErrorCode.USER_400_078);
+        }
+
         user01Mapper.mergeUserInfo(UserInfoCommand.from(model, phoneEnc, phoneHmac, emailEnc, emailHmac, birthEnc));
 
         // PRAFTA-COM-008-E-5: 기본 근무타입 설정/변경 시 즉시 미래 자동생성분 갱신 + 신규 생성(E-3 트리거2).
@@ -984,6 +990,12 @@ public class User01ServiceImpl implements User01Service{
 			throw new ApiException(com.prafta.common.error.attd.AttdErrorCode.ATTD_400_140);
 		}
 
+		// 8-3) 직급코드[COM007] 화이트리스트 검증(입력 시만, 클라 신뢰 금지) — User09 selectRankCdExists 패턴 이식(security 후속, 2026-08-28).
+		String rankCd = isBlank(param.rankCd()) ? null : param.rankCd();
+		if (rankCd != null && user01Mapper.selectRankCdExists(param.gvCmpnyCd(), rankCd) == 0) {
+			throw new ApiException(UserErrorCode.USER_400_078);
+		}
+
 		// 8-1) PRAFTA-WEB_002-T1-02(1.4-1): 무담당 부서 배정 허용.
 		//   기존 PRAFTA-046 의 "정/부 관리자 미지정 노드 생성 차단(USER_400_056)" 하드 게이트를 제거한다.
 		//   대신 INSERT 직후(아래) 정/부 담당이 모두 비어있는 부서면 신규 사용자를 담당(정)으로 자동지정한다
@@ -1054,7 +1066,7 @@ public class User01ServiceImpl implements User01Service{
 				, siteCd
 				, param.nodeCd()
 				, param.authCd()
-				, isBlank(param.rankCd()) ? null : param.rankCd()
+				, rankCd
 				, phoneEnc
 				, phoneHmac
 				, phoneLast4

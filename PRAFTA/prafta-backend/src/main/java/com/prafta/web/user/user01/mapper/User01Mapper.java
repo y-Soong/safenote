@@ -115,6 +115,10 @@ public interface User01Mapper {
 	// 사이트 노드 존재 검증 (CMPNY_CD + SITE_CD + NODE_CD 매칭 행 1건 이상이면 1 반환)
 	int selectSiteNodeExists(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("nodeCd") String nodeCd);
 
+	// 직급코드[COM007] 화이트리스트 검증(회사 스코프, 사용중) — User09Mapper.selectRankCdExists 와 동일 쿼리를
+	// 모듈 간 매퍼 의존을 만들지 않기 위해 User01Mapper 에 이식(공용 매퍼화 아님).
+	int selectRankCdExists(@Param("cmpnyCd") String cmpnyCd, @Param("rankCd") String rankCd);
+
 	// ===== PRAFTA-046 - 노드-관리자 정합성 가드 =====
 	// 노드에 정(MAIN) 또는 부(SUB) 관리자가 존재하면 1, 아니면(노드 미존재 포함) 0 반환.
 	int selectNodeHasAdmin(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("nodeCd") String nodeCd);
