@@ -61,8 +61,12 @@ public class AppHome01ServiceImpl implements AppHome01Service {
     @Override
     public HomeSummaryResponse selectHomeSummary(HomeSummaryParam param) {
 
-        // leave/approval/tbm 영역이 동일 기준일을 공유하도록 DB 기준 오늘(YYYYMMDD)을 1회 조회
-        String todayYmd = appHome01Mapper.selectTodayYmd();
+        // leave/approval/tbm 영역이 동일 기준일을 공유하도록 오늘(YYYYMMDD)을 1회 산출.
+        //   (버그수정 2026-08-28) 종전엔 DB NOW()(운영 RDS time_zone=UTC)로 산출했는데, 셀프 출퇴근
+        //   쓰기 경로(AppAttd01ServiceImpl)는 LocalDateTime.now()(JVM=KST)를 쓰고 있어 자정~09시(KST)
+        //   구간에 두 기준일이 최대 9시간 어긋났다(홈 카드가 전날 근태를 보여주고 퇴근버튼이 안 켜짐).
+        //   읽기·쓰기 기준을 동일 소스(JVM now)로 통일한다.
+        String todayYmd = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         HomeSummaryQuery query = HomeSummaryQuery.from(param, todayYmd);
 
         // prafta-app-013-1: attendance 영역 전용 기준일(baseYmd).

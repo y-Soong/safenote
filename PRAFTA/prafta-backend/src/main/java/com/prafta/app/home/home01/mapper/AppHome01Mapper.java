@@ -19,9 +19,6 @@ import com.prafta.app.home.home01.result.TbmStatusResult;
 @Mapper
 public interface AppHome01Mapper {
 
-    /** DB 기준 오늘 일자(YYYYMMDD, varchar8). 4개 영역의 공통 기준일. */
-    String selectTodayYmd();
-
     /** 오늘 근태 1건(가장 큰 WORK_SEQ). 없으면 null. */
     AttdMgmtResult selectTodayAttd(@Param("param") HomeSummaryQuery query);
 
