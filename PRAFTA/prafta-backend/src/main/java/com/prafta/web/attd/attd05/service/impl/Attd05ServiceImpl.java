@@ -152,7 +152,10 @@ public class Attd05ServiceImpl implements Attd05Service {
 
     	List<DayResult> dayResultList = attd05Mapper.selectDayList(UserWorkPlansQuery.from(param));
 
-    	List<SchedResult> schedResultList = attd05Mapper.selectSchedList(UserWorkPlansQuery.from(param));
+    	// 소속이동-이력가시성-보정(웹 Attd_05): selectSchedList 가 사용자의 전체 사업장 이력을
+    	//   반환하므로(조회 사업장 제한 철회), (userCd, wrkYmd) 당 1건으로 결정론적 병합한다.
+    	List<SchedResult> schedResultList =
+    			mergeSchedByUserAndDate(attd05Mapper.selectSchedList(UserWorkPlansQuery.from(param)), param.siteCd());
 
     	// prafta-com-008-E-6: 연차-스케줄 모델 전환 — work_plan 에는 SCH_CD 가 유지되므로
     	//   그리드 "연차" 표시는 leave_use(종일 CONFIRMED) 오버레이로 동반시킨다(셀 렌더 단일 출처).
@@ -179,6 +182,42 @@ public class Attd05ServiceImpl implements Attd05Service {
     									.build();
 
     	return response;
+    }
+
+    /**
+     * 소속이동-이력가시성-보정(웹 Attd_05): selectSchedList 가 이제 사용자의 전체 사업장 이력을
+     * 반환하므로(조회 사업장 제한 철회), 같은 (userCd, wrkYmd) 에 사업장이 다른 행이 공존할 수
+     * 있다 - 소속이동 시 이미 실제 근태가 있어 신 사업장으로 백필되지 않은 과거 근무일이 대표적
+     * 케이스. 앱(AppAttd01ServiceImpl.indexSchedule/prefersCandidate)과 동일한 우선순위로
+     * 결정론적 1건 병합한다: ① 조회 사업장(sessionSiteCd) 일치 우선 ② 동률이면 effectiveDtime
+     * (UPDATE_DATE 우선, 없으면 INSERT_DATE) 최신 우선 ③ 그마저 동률이면 기존 선택 유지.
+     */
+    private List<SchedResult> mergeSchedByUserAndDate(List<SchedResult> list, String sessionSiteCd) {
+    	Map<String, SchedResult> merged = new LinkedHashMap<>();
+    	for (SchedResult s : list) {
+    		String key = s.userCd() + "|" + s.workYmd();
+    		SchedResult current = merged.get(key);
+    		if (current == null || prefersSchedCandidate(s, current, sessionSiteCd)) {
+    			merged.put(key, s);
+    		}
+    	}
+    	return new ArrayList<>(merged.values());
+    }
+
+    /** {@link #mergeSchedByUserAndDate} 후보 우선순위 판정(위 메서드 doc 참조). */
+    private boolean prefersSchedCandidate(SchedResult candidate, SchedResult current, String sessionSiteCd) {
+    	boolean candidateMatches = sessionSiteCd != null && sessionSiteCd.equals(candidate.siteCd());
+    	boolean currentMatches = sessionSiteCd != null && sessionSiteCd.equals(current.siteCd());
+    	if (candidateMatches != currentMatches) {
+    		return candidateMatches;
+    	}
+    	if (candidate.effectiveDtime() == null) {
+    		return false;
+    	}
+    	if (current.effectiveDtime() == null) {
+    		return true;
+    	}
+    	return candidate.effectiveDtime().isAfter(current.effectiveDtime());
     }
 
     @Override

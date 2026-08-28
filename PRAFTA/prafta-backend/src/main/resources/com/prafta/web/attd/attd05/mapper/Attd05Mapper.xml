@@ -178,7 +178,9 @@
 				, 2147483647 AS HIST_IDX
 			FROM TB_SCH_MGMT M
 			WHERE M.CMPNY_CD = #{gvCmpnyCd}
-			  AND M.SITE_CD  = #{siteCd}
+			/* 소속이동-이력가시성-보정(웹 Attd_05): 근무일 행(A)이 조회 사업장이 아닌 이전 소속
+			   사업장의 SCH_CD 를 가리킬 수 있어(아래 A.SITE_CD 제한 철회) 이 CTE 도 사업장 제한을
+			   철회한다 - 실제 매칭은 아래 V.SITE_CD = A.SITE_CD (행별 소속 사업장) 로 정확히 좁혀진다. */
 
 			UNION ALL
 
@@ -199,7 +201,6 @@
 				, H.HIST_IDX
 			FROM TB_SCH_MGMT_HIST H
 			WHERE H.CMPNY_CD = #{gvCmpnyCd}
-			  AND H.SITE_CD  = #{siteCd}
 		),
 		sch_ver AS (
 			/* 동일 SCH_CD + APPLY_DATE 중복은 HIST_IDX 최댓값 1건만 채택(DUP_RN=1) 후,
@@ -271,10 +272,13 @@
 				, SUBSTRING(V.FIXED_OT_END_TIME, 3, 2)
 			), '')
 		)					AS schNm
+		/* 소속이동-이력가시성-보정(웹 Attd_05): 동일 (userCd, wrkYmd) 에 사업장이 다른 행이
+		   공존할 때(아래 A.SITE_CD 제한 철회로 발생 가능) 서비스 레이어 병합 타이브레이크용
+		   기준시각. 위치매핑 마지막 컬럼(record 끝 필드와 순서 일치). */
+		, COALESCE(A.UPDATE_DATE, A.INSERT_DATE) AS effectiveDtime
 	FROM TB_USER_WORK_PLAN A
 		 INNER JOIN TB_USER U
 			ON U.CMPNY_CD = A.CMPNY_CD
-		   AND U.SITE_CD  = A.SITE_CD
 		   AND U.USER_CD  = A.USER_CD
 		 INNER JOIN node_tree B
 			ON U.CMPNY_CD = B.CMPNY_CD
@@ -293,7 +297,13 @@
 		     OR ( V.VER_SEQ = 1 AND A.WORK_YMD <![CDATA[ < ]]> V.APPLY_DATE )
 		   )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
-	  AND A.SITE_CD = #{siteCd}
+	  /* 소속이동-이력가시성-보정(웹 Attd_05, 2026-08-28): 종전엔 A.SITE_CD = #{siteCd} 로
+	     조회 사업장 소속 행만 봤는데, 소속이동 시 이미 실제 근태가 있어 신 사업장으로 백필되지
+	     않은 과거 근무일(A.SITE_CD=구 사업장)이 화면에서 통째로 누락됐다(앱은 이미 동일 계열
+	     보정 적용됨 - AppAttd01ServiceImpl.indexSchedule 참조). 사업장 제한을 철회하고
+	     대신 "현재 이 사업장/부서 소속 사용자(node_tree)"로만 스코프를 좁혀, 그 사용자의
+	     전체 사업장 이력 근무계획을 가져온 뒤 서비스 레이어에서 (userCd, wrkYmd) 당 1건으로
+	     병합한다(조회 사업장 일치 우선 → 최신 갱신시각 우선, mergeSchedByUserAndDate). */
 	  AND A.WORK_YMD LIKE CONCAT(REPLACE(#{workYm}, '-', ''), '%')
 	  AND U.ACCOUNT_STATUS != '03'
 	  <if test="userNm != null and userNm != ''">

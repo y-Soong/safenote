@@ -13,6 +13,12 @@ public record SchedResult(
 	 * (record 위치 매핑 — SELECT 마지막 컬럼과 순서 일치, 말미 추가 유지)
 	 */
 	, String schNm
+	/**
+	 * 소속이동-이력가시성-보정(웹 Attd_05): (userCd, wrkYmd) 당 사업장이 다른 행이 공존할 때
+	 * 서비스 레이어 병합(mergeSchedByUserAndDate) 타이브레이크용 기준시각(UPDATE_DATE 우선,
+	 * 없으면 INSERT_DATE). (record 위치 매핑 — SELECT 마지막 컬럼과 순서 일치)
+	 */
+	, java.time.LocalDateTime effectiveDtime
 ) {
 
 }
