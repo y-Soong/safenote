@@ -91,12 +91,14 @@
             ON  U.CMPNY_CD = LU.CMPNY_CD
             AND U.USER_CD  = LU.USER_CD
 
-        /* 부서명. NODE_CD 는 사업장 간 중복 사용되므로(실측: '001' 의 'n1' 이 7개 사업장에 존재)
-           반드시 사용자 본인 사업장(U.SITE_CD) 기준으로 조인한다 — LU.SITE_CD 로 조인하면
-           타 사업장 동일 코드 부서명이 잘못 표시된다(qa 결함 D1). */
+        <!-- SEC-A16-06(2026-08-28): 부서명은 조회자가 인가된 사업장(LU.SITE_CD=조회 siteCd, 위 108행에서
+             이미 강제)의 조직구조 기준으로만 노출한다 — U.SITE_CD(사용자 현재 소속)로 조인하면 사업장
+             이동자의 경우 조회자가 인가받지 못한 사업장의 부서 정보가 새어나갈 수 있다(security 1차
+             검토 High, safe 역할 + nodeCd 공백 조회 시 재현). 사업장 이동자는 부서명이 공백으로 뜰 수
+             있음(모르면 보여주지 않는다 — 의도된 동작, §6-2). -->
         LEFT JOIN TB_SITE_NODE N
             ON  N.CMPNY_CD = U.CMPNY_CD
-            AND N.SITE_CD  = U.SITE_CD
+            AND N.SITE_CD  = LU.SITE_CD
             AND N.NODE_CD  = U.NODE_CD
 
         /* 연차 종류명. 조인 키는 tb_leave_type_mgmt PK(CMPNY_CD, LEAVE_CD) 복합. */
@@ -125,13 +127,17 @@
              퇴사 후 월에는 성명이 계속 조회되지 않게 차단 — 현황 화면 관례 attd07/11/15 취지).
              USE_YN 은 조건에 두지 않는다(비활성 계정 != 퇴사 — 재직자 이력 소실 방지). */
           AND (U.WITHDRAWAL_DATE IS NULL OR U.WITHDRAWAL_DATE <![CDATA[ >= ]]> #{monthStart})
-          /* qa 결함 D1: 부서 판정 술어에 사업장 차원을 세운다. NODE_CD 는 사업장 간 중복 코드이므로
-             사용자 소속 사업장을 고정하지 않으면 타 사업장 동일 코드 부서가 오매칭된다.
-             Attd_15 target_user CTE 관례(U.SITE_CD 바인딩 + node_tree 3컬럼 조인) 미러.
-             주의: SQL 주석 안에는 파라미터 표기(샵중괄호)를 쓰지 않는다 — MyBatis 가 주석 안에서도
-             치환하여 ParameterMapping 을 1건 더 만들지만 JDBC 드라이버는 주석 속 물음표를 세지 않아
-             "Parameter index out of range" 로 조회가 통째로 실패한다. */
-          AND U.SITE_CD       = #{siteCd}
+          /* SEC-A16-05(2026-08-28): 사업장 이동자의 과거 연차 이력 보존 — 사업장 스코프는 "연차가
+             기록된 사업장"(LU.SITE_CD, 위 108행)만으로 판정한다. 사용자의 현재 소속(U.SITE_CD)이
+             기록 당시와 달라도(사업장 이동) 이력은 그대로 노출한다 — 바로 위 SEC-A16-04 퇴사자 처리와
+             동일한 "과거 재직 시점 이력은 보존" 원칙. 이 자리에는 원래 U.SITE_CD 를 조회 사업장과
+             비교하는 조건이 있었으나 사업장 이동자를 통째로 걸러내는 부작용이 있어 삭제했다(운영 DB
+             실사용자 재현 — 회사 DpqyoXhpHsAKhHxymCZP, 사용자 20260800002).
+             ★주의: 부서(nodeCd) 필터의 비재귀 분기(아래 145~147행 부근)는 NODE_CD 가 사업장 간 중복
+             코드라(qa 결함 D1) 사업장 차원이 별도로 필요하다 — 그 조건은 삭제하지 않고 해당 분기 쪽으로
+             옮겼다(D1 재발 방지, 아래 SEC-A16-05 주석 참조). 주석 안에는 파라미터 표기(샵중괄호)를
+             쓰지 않는다(위 결함 D1 주석의 함정 재확인 — MyBatis 는 주석 안에서도 치환을 시도해 조회가
+             전멸한다). */
 
         <if test='nodeCd != null and nodeCd != "" and "Y".equals(incSubNodeYn)'>
           AND EXISTS (
@@ -143,6 +149,12 @@
           )
         </if>
         <if test='nodeCd != null and nodeCd != "" and !"Y".equals(incSubNodeYn)'>
+          <!-- SEC-A16-05: NODE_CD 는 사업장 간 중복 코드(qa 결함 D1)이므로 이 분기는 반드시
+               조회 사업장 안에서 부서를 해석해야 한다. 위 WHERE 상단에 있던, U.SITE_CD 를 조회
+               사업장과 비교하는 조건을 삭제하면서(사업장 이동자 이력 보존) 이 분기가 잃은 사업장
+               차원을 여기서 복원한다. 재귀 분기(바로 위 EXISTS ... node_tree)는 node_tree CTE
+               자체가 조회 사업장으로 고정되어 있어 이 보강이 필요 없다(자체적으로 이미 안전). -->
+          AND U.SITE_CD = #{siteCd}
           AND U.NODE_CD = #{nodeCd}
         </if>
 
