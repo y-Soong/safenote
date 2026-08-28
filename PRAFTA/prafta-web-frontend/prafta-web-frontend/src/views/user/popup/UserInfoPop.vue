@@ -60,6 +60,24 @@
             </BaseSelect>
           </div>
 
+          <!-- User_01 테이블 쪽 직급(rankCd) 셀렉트와 동일 소스/필터(COM007, baimValDCd != null).
+               PRAFTA-USER01-RANK-01: 팝업에 직급 지정 기능 추가(기존 rankCd:null 하드코딩 결함 수정). -->
+          <div class="form-row-max">
+            <label>직급</label>
+            <BaseSelect id="rankCd" v-model="rankCd">
+              <option :value="null">-</option>
+              <option
+                v-for="opt in (baseInfoArr['COM007'] || []).filter(
+                  (o) => o.baimValDCd != null
+                )"
+                :key="opt.baimValDCd"
+                :value="opt.baimValDCd"
+              >
+                {{ opt.baimValDNm }}
+              </option>
+            </BaseSelect>
+          </div>
+
           <div class="form-row-max">
             <label>휴대폰 번호</label>
             <input
@@ -730,6 +748,8 @@ const schTypeLoading = ref(false);
 const birthDt = ref("");
 const birthDtFcs = ref("");
 const authCd = ref("");
+// PRAFTA-USER01-RANK-01: 직급(rankCd) 선택값. null = 미지정(테이블 쪽과 동일 기본값 계약).
+const rankCd = ref(null);
 const nodeCd = ref("");
 const nodeNm = ref("");
 const accountStatus = ref("");
@@ -1024,7 +1044,7 @@ const fnGetBaseinfoList = async () => {
     const response = await axios.get("/comApi/baseinfo/base-info-lists", {
       params: {
         cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
-        baseCodeList: ["COM005"],
+        baseCodeList: ["COM005", "COM007"],
       },
     });
 
@@ -1094,6 +1114,8 @@ const fnGetUserInfo = async (userId) => {
         userCd.value = response.data.userInfoList[0].userCd;
         userNm.value = response.data.userInfoList[0].userNm;
         authCd.value = response.data.userInfoList[0].authCd;
+        // PRAFTA-USER01-RANK-01: 직급 프리필(테이블 쪽과 동일하게 서버 조회값 사용).
+        rankCd.value = response.data.userInfoList[0].rankCd;
         siteCd.value = response.data.userInfoList[0].siteCd;
         nodeCd.value = response.data.userInfoList[0].nodeCd;
         nodeNm.value = response.data.userInfoList[0].nodeNm;
@@ -1250,7 +1272,7 @@ const fnUserInfoSave = async () => {
         email: email.value,
         gender: gender.value,
         birthDt: (birthDt.value || "").replace(/-/g, ""),
-        rankCd: null,
+        rankCd: rankCd.value || null,
         hireDate: (hireDateInput.value || "").replace(/-/g, ""),
         // PRAFTA_COM_003-B 3.1.4: 고용형태 정규직 고정. 계약종료일은 정규직이라 미전송(null).
         employmentType: "REGULAR",
@@ -1302,6 +1324,8 @@ const fnUserInfoSave = async () => {
         userNm: userNm.value,
         useYn: useYn.value,
         authCd: authCd.value,
+        // PRAFTA-USER01-RANK-01: rankCd 전송 신설(①-3 결함 해소 — 미전송 시 서버가 무조건 NULL로 SET).
+        rankCd: rankCd.value || null,
         mblNo: mblNo.value,
         email: email.value,
         gender: gender.value,
@@ -1965,9 +1989,18 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   flex-direction: column;
   gap: 0.125rem;
   max-width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: var(--input-radius, 10px);
   font-size: 0.8125rem;
   color: var(--color-text, #374151);
   cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.credit-mode-radio:has(input:checked) {
+  border-color: var(--color-primary, #30796a);
+  background: var(--color-primary-bg, #eef6f3);
 }
 
 .credit-mode-radio-line {
@@ -1975,6 +2008,10 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   align-items: center;
   gap: 0.375rem;
   white-space: nowrap; /* 라디오○+라벨 한 줄 고정 */
+}
+
+.credit-mode-radio-line input[type="radio"] {
+  accent-color: var(--color-primary, #30796a);
 }
 
 .credit-mode-hint {
