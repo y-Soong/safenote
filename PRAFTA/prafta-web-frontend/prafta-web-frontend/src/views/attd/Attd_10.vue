@@ -621,7 +621,7 @@ const tabs = [
   { key: "correction", label: "근태 보정" },
   { key: "overtime", label: "초과근무 상신" },
   { key: "leave", label: "연차 상신" },
-  { key: "defaultSchChange", label: "근무타입 변경" },
+  { key: "defaultSchChange", label: "기본 근무타입 변경" },
 ];
 const activeTab = ref("leave");
 // 접수함다중사업장권한확장-003: 접근 가능 사업장 목록 + 선택값("" = 전체). 연차 탭은 필터 미적용(백엔드 스코프 밖).
@@ -932,7 +932,7 @@ const reqTypeNm = (t) =>
     "02": "근태 수정",
     "03": "초과근무 생성",
     "10": "스케줄 수정",
-    "14": "근무타입 변경",
+    "14": "기본 근무타입 변경",
   }[t] ||
   t ||
   "-");
@@ -1037,7 +1037,8 @@ const fnLoad = async () => {
   if (
     activeTab.value === "correction" ||
     activeTab.value === "overtime" ||
-    activeTab.value === "schedule"
+    activeTab.value === "schedule" ||
+    activeTab.value === "defaultSchChange"
   ) {
     return fnLoadReqInbox();
   }
