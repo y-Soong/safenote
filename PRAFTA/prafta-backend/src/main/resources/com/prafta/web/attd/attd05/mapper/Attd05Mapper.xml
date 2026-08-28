@@ -297,7 +297,7 @@
 		     OR ( V.VER_SEQ = 1 AND A.WORK_YMD <![CDATA[ < ]]> V.APPLY_DATE )
 		   )
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
-	  /* 소속이동-이력가시성-보정(웹 Attd_05, 2026-08-28): 종전엔 A.SITE_CD = #{siteCd} 로
+	  /* 소속이동-이력가시성-보정(웹 Attd_05, 2026-08-28): 종전엔 A.SITE_CD = 조회사업장 으로
 	     조회 사업장 소속 행만 봤는데, 소속이동 시 이미 실제 근태가 있어 신 사업장으로 백필되지
 	     않은 과거 근무일(A.SITE_CD=구 사업장)이 화면에서 통째로 누락됐다(앱은 이미 동일 계열
 	     보정 적용됨 - AppAttd01ServiceImpl.indexSchedule 참조). 사업장 제한을 철회하고
