@@ -14,7 +14,11 @@
   <div v-if="accessibleSites.length > 1" class="site-selector-buttons">
     <span v-if="label" class="site-selector-buttons__label">{{ label }}</span>
 
-    <div class="site-selector-buttons__scroll">
+    <div
+      ref="scrollEl"
+      class="site-selector-buttons__scroll"
+      @wheel="onWheel"
+    >
       <div
         class="site-selector-buttons__list"
         role="group"
@@ -57,7 +61,18 @@
 </template>
 
 <script setup>
-import { defineProps, defineEmits } from "vue";
+import { defineProps, defineEmits, ref } from "vue";
+
+const scrollEl = ref(null);
+
+// 데스크탑 마우스 휠(세로 스크롤)을 가로 스크롤로 변환 — 칩이 많아져 스크롤이 필요해져도
+// 사용자가 shift+휠 같은 별도 조작 없이 자연스럽게 좌우로 넘길 수 있게 한다.
+const onWheel = (e) => {
+  if (!scrollEl.value || e.deltaY === 0 || e.deltaX !== 0) return;
+  if (scrollEl.value.scrollWidth <= scrollEl.value.clientWidth) return;
+  e.preventDefault();
+  scrollEl.value.scrollLeft += e.deltaY;
+};
 
 const props = defineProps({
   // 서버 완성 목록 — [{siteCd, siteNo, siteNm}]. 이 컴포넌트는 필터링/정렬을 하지 않는다.
@@ -85,7 +100,7 @@ const onSelect = (value) => {
    (ReqInboxSiteFilter.vue·AttdNeighborDaySegments.vue와 동일 규약). */
 .site-selector-buttons {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.625rem 0.875rem;
@@ -103,15 +118,35 @@ const onSelect = (value) => {
   flex-shrink: 0;
 }
 
+/* 사업장 수가 늘어나도 줄바꿈으로 필터 바 높이가 들쭉날쭉해지지 않도록, 화면 크기와
+   무관하게 항상 한 줄 가로 스크롤로 고정한다(스크롤 가능함이 보이도록 스크롤바 상시 노출 +
+   데스크탑 마우스 휠 지원은 스크립트의 onWheel 참조). */
 .site-selector-buttons__scroll {
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+
+.site-selector-buttons__scroll::-webkit-scrollbar {
+  height: 5px;
+}
+
+.site-selector-buttons__scroll::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 999px;
+}
+
+.site-selector-buttons__scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .site-selector-buttons__list {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.375rem;
 }
 
@@ -119,6 +154,7 @@ const onSelect = (value) => {
    선택 강조 색상/포커스 링은 .btn-primary 규약(tokens.css --color-primary 계열)을 그대로 따른다. */
 .site-selector-buttons__chip {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: 0.3rem;
   padding: 0.3rem 0.7rem;
@@ -177,20 +213,12 @@ const onSelect = (value) => {
   opacity: 0.75;
 }
 
-/* 좁은 화면: 줄바꿈 대신 가로 스크롤 1행 유지(칩이 세로로 쌓여 필터 바 높이가 과도하게
-   늘어나는 것을 방지 — 작업지시서 §검증 포인트 "반응형에서 버튼/칩이 깨지지 않는지"). */
+/* 좁은 화면: 라벨까지 한 줄에 우겨넣지 않고 위로 뺀다(칩 가로 스크롤 자체는 이제
+   전 화면 크기에서 공통 동작이라 별도 처리 불요 — 작업지시서 §검증 포인트
+   "반응형에서 버튼/칩이 깨지지 않는지"). */
 @media (max-width: 768px) {
   .site-selector-buttons {
-    flex-wrap: nowrap;
     align-items: flex-start;
-  }
-
-  .site-selector-buttons__list {
-    flex-wrap: nowrap;
-  }
-
-  .site-selector-buttons__chip {
-    flex-shrink: 0;
   }
 }
 </style>
