@@ -147,6 +147,7 @@ onMounted(() => {
   font-size: 0.85rem;
   color: var(--color-text-muted);
   white-space: pre-line;
+  word-break: keep-all;
 }
 
 .reason-modal__textarea {

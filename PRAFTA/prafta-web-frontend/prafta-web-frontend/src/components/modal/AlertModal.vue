@@ -10,7 +10,7 @@
       >
         <div class="modal-content">
           <div class="modal-body">
-            <p style="white-space: pre-line">{{ message }}</p>
+            <p style="white-space: pre-line; word-break: keep-all">{{ message }}</p>
           </div>
           <div class="modal-footer">
             <button

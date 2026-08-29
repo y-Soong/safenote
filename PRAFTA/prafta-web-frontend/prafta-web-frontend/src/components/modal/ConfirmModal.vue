@@ -10,7 +10,7 @@
       >
         <div class="modal-content">
           <div class="modal-body">
-            <p style="white-space: pre-line">{{ message }}</p>
+            <p style="white-space: pre-line; word-break: keep-all">{{ message }}</p>
           </div>
           <!-- F-10 규약: 왼쪽=진행/확정(색은 variant 로 안전=primary/파괴=danger), 오른쪽=이탈(ghost),
                폭 균등(컨테이너를 꽉 채우는 게 아니라 두 라벨 중 더 넓은 쪽 기준으로 동일 폭 — equalBtnWidth). -->
