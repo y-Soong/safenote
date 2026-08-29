@@ -110,7 +110,24 @@
               <label class="mg-label">
                 사용 가능일<span class="mg-required">*</span>
               </label>
-              <CalendarSrch v-model="form.availFromDate" class="mg-input" />
+              <div class="mg-date-wrap">
+                <CalendarSrch v-model="form.availFromDate" class="mg-input" />
+                <svg
+                  class="mg-date-icon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect x="3" y="4" width="18" height="18" rx="2" />
+                  <line x1="16" y1="2" x2="16" y2="6" />
+                  <line x1="8" y1="2" x2="8" y2="6" />
+                  <line x1="3" y1="10" x2="21" y2="10" />
+                </svg>
+              </div>
             </div>
           </div>
 
@@ -522,11 +539,34 @@ const fnTodayYyyymmdd = () => {
   background: var(--color-surface);
   color: var(--color-text-strong);
   font-family: "Pretendard", sans-serif;
+  padding-right: 1.875rem;
+  cursor: pointer;
 }
 .mg-input :deep(.calendar-input):focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* CalendarSrch 내부 placeholder(이모지)는 OS별 렌더 크기가 들쭉날쭉해
+   넓은 필드에서 너무 작게 보임 → 숨기고 우측에 고정 크기 아이콘을 별도 배치 */
+.mg-input :deep(.calendar-input)::placeholder {
+  color: transparent;
+}
+
+.mg-date-wrap {
+  position: relative;
+}
+
+.mg-date-icon {
+  position: absolute;
+  right: 0.625rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 1rem;
+  height: 1rem;
+  color: var(--color-text-muted);
+  pointer-events: none;
 }
 
 .mg-input-suffix {
