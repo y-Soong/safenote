@@ -1653,6 +1653,19 @@ watch([siteCd, nodeCd, incSubNodeYn, workYm], () => {
   hasSearched.value = false;
 });
 
+// 사업장 조회조건이 바뀌면, 재조회 전까지 이전 사업장의 캘린더/목록 데이터가
+//   화면에 남아있지 않도록 즉시 초기화한다(다른 사업장 데이터를 보고 있다고 오인하는 것 방지).
+watch(siteCd, () => {
+  userList.value = [];
+  recordMap.value = {};
+  reqIdList.value = [];
+  leaveChangeSummaryList.value = [];
+  monthlyOvertimeList.value = [];
+  timeLeaveWindowsMap.value = {};
+  selectedUserId.value = "";
+  closeInfo.value = null;
+});
+
 onMounted(() => {
   fnInit();
   fnButtonControll();
