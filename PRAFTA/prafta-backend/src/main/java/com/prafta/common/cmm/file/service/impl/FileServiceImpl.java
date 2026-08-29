@@ -55,9 +55,10 @@ public class FileServiceImpl implements FileService {
 	/**
 	 * 보호 파일타입 — 무인증 정적 서빙 제외 대상 (SEC-1).
 	 * 007: 일용직계약서(계약서 원본/서명 PNG/합성본) — 성명+자필서명 포함 PII 법정 문서.
+	 * 008: 연차 증빙자료(진단서/가족관계증명서 등) — 개인 민감정보 포함 첨부.
 	 * 여기 포함된 타입만 secure base 에 저장되며, 그 외(001~006 등)는 기존 저장 동작 불변.
 	 */
-	private static final Set<String> PROTECTED_FILE_TYPES = Set.of("007");
+	private static final Set<String> PROTECTED_FILE_TYPES = Set.of("007", "008");
 
 	/** 공개 파일 FILE_PATH 선두 프리픽스(정적 서빙 마운트 경로와 동일). */
 	private static final String PUBLIC_PATH_PREFIX = "uploads";

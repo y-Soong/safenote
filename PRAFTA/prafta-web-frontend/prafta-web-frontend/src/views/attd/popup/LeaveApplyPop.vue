@@ -22,6 +22,42 @@
             </BaseSelect>
           </div>
 
+          <!-- 증빙 자료 안내 + 첨부 (연차 신청 증빙 필수화 2026-08-29 — 강제는 서버 가드가 판정) -->
+          <div v-if="selectedType?.evidenceYn === 'Y'" class="la-field la-evid">
+            <label>증빙 자료</label>
+            <p v-if="selectedType.evidenceGuideMsg" class="la-evid-guide">
+              {{ selectedType.evidenceGuideMsg }}
+            </p>
+            <input
+              ref="evidenceFileRef"
+              type="file"
+              accept="image/*,application/pdf"
+              style="display: none"
+              @change="onEvidenceFileChange"
+            />
+            <div class="la-evid-row">
+              <button
+                type="button"
+                class="la-evid-btn"
+                @click="evidenceFileRef?.click()"
+              >
+                {{ evidenceFile ? "파일 변경" : "파일 선택" }}
+              </button>
+              <span v-if="evidenceFile" class="la-evid-name">{{
+                evidenceFile.name
+              }}</span>
+              <button
+                v-if="evidenceFile"
+                type="button"
+                class="la-evid-del"
+                aria-label="증빙 파일 제거"
+                @click="onRemoveEvidenceFile"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
           <div class="la-field">
             <label>근무일 <span class="req">*</span></label>
             <CalendarSrch v-model="workYmd" />
@@ -50,18 +86,22 @@
               <label class="la-half-opt">
                 <input v-model="halfPart" type="radio" value="START" />
                 <span class="la-half-opt__name">늦게 출근</span>
-                <span class="la-half-opt__range">{{ halfStartRangeText || "--:-- ~ --:--" }}</span>
+                <span class="la-half-opt__range">{{
+                  halfStartRangeText || "--:-- ~ --:--"
+                }}</span>
               </label>
               <label class="la-half-opt">
                 <input v-model="halfPart" type="radio" value="END" />
                 <span class="la-half-opt__name">일찍 퇴근</span>
-                <span class="la-half-opt__range">{{ halfEndRangeText || "--:-- ~ --:--" }}</span>
+                <span class="la-half-opt__range">{{
+                  halfEndRangeText || "--:-- ~ --:--"
+                }}</span>
               </label>
             </div>
             <p class="la-hint">
               근무를 절반으로 나누는 기준 시각은
-              <strong>{{ halfBoundaryText || "-" }}</strong> 입니다. (휴게시간은 근무로 세지
-              않습니다)
+              <strong>{{ halfBoundaryText || "-" }}</strong> 입니다. (휴게시간은
+              근무로 세지 않습니다)
             </p>
           </div>
 
@@ -91,15 +131,14 @@
                 하루 차감 상한(1일)이 적용됩니다.
               </p>
               <!-- PC-10: 짜투리 발동 안내 (preview.remnantTriggered — D6) -->
-              <p
-                v-if="preview.remnantTriggered"
-                class="la-preview-remnant"
-              >
-                잔여 연차
-                전액({{ formatLeaveDays(preview.remnantDays, preview.convMinutes) }})이
-                차감되고, 부족분
-                <strong>{{ formatLeaveMinutes(preview.companyCoverMinutes) }}</strong>은
-                회사 부담으로 처리됩니다.
+              <p v-if="preview.remnantTriggered" class="la-preview-remnant">
+                잔여 연차 전액({{
+                  formatLeaveDays(preview.remnantDays, preview.convMinutes)
+                }})이 차감되고, 부족분
+                <strong>{{
+                  formatLeaveMinutes(preview.companyCoverMinutes)
+                }}</strong
+                >은 회사 부담으로 처리됩니다.
               </p>
             </template>
             <!-- E2(당일분모 전환): 미배정일 시간차 차단 안내 (서버 194/구 193 수신 시 — 날짜 기준) -->
@@ -284,6 +323,20 @@ const line = ref([]); // [{ userCd, userNm }]
 
 // prafta-com-011-6 가불(미래 연차 당겨쓰기) 동의 상태. 종류/단위/날짜 변경 시 리셋.
 const borrowAgreed = ref(false);
+
+// 증빙 자료(연차 신청 증빙 필수화 2026-08-29) — { file, name } | null
+const evidenceFile = ref(null);
+const evidenceFileRef = ref(null);
+
+const onEvidenceFileChange = (e) => {
+  const f = e?.target?.files?.[0];
+  if (!f) return;
+  evidenceFile.value = { file: f, name: f.name };
+};
+const onRemoveEvidenceFile = () => {
+  evidenceFile.value = null;
+  if (evidenceFileRef.value) evidenceFileRef.value.value = "";
+};
 
 // LC-09(§5-C): 예상 차감액 미리보기 상태 (POST /leaveflow/preview-deduction)
 //   preview = { chargeDays, floorApplied, capApplied, insufficientBalance, convMinutes, floorDays,
@@ -691,6 +744,25 @@ const fnSubmit = async () => {
 
   submitting.value = true;
   try {
+    // 연차 신청 증빙 필수화(2026-08-29): 업로드/제출 분리 — 첨부가 있으면 /apply 호출 전 먼저
+    //   POST /webApi/leaveflow/evidence-file(multipart) 로 업로드해 fileMgmtCd 를 받는다.
+    //   업로드 실패 시 /apply 호출로 진행하지 않고 에러를 표면화한다(§2-2 업로드/제출 분리 아키텍처).
+    if (evidenceFile.value?.file) {
+      try {
+        const formData = new FormData();
+        formData.append("item", evidenceFile.value.file);
+        const uploadRes = await axios.post("/webApi/leaveflow/evidence-file", formData, {
+          timeout: 60 * 1000,
+        });
+        payload.evidenceFileId = uploadRes?.data?.fileMgmtCd;
+      } catch (uploadErr) {
+        await proxy.$alert(
+          resolveApiErrorMessage(uploadErr, "증빙 파일 업로드 중 오류가 발생했습니다.")
+        );
+        return;
+      }
+    }
+
     await axios.post("/webApi/leaveflow/apply", payload);
     await proxy.$alert("연차 신청이 완료되었습니다.");
     if (typeof props.onSaved === "function") props.onSaved();
@@ -989,5 +1061,44 @@ onMounted(() => {
 .btn-confirm:disabled {
   opacity: 0.6;
   cursor: default;
+}
+
+/* 증빙 자료(연차 신청 증빙 필수화 2026-08-29) */
+.la-evid-guide {
+  margin: 0.3rem 0;
+  font-size: 0.8rem;
+  color: var(--color-warning-text, #b45309);
+  background: var(--color-warning-bg, #fef3c7);
+  border: 1px solid var(--color-warning-text, #b45309);
+  border-radius: 0.35rem;
+  padding: 0.4rem 0.5rem;
+  line-height: 1.5;
+}
+.la-evid-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.la-evid-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+  border: 1px solid var(--color-border, #d1d5db);
+  border-radius: 0.35rem;
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #111827);
+  cursor: pointer;
+  font-family: inherit;
+}
+.la-evid-name {
+  font-size: 0.82rem;
+  color: var(--color-text, #111827);
+}
+.la-evid-del {
+  border: none;
+  background: transparent;
+  color: var(--color-danger, #dc2626);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
 }
 </style>

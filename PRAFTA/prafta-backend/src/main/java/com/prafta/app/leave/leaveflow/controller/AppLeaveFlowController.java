@@ -2,15 +2,20 @@ package com.prafta.app.leave.leaveflow.controller;
 
 import java.util.Map;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyMetaParam;
 import com.prafta.app.leave.leaveflow.application.param.LeaveApplyParam;
@@ -27,6 +32,7 @@ import com.prafta.app.leave.leaveflow.dto.response.LeaveDayScheduleResponse;
 import com.prafta.app.leave.leaveflow.dto.response.LeaveDeductionPreviewResponse;
 import com.prafta.app.leave.leaveflow.service.AppLeaveFlowService;
 import com.prafta.app.leave.leaveflow.service.MultiDayLeaveApplyService;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
 import com.prafta.common.util.EmploymentTypeGuard;
@@ -211,8 +217,55 @@ public class AppLeaveFlowController {
 
         String groupId = multiDayLeaveApplyService.applyMulti(
                 tokenInfo, request.getLeaveCd(), request.getLeaveType(), request.getDates(),
-                request.getReason(), request.getApproverUserCds(), request.getPresetId());
+                request.getReason(), request.getApproverUserCds(), request.getPresetId(),
+                request.getEvidenceFileId());
 
         return ResponseEntity.status(HttpStatus.OK).body(Map.of("groupId", groupId));
+    }
+
+    // ============================================================
+    // 연차 신청 증빙 필수화(2026-08-29): 업로드/제출 분리 아키텍처 — 별도 신규 업로드 엔드포인트(multipart)
+    // ============================================================
+
+    /**
+     * 증빙 파일 업로드(신청과 별도). 신청 상태와 무관하게 임시 업로드만 담당하며, 반환된 fileMgmtCd 를
+     * {@code /apply} · {@code /apply-multi} 요청 바디의 {@code evidenceFileId} 로 실어 보낸다
+     * (AppNearMiss01Controller.report 패턴 미러).
+     */
+    @PostMapping(value = "/evidence-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadEvidenceFile(
+            @RequestPart(value = "item", required = false) MultipartFile file,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        // sec 리뷰(Medium): 다른 leaveflow endpoint(/apply·/apply-multi·/preview-deduction)와 동일하게
+        //   일용직은 연차 신청 비해당이므로 증빙 업로드 자체도 서버에서 차단(고아 파일 업로드 방지).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+
+        String fileMgmtCd = appLeaveFlowService.uploadEvidenceFile(tokenInfo, file);
+
+        return ResponseEntity.status(HttpStatus.OK).body(Map.of("fileMgmtCd", fileMgmtCd));
+    }
+
+    /**
+     * 증빙 파일 열람 — 본인(업로드 신청자) 또는 해당 요청 결재선에 포함된 결재자만 접근 가능(스코프 검증은
+     * 서비스 계층). 공개 정적 URL 금지, 인증 스트림 서빙(SEC-1 — 근로계약서와 동일 원칙).
+     */
+    @GetMapping("/evidence-file/{fileMgmtCd}")
+    public ResponseEntity<byte[]> getEvidenceFile(
+            @PathVariable("fileMgmtCd") String fileMgmtCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        FileBytesResult file = appLeaveFlowService.loadEvidenceFile(tokenInfo, fileMgmtCd);
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(file.data());
     }
 }

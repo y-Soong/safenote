@@ -60,6 +60,74 @@
           <p class="lam-hint">기간 신청은 종일 연차만 가능합니다. 반차·시간차는 단건 신청을 이용해 주세요.</p>
         </section>
 
+        <!-- 증빙 자료 안내 + 첨부 (PRAFTA-003과 동일 기능·다른 화면. 강제는 서버 Phase3 가드가 자동 적용) -->
+        <section v-if="selectedType?.evidenceYn === 'Y'" class="lam-section">
+          <h2 class="lam-section__title">증빙 자료</h2>
+          <p v-if="selectedType.evidenceGuideMsg" class="lam-evid-guide">
+            {{ selectedType.evidenceGuideMsg }}
+          </p>
+
+          <div class="lam-evid-attach">
+            <!-- 미첨부: 추가 버튼 -->
+            <button
+              v-if="!evidenceFile"
+              type="button"
+              class="lam-evid-attach-btn"
+              aria-label="증빙 자료 추가"
+              :disabled="evidencePicking"
+              @click="onPickEvidence"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              <span>{{ evidencePicking ? '여는 중...' : '첨부' }}</span>
+            </button>
+
+            <!-- 첨부됨: 미리보기 + 제거 + 메타 -->
+            <template v-else>
+              <div class="lam-evid-prv">
+                <img :src="evidenceFile.previewUrl" alt="첨부한 증빙 자료" />
+                <button
+                  type="button"
+                  class="lam-evid-prv__rm"
+                  aria-label="증빙 자료 제거"
+                  @click="onRemoveEvidence"
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    aria-hidden="true"
+                  >
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                </button>
+              </div>
+              <div class="lam-evid-meta">
+                <strong>{{ evidenceFile.name }}</strong>
+                <span>{{ evidenceFile.sizeText }}</span>
+              </div>
+            </template>
+          </div>
+        </section>
+
         <!-- 기간 -->
         <section class="lam-section">
           <h2 class="lam-section__title">기간</h2>
@@ -199,6 +267,8 @@ import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import DateStepperField from '@/components/common/DateStepperField.vue'
 import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
+// 연차 신청 증빙 필수화(2026-08-29): 증빙 자료 첨부 — LeaveApplyForm.vue(단건)와 동일 유틸 재사용.
+import { selectImage, revokePreview } from '@/utils/imagePicker'
 
 const router = useRouter()
 const { proxy } = getCurrentInstance() || { proxy: null }
@@ -223,6 +293,10 @@ const checked = reactive({})
 const shortageDays = ref(0)
 const submitting = ref(false)
 
+// 연차 신청 증빙 필수화(2026-08-29): 증빙 자료. { file, previewUrl, name, sizeText } | null
+const evidenceFile = ref(null)
+const evidencePicking = ref(false)
+
 // ── 결재선 ───────────────────────────────────────────────────────────────
 //   ★연차·월차는 aprvRequired=true 다(운영 실측). 결재자를 안 보내면 서버가
 //     COMMON_400_001('요청 파라미터가 누락되었습니다')로 거부한다.
@@ -237,6 +311,11 @@ const aprvRequired = computed(() => {
   const t = (leaveTypes.value || []).find((x) => x.leaveCd === leaveCd.value)
   return !!t?.aprvRequired
 })
+
+/** 연차 신청 증빙 필수화(2026-08-29): 현재 선택된 연차 종류의 메타(증빙 여부/안내문구 등). 미선택이면 null. */
+const selectedType = computed(
+  () => (leaveTypes.value || []).find((t) => t.leaveCd === leaveCd.value) || null,
+)
 const approverUserCds = computed(() => approverList.value.map((a) => a.approverUserCd))
 
 /** 프리셋 선택 → steps 를 결재선으로 전개(순서 보존). 같은 프리셋 재선택 시 해제. */
@@ -275,6 +354,38 @@ const onAddApprovers = (picked) => {
 const onRemoveApprover = (a) => {
   approverList.value = approverList.value.filter((x) => x.approverUserCd !== a.approverUserCd)
   selectedPresetId.value = ''
+}
+
+// ── 증빙 자료 (연차 신청 증빙 필수화 2026-08-29, LeaveApplyForm.vue 와 동일 패턴) ────────────
+const formatEvidenceSize = (bytes) => {
+  if (!bytes && bytes !== 0) return ''
+  const kb = bytes / 1024
+  return kb < 1024 ? `${kb.toFixed(0)}KB` : `${(kb / 1024).toFixed(1)}MB`
+}
+
+const onPickEvidence = async () => {
+  if (evidencePicking.value) return
+  evidencePicking.value = true
+  try {
+    // TODO(developer): 카메라/갤러리 선택지 확정(PRAFTA-003 LeaveApplyForm.vue와 동일 이슈 — 정책 통일 권장).
+    const { file, previewUrl } = await selectImage('gallery')
+    if (evidenceFile.value?.previewUrl) revokePreview(evidenceFile.value.previewUrl)
+    evidenceFile.value = {
+      file,
+      previewUrl,
+      name: file.name || 'evidence.jpg',
+      sizeText: formatEvidenceSize(file.size),
+    }
+  } catch (e) {
+    console.log(`[LeaveApplyMultiView] 증빙 첨부 취소/실패: ${e && e.message}`)
+  } finally {
+    evidencePicking.value = false
+  }
+}
+
+const onRemoveEvidence = () => {
+  if (evidenceFile.value?.previewUrl) revokePreview(evidenceFile.value.previewUrl)
+  evidenceFile.value = null
 }
 
 // 종일 사용이 가능한 종류만 — 기간 신청은 종일 전용이다.
@@ -401,6 +512,25 @@ const onSubmit = async () => {
 
   submitting.value = true
   try {
+    // 연차 신청 증빙 필수화(2026-08-29): 첨부가 있으면 apply-multi 호출 전 먼저
+    //   POST /appApi/leaveflow/evidence-file(multipart) 로 업로드해 fileMgmtCd 를 받는다.
+    //   업로드 실패 시 apply-multi 호출로 진행하지 않고 에러를 표면화한다(§2-2 업로드/제출 분리 아키텍처).
+    let evidenceFileId
+    if (evidenceFile.value?.file) {
+      try {
+        const formData = new FormData()
+        formData.append('item', evidenceFile.value.file)
+        const uploadRes = await api.post('/appApi/leaveflow/evidence-file', formData, {
+          timeout: 60 * 1000,
+        })
+        evidenceFileId = uploadRes?.data?.fileMgmtCd
+      } catch (uploadErr) {
+        console.error('[LeaveApplyMultiView] 증빙 파일 업로드 실패:', uploadErr?.message)
+        showAlert(resolveApiErrorMessage(uploadErr, '증빙 파일 업로드 중 오류가 발생했습니다.'))
+        return
+      }
+    }
+
     await api.post('/appApi/leaveflow/apply-multi', {
       leaveCd: leaveCd.value,
       // ★leaveType 은 apply-meta 응답(LeaveTypeItem)에 없는 필드다 — 보내지 않는다.
@@ -409,6 +539,7 @@ const onSubmit = async () => {
       reason: reason.value,
       // 결재 대상이 아니면 undefined (단건 화면과 동일 규약).
       approverUserCds: aprvRequired.value ? approverUserCds.value : undefined,
+      evidenceFileId,
     })
     await showAlert(`${dates.length}일 신청되었어요`)
     router.back()
@@ -755,5 +886,83 @@ onMounted(async () => {
 }
 .lam-btn--sub:hover:not(:disabled) {
   background: #bbf7d0;
+}
+
+.lam-evid-guide {
+  margin: 0 0 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.5rem;
+  background: var(--color-warning-tint, #fffbeb);
+  border: 1px solid var(--color-warning, #f59e0b);
+  color: var(--color-warning-text, #b45309);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.lam-evid-attach {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.lam-evid-attach-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  width: 4.5rem;
+  height: 4.5rem;
+  border: 1.5px dashed var(--color-border, #d1d5db);
+  border-radius: 0.6rem;
+  background: #fff;
+  color: var(--color-text-muted, #6b7280);
+  font-size: 0.7rem;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.lam-evid-attach-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lam-evid-prv {
+  position: relative;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: 0.6rem;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.lam-evid-prv img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.lam-evid-prv__rm {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.25rem;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  border: none;
+  background: #fff;
+  color: var(--color-text-strong, #111827);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.lam-evid-meta {
+  font-size: 0.72rem;
+  color: var(--color-text-muted, #6b7280);
+  flex: 1;
+  min-width: 0;
+}
+.lam-evid-meta strong {
+  color: var(--color-text-strong, #111827);
+  font-weight: 600;
+  display: block;
 }
 </style>

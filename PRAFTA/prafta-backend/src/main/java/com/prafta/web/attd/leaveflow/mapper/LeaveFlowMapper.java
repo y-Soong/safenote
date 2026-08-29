@@ -287,4 +287,24 @@ public interface LeaveFlowMapper {
                              @Param("leaveDays") java.math.BigDecimal leaveDays,
                              @Param("leaveMinutes") Integer leaveMinutes,
                              @Param("updateNo") String updateNo);
+
+    // ============================================================
+    // 연차 증빙 자료(연차 신청 증빙 필수화 2026-08-29, 앱 AppLeaveFlowMapper 미러)
+    // ============================================================
+
+    /** 증빙 파일 업로드자(TB_FILE_INFO.INSERT_NO). FILE_TYPE='008' 강제(방어 이중화). 대상 없으면 null. */
+    String selectEvidenceFileOwner(@Param("cmpnyCd") String cmpnyCd, @Param("fileMgmtCd") String fileMgmtCd);
+
+    /**
+     * 증빙 파일이 실제 제출된 신청의 REQ_ID(결재선 스코프 판정용). TB_FILE_INFO 조인으로 FILE_TYPE='008' 도
+     * 함께 강제(방어 이중화). 제출 전(orphan)이거나 파일타입 불일치면 null.
+     */
+    String selectReqIdByEvidenceFileId(@Param("cmpnyCd") String cmpnyCd, @Param("fileMgmtCd") String fileMgmtCd);
+
+    /**
+     * evidenceFileId 존재/타입(FILE_TYPE='008')/소유권(업로더=신청자 본인) 4중 검증(앱 security Critical 교훈).
+     * submitLeave() 가 evidenceFileId 가 non-blank 로 오면(EVIDENCE_YN 여부 무관) 항상 이 결과로 게이트한다.
+     */
+    int countValidEvidenceFile(@Param("cmpnyCd") String cmpnyCd, @Param("fileMgmtCd") String fileMgmtCd,
+                               @Param("userCd") String userCd);
 }

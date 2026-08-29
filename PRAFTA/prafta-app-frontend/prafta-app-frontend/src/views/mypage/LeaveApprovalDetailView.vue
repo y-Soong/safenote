@@ -91,6 +91,24 @@
           <h2 class="lad-card__title">사유</h2>
           <p class="lad-row">{{ reason }}</p>
         </section>
+
+        <!-- ⑤-1 증빙 (body.evidenceFileId 있을 때만 — 연차 신청 증빙 필수화 2026-08-29) -->
+        <section v-if="body.evidenceFileId" class="lad-card">
+          <h2 class="lad-card__title">증빙 자료</h2>
+          <button
+            type="button"
+            class="lad-evid-btn"
+            :disabled="evidenceLoading"
+            @click="onViewEvidence"
+          >
+            {{ evidenceLoading ? '불러오는 중...' : '증빙 자료 보기' }}
+          </button>
+        </section>
+
+        <!-- 증빙 뷰어 오버레이 -->
+        <div v-if="evidenceViewerSrc" class="lad-evid-viewer" @click="onCloseEvidenceViewer">
+          <img :src="evidenceViewerSrc" alt="증빙 자료 원본" />
+        </div>
       </template>
 
       <div v-else class="lad-empty">요청을 불러오지 못했습니다.</div>
@@ -126,7 +144,7 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -165,6 +183,48 @@ const myStep = ref(null) // detail.gate.myStep(서버 권위값) — 결재선�
 // ── UI 상태 ──
 const rejectSheetOpen = ref(false)
 const submitting = ref(false)
+
+// ── 증빙 열람 상태 (연차 신청 증빙 필수화 2026-08-29) ──
+const evidenceLoading = ref(false)
+const evidenceViewerSrc = ref('')
+
+// blob objectURL 해제 — 오버레이 닫기/화면 이탈 시 즉시 정리(메모리 누수 방지)
+const revokeEvidenceUrl = () => {
+  if (evidenceViewerSrc.value) {
+    try {
+      URL.revokeObjectURL(evidenceViewerSrc.value)
+    } catch (e) {
+      console.warn('[LeaveApprovalDetail] objectURL 해제 실패:', e?.message)
+    }
+    evidenceViewerSrc.value = ''
+  }
+}
+
+const onCloseEvidenceViewer = () => {
+  revokeEvidenceUrl()
+}
+
+// 증빙 blob 로드 → 오버레이 표시. 실패는 showAlert 고정 메시지(MyContractView.vue catch 패턴).
+const onViewEvidence = async () => {
+  if (evidenceLoading.value || !body.value.evidenceFileId) return
+  evidenceLoading.value = true
+  try {
+    const res = await api.get(`/appApi/leaveflow/evidence-file/${body.value.evidenceFileId}`, {
+      responseType: 'blob',
+    })
+    revokeEvidenceUrl()
+    evidenceViewerSrc.value = URL.createObjectURL(res.data)
+  } catch (e) {
+    console.warn('[LeaveApprovalDetail] 증빙 조회 실패:', e?.message)
+    await showAlert('증빙 자료를 불러오지 못했어요.')
+  } finally {
+    evidenceLoading.value = false
+  }
+}
+
+onUnmounted(() => {
+  revokeEvidenceUrl()
+})
 
 // 게이트 배너 메시지/색상(서버 *Yn 렌더만 — 비즈니스 판정 없음)
 const gateMessage = computed(() => {
@@ -587,6 +647,38 @@ function fmtDt(v) {
   background: var(--color-primary);
   color: var(--color-surface);
   border: 0;
+}
+
+.lad-evid-btn {
+  align-self: flex-start;
+  height: 36px;
+  padding: 0 var(--space-md);
+  border-radius: var(--radius-md);
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+  border: 0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+.lad-evid-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.lad-evid-viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.lad-evid-viewer img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
 }
 
 .lad-sprite {

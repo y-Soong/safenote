@@ -14,6 +14,9 @@ public record LeaveTypeResult(
 	, Boolean borrowable      // 가불 가능 여부(시스템 법정 월차/본연차 + 한도>0). 서비스에서 산정
 	, java.math.BigDecimal borrowQuota // 가불 가능 한도(일). 비대상이면 0. 서비스에서 산정
 	, String borrowExpiryYmd  // 가불분 만료(소멸)일 YYYYMMDD. 산정 불가/비대상이면 null
+	// ── 연차 신청 증빙 필수화(2026-08-29) — 위치매핑 규약에 따라 맨 끝 추가(SQL 원값 통과, 서비스 무가공) ──
+	, String evidenceYn       // 증빙 필수 여부('Y'/'N')
+	, String evidenceGuideMsg // 증빙 안내 문구(없으면 null)
 ) {
 
 }

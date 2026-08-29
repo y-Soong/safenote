@@ -282,6 +282,9 @@ public class Attd05ServiceImpl implements Attd05Service {
     				, borrowable
     				, borrowQuota
     				, borrowExpiryYmd
+    				// 연차 신청 증빙 필수화(2026-08-29): SQL 원값 그대로 통과(서비스 무가공)
+    				, row.evidenceYn()
+    				, row.evidenceGuideMsg()
     		));
     	}
 

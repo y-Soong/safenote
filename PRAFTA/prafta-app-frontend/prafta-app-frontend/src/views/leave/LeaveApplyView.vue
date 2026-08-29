@@ -207,19 +207,33 @@ const onGoMulti = () => router.push({ name: 'LeaveApplyMulti' })
 
 const onSubmit = async (payload) => {
   if (isSubmitting.value) return
-  // TODO(developer):
-  //   - workYmd 폴백: payload.workYmd || context.value.workYmd (연차현황 진입은 폼에서 날짜 직접 선택).
-  //   - POST /appApi/leaveflow/apply, body = payload (식별값/nodeCd 는 서버 JWT — 본문 비신뢰).
-  //   - 성공 → showAlert('연차가 신청되었어요') 후 router.back().
-  //   - 실패 → resolveApiErrorMessage 로 서버 메시지 표면화(ATTD_400_050/051/052/054/055/056/102 등).
-  //     ⚠️ 앱 인터셉터 토큰오류 오발동 주의: ATTD_400_* 는 인터셉터가 로그아웃 처리하지 않음(안전).
   isSubmitting.value = true
   try {
-    // workYmd 폴백: 폼이 보낸 날짜 우선, 없으면 컨텍스트 workYmd(특정 일자 진입). 식별값/nodeCd 는 서버 JWT.
-    const body = {
-      ...payload,
-      workYmd: payload?.workYmd || context.value?.workYmd || '',
+    // 연차 신청 증빙 필수화(2026-08-29): 업로드/제출 분리 — 첨부 파일이 있으면 /apply 호출 전
+    //   먼저 POST /appApi/leaveflow/evidence-file(multipart) 로 업로드해 fileMgmtCd 를 받는다.
+    //   업로드 실패 시 /apply 호출로 진행하지 않고 에러를 표면화한다(§2-2 업로드/제출 분리 아키텍처).
+    let evidenceFileId
+    if (payload?.evidenceFile) {
+      try {
+        const formData = new FormData()
+        formData.append('item', payload.evidenceFile)
+        const uploadRes = await api.post('/appApi/leaveflow/evidence-file', formData, {
+          timeout: 60 * 1000,
+        })
+        evidenceFileId = uploadRes?.data?.fileMgmtCd
+      } catch (uploadErr) {
+        console.error('[LeaveApply] 증빙 파일 업로드 실패:', uploadErr?.message)
+        showAlert(resolveApiErrorMessage(uploadErr, '증빙 파일 업로드 중 오류가 발생했습니다.'))
+        return
+      }
     }
+
+    // workYmd 폴백: 폼이 보낸 날짜 우선, 없으면 컨텍스트 workYmd(특정 일자 진입). 식별값/nodeCd 는 서버 JWT.
+    //   evidenceFile(File 객체)은 /apply 요청 바디에 실을 수 없으므로 evidenceFileId 로 치환한다.
+    const body = { ...payload }
+    delete body.evidenceFile
+    body.workYmd = payload?.workYmd || context.value?.workYmd || ''
+    body.evidenceFileId = evidenceFileId
     await api.post('/appApi/leaveflow/apply', body)
     await showAlert('연차가 신청되었어요')
     router.back()

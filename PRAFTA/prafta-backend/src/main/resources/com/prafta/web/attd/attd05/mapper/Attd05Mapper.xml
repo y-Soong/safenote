@@ -768,6 +768,9 @@
 	    , NULL			AS borrowable
 	    , NULL			AS borrowQuota
 	    , NULL			AS borrowExpiryYmd
+	    <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 메타. record LeaveTypeResult 맨 끝 2필드와 순서 일치(위치매핑). -->
+	    , A.EVIDENCE_YN			AS evidenceYn
+	    , A.EVIDENCE_GUIDE_MSG	AS evidenceGuideMsg
 	FROM TB_LEAVE_TYPE_MGMT A
 	WHERE A.CMPNY_CD = #{gvCmpnyCd}
 	  AND A.USE_YN = 'Y'

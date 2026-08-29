@@ -36,6 +36,9 @@ public record LeaveApplyMetaResponse(
      *   <li>{@code borrowQuota} : 가불 가능 일수(prafta-com-011-2, computeBorrowQuota 결과, 소수1자리). 비대상이면 0.</li>
      *   <li>{@code borrowExpiryYmd} : 가불분 만료(소멸)일 YYYYMMDD(prafta-com-011-5 FE 표시·만료초과 alert 가드용).
      *       월차=입사+1년−1일, 본연차=차기 부여 본연차 정상 만료일. 비대상/산정 불가면 null. 서버도 fail-closed 검증(ATTD_400_181).</li>
+     *   <li>{@code evidenceYn} : 증빙 필수 여부('Y'/'N', 연차 신청 증빙 필수화 2026-08-29). 'Y'면 FE 가 안내
+     *       문구+첨부 UI 를 노출한다. 서버도 제출 시 동일 값으로 강제 검증한다(ATTD_400_215).</li>
+     *   <li>{@code evidenceGuideMsg} : 증빙 안내 문구(연차타입 관리 화면에서 등록). evidenceYn='N'이면 null.</li>
      * </ul>
      */
     public record LeaveTypeItem(
@@ -49,6 +52,8 @@ public record LeaveApplyMetaResponse(
         , boolean borrowable
         , double borrowQuota
         , String borrowExpiryYmd
+        , String evidenceYn
+        , String evidenceGuideMsg
     ) {
     }
 }

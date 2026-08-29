@@ -11,6 +11,7 @@ import java.util.Map;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.prafta.app.leave.leaveflow.application.command.LeaveReqInsertCommand;
 import com.prafta.app.leave.leaveflow.application.command.LeaveUseCommand;
@@ -37,6 +38,12 @@ import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.common.cmm.approval.mapper.ApprovalLineMapper;
 import com.prafta.common.cmm.approval.vo.ApprovalStepVO;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
+import com.prafta.common.cmm.file.application.query.FileInfoQuery;
+import com.prafta.common.cmm.file.application.query.FileReadQuery;
+import com.prafta.common.cmm.file.dto.param.FileInfoParam;
+import com.prafta.common.cmm.file.mapper.FileMapper;
+import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
 import com.prafta.common.cmm.leave.mapper.LeavePolicyMapper;
 import com.prafta.common.cmm.leave.service.LeaveApprovalNotiService;
@@ -55,6 +62,7 @@ import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.leave.vo.RemnantTriggerPlanVO;
+import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -96,9 +104,14 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private final LeaveRemnantCoverService leaveRemnantCoverService;
     /** 일자별 스케줄(휴게 포함) 조회 — 시간차 휴게 가로지름 사전 안내(day-schedule). 공통 매퍼 재사용. */
     private final LeaveDeductionMapper leaveDeductionMapper;
+    /** 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드/열람(FileService 인프라 재사용 — AppNearMiss01 패턴 미러). */
+    private final FileService fileService;
+    private final FileMapper fileMapper;
 
     // 법정정책 미존재 시 폴백 단위(종일만).
     private static final String FALLBACK_UNIT_CODE = "00";
+    /** 연차 신청 증빙 필수화(2026-08-29): SYS010 신규 채번 파일타입(연차 증빙자료 — secure 저장). */
+    private static final String FILE_TYPE_EVIDENCE = "008";
 
     // ===== prafta-com-011-2 가불 시스템 연차 코드(엔진 LEAVE_CD 상수와 동일) =====
     /** 본연차 시스템 코드 → BorrowFamily.ANNUAL. */
@@ -235,6 +248,8 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                     , borrowable
                     , borrowQuota
                     , borrowExpiryYmd
+                    , (row.evidenceYn() == null ? "N" : row.evidenceYn())
+                    , row.evidenceGuideMsg()
             ));
         }
 
@@ -346,6 +361,29 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         if (type == null) {
             throw new ApiException(AttdErrorCode.ATTD_404_030);
         }
+
+        // sec 리뷰(Critical, 2026-08-29): evidenceFileId 가 오면 EVIDENCE_YN='Y'/'N' 여부와 무관하게
+        //   항상 존재/타입(FILE_TYPE='008')/소유권(업로더=본인) 을 검증한다. 이 검증이 없으면 가짜 값이나
+        //   타인(또는 007 근로계약서 등 다른 보호 파일타입)의 fileMgmtCd 를 그대로 저장할 수 있었다
+        //   (재현 시나리오: 순차 채번되는 fileMgmtCd 를 추측해 본인 신청에 실어 보내는 IDOR).
+        if (p.evidenceFileId() != null && !p.evidenceFileId().isBlank()) {
+            int validEvidence = appLeaveFlowMapper.countValidEvidenceFile(cmpny, p.evidenceFileId(), user);
+            if (validEvidence <= 0) {
+                log.warn("[leaveflow] 연차 신청 거부: 유효하지 않은 증빙 파일(존재/타입/소유권 불일치) "
+                        + "(userCd={}, leaveCd={})", user, leaveCd);
+                throw new ApiException(AttdErrorCode.ATTD_400_216);
+            }
+        }
+
+        // 연차 신청 증빙 필수화(2026-08-29): EVIDENCE_YN='Y' 타입인데 증빙 파일 미첨부면 신규 신청 거부.
+        //   이진값 그대로 강제(안내문구 조건부 파싱 없음) — 신규 신청 건에만 적용(소급 없음, §2-1).
+        //   previewDeduction(조회 전용)에는 이 가드를 두지 않는다 — 미리보기가 첨부 전 정상 플로우를 막지 않도록.
+        if (isYes(type.evidenceYn())
+                && (p.evidenceFileId() == null || p.evidenceFileId().isBlank())) {
+            log.info("[leaveflow] 연차 신청 거부: 증빙 파일 미첨부 (userCd={}, leaveCd={})", user, leaveCd);
+            throw new ApiException(AttdErrorCode.ATTD_400_215);
+        }
+
         boolean statutory = isYes(type.systemYn());
         boolean aprvRequired;
         if (statutory) {
@@ -858,6 +896,82 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                 halfDayBoundaryTime(hb), halfStartPartRange(hb), halfEndPartRange(hb));
     }
 
+    // ============================================================
+    // 연차 신청 증빙 필수화(2026-08-29): 업로드/제출 분리 아키텍처
+    // ============================================================
+
+    @Override
+    public String uploadEvidenceFile(TokenInfo tokenInfo, MultipartFile file) {
+        if (tokenInfo == null || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_userCd() == null
+                || tokenInfo.gv_siteCd() == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        if (file == null || file.isEmpty()) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        String cmpny = tokenInfo.gv_cmpnyCd();
+        String site = tokenInfo.gv_siteCd();
+        String user = tokenInfo.gv_userCd();
+
+        // AppNearMiss01Controller.report 패턴 미러: 채번 후 FileService.fileSave 로 저장(008=secure base).
+        String fileMgmtCd = fileMapper.selectFileMgmtCd(FileInfoQuery.from(cmpny, FILE_TYPE_EVIDENCE));
+        fileService.fileSave(FileInfoParam.from(cmpny, user, site, FILE_TYPE_EVIDENCE, fileMgmtCd, file));
+
+        log.info("[leaveflow] 연차 증빙 파일 업로드 완료 userCd={}, fileMgmtCd={}", user, fileMgmtCd);
+        return fileMgmtCd;
+    }
+
+    @Override
+    public FileBytesResult loadEvidenceFile(TokenInfo tokenInfo, String fileMgmtCd) {
+        if (tokenInfo == null || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_userCd() == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        if (fileMgmtCd == null || fileMgmtCd.isBlank()) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        String cmpny = tokenInfo.gv_cmpnyCd();
+        String user = tokenInfo.gv_userCd();
+
+        String ownerUserCd = appLeaveFlowMapper.selectEvidenceFileOwner(cmpny, fileMgmtCd);
+        if (ownerUserCd == null) {
+            // 대상 없음(존재 비노출) — 일반 404.
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+        boolean isOwner = user.equals(ownerUserCd);
+        boolean isApprover = false;
+        if (!isOwner) {
+            // 신청 제출 전(orphan 업로드)이면 reqId 가 없어 결재자 판정 자체가 성립하지 않는다(업로드자 본인만 열람).
+            String reqId = appLeaveFlowMapper.selectReqIdByEvidenceFileId(cmpny, fileMgmtCd);
+            if (reqId != null) {
+                isApprover = isApproverOf(cmpny, reqId, user);
+            }
+        }
+        if (!isOwner && !isApprover) {
+            log.warn("[leaveflow] 증빙 파일 열람 스코프 위반(IDOR 차단) - userCd={}, fileMgmtCd={}", user, fileMgmtCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_002);
+        }
+
+        FileBytesResult file = fileService.loadFileBytes(new FileReadQuery(cmpny, fileMgmtCd));
+        if (file == null) {
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+        return file;
+    }
+
+    /** AppAdminApprovalServiceImpl.isApproverOf 패턴 재사용 — reqId 결재선에 userCd 포함 여부. */
+    private boolean isApproverOf(String cmpnyCd, String reqId, String userCd) {
+        List<ApprovalStepVO> steps = approvalLineMapper.selectApprovalLineByReqId(cmpnyCd, reqId);
+        if (steps == null) {
+            return false;
+        }
+        for (ApprovalStepVO s : steps) {
+            if (userCd.equals(s.getApproverUserCd())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     /** HB-02: 반차 파트 정규화. START/END(대소문자 무관) 외 값·공백은 null(호출부 fail-closed 거부). */
     private String normalizeHalfPart(String raw) {
         if (raw == null || raw.isBlank()) {
@@ -1109,6 +1223,10 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         if (remnantPlan != null) {
             // PC-05(D6): 짜투리 발동 — 잔여 전액을 대상 5종 부여로 분할 차감(use 행: 신청 REQ_ID·단위,
             //   LEAVE_CD 는 부여 귀속) + 회사 부담분 TB_LEAVE_REMNANT_COVER 기록 + 영향 GRANT 재집계(웹 미러).
+            // ★연차 신청 증빙 필수화(2026-08-29) 범위 밖: applyTrigger 는 evidenceFileId 를 받지 않아
+            //   이 경로로 들어가면 p.evidenceFileId() 가 저장되지 않고 유실된다(계산 로직 무수정 원칙 §0 준수 —
+            //   remnantPlan 분기는 건드리지 않음). 짜투리 발동은 잔여 부족 시나리오라 증빙필수 타입과의
+            //   조합 빈도는 낮을 것으로 보이나, 실제 영향은 후속 QA에서 별도 확인 필요.
             leaveId = leaveRemnantCoverService.applyTrigger(cmpny, site, user, workYmd, unit,
                     startTime, endTime, leaveMinutes, p.reason(), reqId, remnantPlan, user);
         } else {
@@ -1120,7 +1238,10 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                         .reqId(reqId).grantId(charge.grantId())
                         .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
                         .useUnitType(unit).leaveDays(charge.days()).leaveMinutes(firstCharge ? leaveMinutes : null)
-                        .leaveReason(p.reason()).leaveStatus(USE_CONFIRMED).insertNo(user)
+                        .leaveReason(p.reason())
+                        // 연차 신청 증빙 필수화(2026-08-29): 분할 차감 시 첫 charge 행에만 저장(leaveMinutes 관례 동일).
+                        .evidenceFileId(firstCharge ? p.evidenceFileId() : null)
+                        .leaveStatus(USE_CONFIRMED).insertNo(user)
                         .build();
                 appLeaveFlowMapper.insertLeaveUse(use);
                 if (charge.grantId() != null) {

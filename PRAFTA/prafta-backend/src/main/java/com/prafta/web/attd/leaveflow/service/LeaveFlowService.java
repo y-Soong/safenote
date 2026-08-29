@@ -98,4 +98,19 @@ public interface LeaveFlowService {
      */
     int cancelDirectLeaveUsage(
             String cmpnyCd, String userCd, String workYmd, String leaveCd, String operatorUserCd);
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29, 앱 AppLeaveFlowService 미러): 증빙 파일 업로드(업로드/제출 분리
+     * 아키텍처 — 신청 상태와 무관한 임시 업로드). 저장된 {@code fileMgmtCd} 를 반환하며, 이후
+     * {@code /webApi/leaveflow/apply} 요청 바디의 {@code evidenceFileId} 로 실어 보낸다.
+     */
+    String uploadEvidenceFile(com.prafta.common.dto.TokenInfo tokenInfo,
+            org.springframework.web.multipart.MultipartFile file);
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29, 앱 미러): 증빙 파일 열람. 본인(업로드 신청자) 또는 해당 요청
+     * 결재선에 포함된 결재자만 접근 가능(IDOR 차단). 공개 정적 URL 금지 — 인증 스트림 서빙(SEC-1 원칙).
+     */
+    com.prafta.common.cmm.file.application.model.FileBytesResult loadEvidenceFile(
+            com.prafta.common.dto.TokenInfo tokenInfo, String fileMgmtCd);
 }

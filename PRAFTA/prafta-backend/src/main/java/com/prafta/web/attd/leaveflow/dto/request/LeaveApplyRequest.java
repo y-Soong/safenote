@@ -77,4 +77,12 @@ public class LeaveApplyRequest {
      *   가불은 결재를 강제하며(결정 §4), 식별값은 토큰에서 강제하고 본 플래그만 본문 신뢰한다(IDOR 무관).
      */
     private Boolean isBorrow;
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드(POST /webApi/leaveflow/evidence-file) 응답의
+     * fileMgmtCd. nullable — 증빙 불필요 타입(EVIDENCE_YN='N')은 미전송. 서버가 4중 검증 후 강제한다(앱 미러).
+     */
+    @FieldLabel("증빙파일ID")
+    @Size(max = 50)
+    private String evidenceFileId;
 }

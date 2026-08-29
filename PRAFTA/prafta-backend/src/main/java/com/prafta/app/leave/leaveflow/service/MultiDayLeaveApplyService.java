@@ -39,8 +39,10 @@ public interface MultiDayLeaveApplyService {
      *   <li>Phase 2(단일 트랜잭션): 날짜별 {@code submitLeave} 호출. 하나라도 실패하면 전체 롤백.</li>
      * </ol>
      *
+     * @param evidenceFileId 증빙 파일 업로드 응답의 fileMgmtCd(연차 신청 증빙 필수화 2026-08-29, nullable —
+     *                       증빙 불필요 타입은 null). 날짜별로 분해된 각 {@code submitLeave} 호출에 그대로 승계된다.
      * @return 생성된 묶음 ID
      */
     String applyMulti(TokenInfo tokenInfo, String leaveCd, String leaveType, List<String> dates,
-                      String reason, List<String> approverUserCds, String presetId);
+                      String reason, List<String> approverUserCds, String presetId, String evidenceFileId);
 }

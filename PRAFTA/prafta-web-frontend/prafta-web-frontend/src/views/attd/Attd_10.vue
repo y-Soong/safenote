@@ -69,7 +69,9 @@
                     <span class="ra-row__name">{{
                       entry.row.requesterUserNm
                     }}</span>
-                    <span class="ra-row__dept">{{ entry.row.nodeNm || "-" }}</span>
+                    <span class="ra-row__dept">{{
+                      entry.row.nodeNm || "-"
+                    }}</span>
                     <span v-if="entry.row.selfYn === 'Y'" class="ra-chip self"
                       >본인</span
                     >
@@ -93,7 +95,8 @@
                     class="ra-row ra-row--group"
                     :class="{
                       selected:
-                        selectedGroup && selectedGroup.groupId === entry.groupId,
+                        selectedGroup &&
+                        selectedGroup.groupId === entry.groupId,
                     }"
                     @click="fnSelectGroup(entry)"
                   >
@@ -110,25 +113,40 @@
                       >
                         {{ isGroupExpanded(entry.groupId) ? "▾" : "▸" }}
                       </button>
-                      <span class="ra-row__name">{{ entry.requesterUserNm }}</span>
-                      <span class="ra-row__dept">{{ entry.nodeNm || "-" }}</span>
-                      <span class="ra-chip group">기간 {{ entry.rows.length }}건</span>
-                      <span v-if="entry.anySelf" class="ra-chip self">본인</span>
-                      <span v-if="entry.anyBorrow" class="ra-chip borrow">가불</span>
+                      <span class="ra-row__name">{{
+                        entry.requesterUserNm
+                      }}</span>
+                      <span class="ra-row__dept">{{
+                        entry.nodeNm || "-"
+                      }}</span>
+                      <span class="ra-chip group"
+                        >기간 {{ entry.rows.length }}건</span
+                      >
+                      <span v-if="entry.anySelf" class="ra-chip self"
+                        >본인</span
+                      >
+                      <span v-if="entry.anyBorrow" class="ra-chip borrow"
+                        >가불</span
+                      >
                     </div>
                     <div class="ra-row__sub">
-                      {{ fmtDate(entry.fromYmd) }} ~ {{ fmtDate(entry.toYmd) }} ·
-                      총 {{ entry.days }}일
+                      {{ fmtDate(entry.fromYmd) }} ~
+                      {{ fmtDate(entry.toYmd) }} · 총 {{ entry.days }}일
                     </div>
                   </div>
 
                   <!-- 펼침: 개별 건은 단건과 동일하게 선택·처리된다(정책 ④ 개별 예외) -->
-                  <div v-if="isGroupExpanded(entry.groupId)" class="ra-group__items">
+                  <div
+                    v-if="isGroupExpanded(entry.groupId)"
+                    class="ra-group__items"
+                  >
                     <div
                       v-for="row in entry.rows"
                       :key="row.reqId + '-' + row.approvalStep"
                       class="ra-row ra-row--child"
-                      :class="{ selected: selected && selected.reqId === row.reqId }"
+                      :class="{
+                        selected: selected && selected.reqId === row.reqId,
+                      }"
                       @click="fnSelect(row)"
                     >
                       <div class="ra-row__sub">
@@ -173,8 +191,12 @@
               >
                 <div class="ra-row__main">
                   <span class="ra-row__name">{{ row.targetUserNm }}</span>
-                  <span class="ra-chip type">{{ leaveChangeTypeNm(row.reqType) }}</span>
-                  <span class="ra-chip self">{{ leaveChangeInitiatorNm(row.initiatorType) }}</span>
+                  <span class="ra-chip type">{{
+                    leaveChangeTypeNm(row.reqType)
+                  }}</span>
+                  <span class="ra-chip self">{{
+                    leaveChangeInitiatorNm(row.initiatorType)
+                  }}</span>
                 </div>
                 <div class="ra-row__sub">
                   {{ fmtDate(row.targetStartDate) }}
@@ -210,7 +232,9 @@
                   {{ fmtDate(selectedGroup.toYmd) }}
                 </dd>
                 <dt>건수 / 일수</dt>
-                <dd>{{ selectedGroup.rows.length }}건 · {{ selectedGroup.days }}일</dd>
+                <dd>
+                  {{ selectedGroup.rows.length }}건 · {{ selectedGroup.days }}일
+                </dd>
               </dl>
               <div class="ra-group__datelist">
                 <span
@@ -243,8 +267,9 @@
                 placeholder="반려 사유를 입력하세요."
               ></textarea>
               <p class="ra-group__note">
-                묶음 {{ selectedGroup.rows.length }}건을 한 번에 처리합니다. 마감 등으로
-                처리할 수 없는 건이 있으면 그 건만 제외되고 사유가 안내됩니다.
+                묶음 {{ selectedGroup.rows.length }}건을 한 번에 처리합니다.
+                마감 등으로 처리할 수 없는 건이 있으면 그 건만 제외되고 사유가
+                안내됩니다.
               </p>
               <!-- ★.btn 기본 클래스 필수 — .btn-primary 는 배경/글자색만 준다.
                    단독 사용 시 padding·height·radius·font 가 브라우저 기본값으로 남아
@@ -315,6 +340,18 @@
                 </dd>
                 <dt>사유</dt>
                 <dd>{{ selected.reqReason || "-" }}</dd>
+                <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 썸네일(클릭 시 확대) -->
+                <dt v-if="selected.evidenceFileId">증빙</dt>
+                <dd v-if="selected.evidenceFileId" class="ra-evid">
+                  <img
+                    v-if="evidenceBlobUrl"
+                    :src="evidenceBlobUrl"
+                    alt="증빙 자료"
+                    class="ra-evid__thumb"
+                    @click="onOpenEvidenceViewer"
+                  />
+                  <span v-else class="ra-evid__loading">불러오는 중...</span>
+                </dd>
               </dl>
             </div>
 
@@ -334,7 +371,8 @@
               <div class="ra-sec__title">결재 처리</div>
               <!-- 결정 A: "내 차례 아님" 배너(P3) — 서버 canProcess 를 그대로 신뢰(클라 자체 판정 금지) -->
               <p v-if="!canProcessCurrentStep" class="ra-decide__warn">
-                현재 결재 단계 담당자가 아닙니다. {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
+                현재 결재 단계 담당자가 아닙니다.
+                {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
               </p>
               <label class="ra-radio">
                 <input
@@ -416,7 +454,10 @@
                 {{ schedSummary(row) }}
               </div>
               <!-- 근무타입 변경: workYmd 없음(근무일 무관) — 근무타입 비교만 표시. -->
-              <div v-else-if="activeTab === 'defaultSchChange'" class="ra-row__sub">
+              <div
+                v-else-if="activeTab === 'defaultSchChange'"
+                class="ra-row__sub"
+              >
                 {{ schedSummary(row) }}
               </div>
               <div v-else class="ra-row__sub">
@@ -487,7 +528,9 @@
 
             <!-- 현재 → 요청 스케줄 비교 (스케줄 수정 탭 전용, 재기획서 §5.7 ③) -->
             <AttdSchedCompareSection
-              v-if="activeTab === 'schedule' || activeTab === 'defaultSchChange'"
+              v-if="
+                activeTab === 'schedule' || activeTab === 'defaultSchChange'
+              "
               :row="reqSelected"
             />
 
@@ -498,7 +541,12 @@
                 :steps="approvalSteps"
                 :loading="approvalStepsLoading"
                 :error-message="approvalStepsError"
-                @retry="fnLoadApprovalSteps(reqSelected.reqId, reqTypeGroupOf(activeTab))"
+                @retry="
+                  fnLoadApprovalSteps(
+                    reqSelected.reqId,
+                    reqTypeGroupOf(activeTab)
+                  )
+                "
               />
             </div>
 
@@ -507,7 +555,8 @@
               <div class="ra-sec__title">결재 처리</div>
               <!-- 결정 A: "내 차례 아님" 배너(P3) — 서버 canProcess 를 그대로 신뢰(클라 자체 판정 금지) -->
               <p v-if="!canProcessCurrentStep" class="ra-decide__warn">
-                현재 결재 단계 담당자가 아닙니다. {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
+                현재 결재 단계 담당자가 아닙니다.
+                {{ currentApproverUserNm }}님의 처리를 기다려야 합니다.
               </p>
               <label class="ra-radio">
                 <input
@@ -572,6 +621,15 @@
       :tab-label="activeTabLabel"
       @close="showHistoryPop = false"
     />
+
+    <!-- 증빙 뷰어 오버레이 (연차 신청 증빙 필수화 2026-08-29) -->
+    <div
+      v-if="evidenceViewerSrc"
+      class="ra-evid-viewer"
+      @click="evidenceViewerSrc = ''"
+    >
+      <img :src="evidenceViewerSrc" alt="증빙 자료 원본" />
+    </div>
   </div>
 </template>
 
@@ -582,6 +640,7 @@ import {
   computed,
   watch,
   onMounted,
+  onUnmounted,
   getCurrentInstance,
   defineProps,
   defineOptions,
@@ -1445,6 +1504,46 @@ const fnSelect = (row) => {
   fnLoadApprovalSteps(row.reqId, "leave");
 };
 
+// ── 증빙 열람(연차 탭 상세 패널) — SnapshotNearmissDetail.vue blob 캐시 패턴 미러 ──
+//    (연차 신청 증빙 필수화 2026-08-29)
+const evidenceBlobUrl = ref("");
+const evidenceViewerSrc = ref("");
+
+// selected 가 바뀔 때마다 증빙 blob 재로드(이전 objectURL 정리 포함). 실패는 비치명(콘솔만).
+const loadEvidenceBlob = async (fileMgmtCd) => {
+  if (evidenceBlobUrl.value) {
+    try {
+      URL.revokeObjectURL(evidenceBlobUrl.value);
+    } catch (e) {
+      /* noop */
+    }
+    evidenceBlobUrl.value = "";
+  }
+  evidenceViewerSrc.value = "";
+  if (!fileMgmtCd) return;
+  try {
+    const res = await axios.get(`/webApi/leaveflow/evidence-file/${fileMgmtCd}`, {
+      responseType: "blob",
+    });
+    evidenceBlobUrl.value = URL.createObjectURL(res.data);
+  } catch (e) {
+    console.warn("[Attd_10] 증빙 조회 실패(비치명)", e);
+  }
+};
+
+watch(selected, (row) => {
+  loadEvidenceBlob(row?.evidenceFileId || "");
+});
+
+const onOpenEvidenceViewer = () => {
+  if (evidenceBlobUrl.value) evidenceViewerSrc.value = evidenceBlobUrl.value;
+};
+
+onUnmounted(() => {
+  // 썸네일/뷰어가 공유하는 objectURL 정리(메모리 누수 방지)
+  loadEvidenceBlob("");
+});
+
 const fnProcess = async () => {
   if (!selected.value) return;
   const payload = {
@@ -1825,5 +1924,31 @@ onMounted(async () => {
   padding: 0.3rem 0.4rem;
   margin: 0 0 0.4rem;
   line-height: 1.4;
+}
+.ra-evid__thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+.ra-evid__loading {
+  font-size: 0.8rem;
+  color: var(--color-text-muted, #9ca3af);
+}
+.ra-evid-viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.ra-evid-viewer img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
 }
 </style>

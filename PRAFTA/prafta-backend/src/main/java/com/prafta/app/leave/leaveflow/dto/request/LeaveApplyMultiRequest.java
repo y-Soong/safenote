@@ -2,8 +2,11 @@ package com.prafta.app.leave.leaveflow.dto.request;
 
 import java.util.List;
 
+import com.prafta.common.annotation.FieldLabel;
+
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Size;
 
 import lombok.Getter;
 import lombok.Setter;
@@ -42,4 +45,12 @@ public class LeaveApplyMultiRequest {
 
     /** 결재선 프리셋 ID. */
     private String presetId;
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드(POST /leaveflow/evidence-file) 응답의 fileMgmtCd.
+     * nullable — 증빙 불필요 타입은 미전송. 단건 신청(LeaveApplyRequest)과 동일 필드(PRAFTA-003b).
+     */
+    @FieldLabel("증빙파일ID")
+    @Size(max = 50)
+    private String evidenceFileId;
 }

@@ -60,6 +60,7 @@
         , A.LEAVE_TYPE      AS leaveType
         , A.MAX_APLY_DAYS   AS maxAplyDays
         , A.AVAIL_TERM_TYPE AS availTermType
+        , A.EVIDENCE_YN     AS evidenceYn
       FROM TB_LEAVE_TYPE_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.LEAVE_CD = #{leaveCd}
@@ -322,6 +323,7 @@
         , LEAVE_DAYS
         , LEAVE_MINUTES
         , LEAVE_REASON
+        , EVIDENCE_FILE_ID
         , LEAVE_STATUS
         , DEL_YN
         , INSERT_NO
@@ -343,6 +345,7 @@
         , #{leaveDays}
         , #{leaveMinutes}
         , #{leaveReason}
+        , #{evidenceFileId}
         , #{leaveStatus}
         , 'N'
         , #{insertNo}
@@ -609,6 +612,9 @@
              단일일 신청은 NULL 이라 기존처럼 개별 행으로 표시된다(무회귀).
              ★record(MyLeaveApprovalVO) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
         , R.LEAVE_GROUP_ID                                                   AS leaveGroupId
+        <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID. PRAFTA-002 가 첫 charge 행에만 저장하므로
+             위 MIN(LEAVE_ID) 첫 분할행 조인(U)과 정합. record 맨 끝 필드와 순서 일치(위치매핑). -->
+        , U.EVIDENCE_FILE_ID                                                 AS evidenceFileId
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD
@@ -735,5 +741,53 @@
        AND LEAVE_STATUS = 'CONFIRMED'
        AND DEL_YN       = 'N'
     </update>
+
+    <!-- ============================================================
+         연차 증빙 자료(연차 신청 증빙 필수화 2026-08-29, 앱 AppLeaveFlowMapper 미러):
+         열람 스코프 검증(본인 업로드자 여부). TB_FILE_INFO.INSERT_NO = 업로드 시 fileSave 에 넘긴 userCd.
+         FILE_TYPE='008' 강제 — 008 이 아닌(예: 007 근로계약서 등 다른 보호 파일타입) fileMgmtCd 가
+         이 경로로 열람되는 것을 원천 차단(defense-in-depth, 앱 security Critical 재발 방지).
+         ============================================================ -->
+    <select id="selectEvidenceFileOwner" resultType="string">
+    /* LeaveFlowMapper.selectEvidenceFileOwner */
+    SELECT F.INSERT_NO
+      FROM TB_FILE_INFO F
+     WHERE F.CMPNY_CD     = #{cmpnyCd}
+       AND F.FILE_MGMT_CD = #{fileMgmtCd}
+       AND F.FILE_TYPE    = '008'
+     LIMIT 1
+    </select>
+
+    <!-- 연차 증빙 자료: 신청에 실제로 실린(제출 완료) 건의 REQ_ID(결재선 스코프 판정용). 제출 전(orphan
+         업로드)이면 null — 이 경우 업로드자 본인만 열람 가능(위 selectEvidenceFileOwner 로 판정).
+         TB_FILE_INFO 조인으로 FILE_TYPE='008' 도 함께 강제(방어 이중화, 앱 미러). -->
+    <select id="selectReqIdByEvidenceFileId" resultType="string">
+    /* LeaveFlowMapper.selectReqIdByEvidenceFileId */
+    SELECT U.REQ_ID
+      FROM TB_USER_LEAVE_USE U
+      JOIN TB_FILE_INFO F
+        ON F.CMPNY_CD     = U.CMPNY_CD
+       AND F.FILE_MGMT_CD = U.EVIDENCE_FILE_ID
+       AND F.FILE_TYPE    = '008'
+     WHERE U.CMPNY_CD         = #{cmpnyCd}
+       AND U.EVIDENCE_FILE_ID = #{fileMgmtCd}
+       AND U.DEL_YN           = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         연차 신청 제출 시 evidenceFileId 4중 검증(존재/FILE_TYPE='008'/CMPNY_CD/INSERT_NO=신청자 본인).
+         0이면 submitLeave() 가 ATTD_400_216 으로 거부. EVIDENCE_YN 여부와 무관하게 evidenceFileId 가
+         오면 항상 수행한다(앱 security Critical 교훈 — 웹은 최초 구현부터 반영).
+         ============================================================ -->
+    <select id="countValidEvidenceFile" resultType="int">
+    /* LeaveFlowMapper.countValidEvidenceFile */
+    SELECT COUNT(1)
+      FROM TB_FILE_INFO F
+     WHERE F.CMPNY_CD     = #{cmpnyCd}
+       AND F.FILE_MGMT_CD = #{fileMgmtCd}
+       AND F.FILE_TYPE    = '008'
+       AND F.INSERT_NO    = #{userCd}
+    </select>
 
 </mapper>

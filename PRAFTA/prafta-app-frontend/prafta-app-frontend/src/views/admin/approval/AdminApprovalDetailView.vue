@@ -185,9 +185,21 @@
           <p class="ap-reason">{{ detail.reason || '-' }}</p>
           <ul v-if="(detail.attachments || []).length" class="ap-files">
             <li v-for="f in detail.attachments" :key="f.fileId" class="ap-files__item">
-              {{ f.fileNm }}
+              <button
+                type="button"
+                class="ap-files__btn"
+                :disabled="evidenceLoadingId === f.fileId"
+                @click="onViewAttachment(f.fileId)"
+              >
+                {{ evidenceLoadingId === f.fileId ? '불러오는 중...' : f.fileNm }}
+              </button>
             </li>
           </ul>
+
+          <!-- 증빙 뷰어 오버레이 (연차 신청 증빙 필수화 2026-08-29) -->
+          <div v-if="evidenceViewerSrc" class="ap-evid-viewer" @click="onCloseEvidenceViewer">
+            <img :src="evidenceViewerSrc" alt="첨부 원본" />
+          </div>
         </section>
 
         <!-- ⑤ 관리자 결정 (이력 모드/차단 시 숨김·비활성) -->
@@ -273,7 +285,7 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
@@ -342,6 +354,48 @@ const processing = ref(false)
 // 시트 토글(UI 토글 — 허용 범위)
 const rejectSheetOpen = ref(false)
 const adjustSheetOpen = ref(false)
+
+// ── 첨부(연차 증빙 등) 열람 상태 — fileId=fileMgmtCd (연차 신청 증빙 필수화 2026-08-29) ──
+const evidenceLoadingId = ref('')
+const evidenceViewerSrc = ref('')
+
+// blob objectURL 해제 — 오버레이 닫기/화면 이탈 시 즉시 정리(메모리 누수 방지)
+const revokeEvidenceUrl = () => {
+  if (evidenceViewerSrc.value) {
+    try {
+      URL.revokeObjectURL(evidenceViewerSrc.value)
+    } catch (e) {
+      console.warn('[AdminApprovalDetail] objectURL 해제 실패:', e?.message)
+    }
+    evidenceViewerSrc.value = ''
+  }
+}
+
+const onCloseEvidenceViewer = () => {
+  revokeEvidenceUrl()
+}
+
+// 첨부 blob 로드 → 오버레이 표시. 실패는 showAlert 고정 메시지(MyContractView.vue catch 패턴).
+const onViewAttachment = async (fileId) => {
+  if (evidenceLoadingId.value || !fileId) return
+  evidenceLoadingId.value = fileId
+  try {
+    const res = await api.get(`/appApi/leaveflow/evidence-file/${fileId}`, {
+      responseType: 'blob',
+    })
+    revokeEvidenceUrl()
+    evidenceViewerSrc.value = URL.createObjectURL(res.data)
+  } catch (e) {
+    console.warn('[AdminApprovalDetail] 첨부 조회 실패:', e?.message)
+    await showAlert('첨부 파일을 불러오지 못했어요.')
+  } finally {
+    evidenceLoadingId.value = ''
+  }
+}
+
+onUnmounted(() => {
+  revokeEvidenceUrl()
+})
 
 // ① 조정 후 승인 가능 유형: 근태보정/초과(스케줄은 A5 전 제외). 연차 제외(§5.8.4).
 // TODO(developer): v1 보류 — 백엔드 APPROVE_ADJUST 조정값 입력은 R3 라운드에서 구현 예정.
@@ -892,6 +946,35 @@ onMounted(loadDetail)
 .ap-files__item {
   font-size: 13px;
   color: var(--color-primary);
+}
+.ap-files__btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-primary);
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-family: inherit;
+}
+.ap-files__btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+  text-decoration: none;
+}
+.ap-evid-viewer {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+}
+.ap-evid-viewer img {
+  max-width: 92vw;
+  max-height: 92vh;
+  object-fit: contain;
 }
 
 /* 관리자 결정 */

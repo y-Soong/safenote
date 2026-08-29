@@ -13,6 +13,9 @@ import java.math.BigDecimal;
  *   <li>{@code useUnitType} : 비법정 사용단위(SYS025, NULL 가능 → 서비스에서 '00' 폴백).</li>
  *   <li>{@code balanceDays} : 활성집합 SUM(GRANT_DAYS)-SUM(USED_DAYS). 부여 없으면 0.</li>
  * </ul>
+ *
+ * <p>{@code evidenceYn}/{@code evidenceGuideMsg} : 연차 신청 증빙 필수화(2026-08-29) — 신규 필드는
+ *   위치매핑 규약에 따라 맨 끝에 추가한다(기존 5개 필드 순서 불변).</p>
  */
 public record LeaveTypeMetaRow(
       String leaveCd
@@ -21,5 +24,7 @@ public record LeaveTypeMetaRow(
     , String typeAprvUseYn
     , String useUnitType
     , BigDecimal balanceDays
+    , String evidenceYn
+    , String evidenceGuideMsg
 ) {
 }

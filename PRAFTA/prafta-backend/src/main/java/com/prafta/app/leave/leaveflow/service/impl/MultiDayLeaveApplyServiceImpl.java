@@ -117,7 +117,8 @@ public class MultiDayLeaveApplyServiceImpl implements MultiDayLeaveApplyService 
     @Override
     @Transactional(rollbackFor = Exception.class)
     public String applyMulti(TokenInfo tokenInfo, String leaveCd, String leaveType, List<String> dates,
-                             String reason, List<String> approverUserCds, String presetId) {
+                             String reason, List<String> approverUserCds, String presetId,
+                             String evidenceFileId) {
 
         assertToken(tokenInfo);
         if (!StringUtils.hasText(leaveCd) || dates == null || dates.isEmpty()) {
@@ -177,7 +178,8 @@ public class MultiDayLeaveApplyServiceImpl implements MultiDayLeaveApplyService 
                 null, null, null,          // halfPart/startTime/endTime — 종일이라 미사용
                 reason, approverUserCds, presetId,
                 false,                     // isBorrow — 1차 범위 제외
-                cmpny, site, user, groupId);
+                cmpny, site, user, groupId,
+                evidenceFileId);           // 연차 신청 증빙 필수화(2026-08-29) — 날짜별 파생에 그대로 승계
 
         for (String ymd : targets) {
             // ★별도 빈(AppLeaveFlowService 프록시) 호출이라 REQUIRED 로 본 트랜잭션에 합류한다.

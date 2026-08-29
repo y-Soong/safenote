@@ -28,6 +28,8 @@ public class LeaveUseVO {
     private BigDecimal leaveDays;
     private Integer leaveMinutes;
     private String leaveReason;
+    /** 증빙 파일 ID(연차 신청 증빙 필수화 2026-08-29). 분할 차감 시 첫 charge 행에만 저장(leaveMinutes 관례 동일). */
+    private String evidenceFileId;
     private String leaveStatus;
     private String insertNo;
 }

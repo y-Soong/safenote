@@ -538,8 +538,28 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 .gate(gate)
                 .body(body)
                 .reason(meta.reqReason())
-                .attachments(Collections.emptyList())   // 현행 스키마에 요청 첨부 테이블 없음
+                // 연차 신청 증빙 필수화(2026-08-29): 연차(G_LEAVE) 건에 증빙 파일이 있으면 1건 노출,
+                //   그 외(첨부 테이블 자체가 없는 유형)는 기존과 동일 빈 리스트.
+                .attachments(buildLeaveAttachments(param.gvCmpnyCd(), group, meta))
                 .build();
+    }
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 연차(G_LEAVE) 건의 증빙 파일 1건(있으면). 열람은
+     * GET /appApi/leaveflow/evidence-file/{fileMgmtCd}(본인/결재선 스코프 검증은 그 API 안에서 처리).
+     */
+    private List<Object> buildLeaveAttachments(String cmpnyCd, String group, ReqMetaRow meta) {
+        if (!G_LEAVE.equals(group)) {
+            return Collections.emptyList();
+        }
+        LeaveBodyRow lb = mapper.selectLeaveBody(cmpnyCd, meta.reqId(), meta.targetId());
+        if (lb == null || lb.evidenceFileId() == null || lb.evidenceFileId().isBlank()) {
+            return Collections.emptyList();
+        }
+        Map<String, String> file = new LinkedHashMap<>();
+        file.put("fileId", lb.evidenceFileId());
+        file.put("fileNm", "증빙자료");
+        return List.<Object>of(file);
     }
 
     private Map<String, Object> buildBody(String cmpnyCd, String group, ReqMetaRow meta, List<ApprovalStepVO> steps) {

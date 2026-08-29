@@ -44,5 +44,11 @@ public record MyLeaveApprovalVO(
      * <p>★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
      */
     , String leaveGroupId
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID(TB_USER_LEAVE_USE.EVIDENCE_FILE_ID, 첫 분할행).
+     * 미첨부면 null. 열람은 GET /webApi/leaveflow/evidence-file/{fileMgmtCd}.
+     * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , String evidenceFileId
 ) {
 }

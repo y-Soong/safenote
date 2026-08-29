@@ -80,6 +80,74 @@
         <span class="balance-box__val">{{ formatLeaveDaysOnly(selectedType.balanceDays) }}</span>
       </div>
 
+      <!-- 2-E) 증빙 자료 안내 + 첨부 (Phase2: 강제 없음 — 미첨부 제출 허용) -->
+      <section v-if="selectedType?.evidenceYn === 'Y'" class="fs">
+        <p class="fs__title">증빙 자료</p>
+        <p v-if="selectedType.evidenceGuideMsg" class="evid-guide">
+          {{ selectedType.evidenceGuideMsg }}
+        </p>
+
+        <div class="evid-attach">
+          <!-- 미첨부: 추가 버튼 -->
+          <button
+            v-if="!evidenceFile"
+            type="button"
+            class="evid-attach-btn"
+            aria-label="증빙 자료 추가"
+            :disabled="evidencePicking"
+            @click="onPickEvidence"
+          >
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>{{ evidencePicking ? '여는 중...' : '첨부' }}</span>
+          </button>
+
+          <!-- 첨부됨: 미리보기 + 제거 + 메타 -->
+          <template v-else>
+            <div class="evid-attach-prv">
+              <img :src="evidenceFile.previewUrl" alt="첨부한 증빙 자료" />
+              <button
+                type="button"
+                class="evid-attach-prv__rm"
+                aria-label="증빙 자료 제거"
+                @click="onRemoveEvidence"
+              >
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <div class="evid-attach-meta">
+              <strong>{{ evidenceFile.name }}</strong>
+              <span>{{ evidenceFile.sizeText }}</span>
+            </div>
+          </template>
+        </div>
+      </section>
+
       <!-- 2) 사용 단위 (allowedUnits 게이팅) -->
       <section class="fs">
         <p class="fs__title">사용 단위</p>
@@ -454,6 +522,8 @@ import DateStepperField from '@/components/common/DateStepperField.vue'
 import TimeStepperField from '@/components/common/TimeStepperField.vue'
 // HB-14(F-6): 화면마다 3벌이던 결재자 시트를 공용 1벌로 통합(LeaveApproverPickerSheet 대체).
 import ApproverPickerSheet from '@/components/common/ApproverPickerSheet.vue'
+// 연차 신청 증빙 필수화(2026-08-29): 증빙 자료 첨부 — 기존 사진 첨부 유틸 재사용(SafetyInspectBadForm.vue 패턴 미러).
+import { selectImage, revokePreview } from '@/utils/imagePicker'
 
 const props = defineProps({
   // 018-A apply-meta 응답: { leaveTypes: [{ leaveCd, leaveNm, systemYn, aprvRequired, allowedUnits[], balanceDays, applicable }],
@@ -528,6 +598,43 @@ const reason = ref('')
 
 // 가불(미래 연차 당겨쓰기) 동의 상태 (prafta-com-011-4). 종류/날짜 변경 시 리셋.
 const borrowAgreed = ref(false)
+
+// 연차 신청 증빙 필수화(2026-08-29): 증빙 자료. { file, previewUrl, name, sizeText } | null
+const evidenceFile = ref(null)
+const evidencePicking = ref(false)
+
+const formatEvidenceSize = (bytes) => {
+  if (!bytes && bytes !== 0) return ''
+  const kb = bytes / 1024
+  return kb < 1024 ? `${kb.toFixed(0)}KB` : `${(kb / 1024).toFixed(1)}MB`
+}
+
+const onPickEvidence = async () => {
+  if (evidencePicking.value) return
+  evidencePicking.value = true
+  try {
+    // TODO(developer): 카메라/갤러리 선택 UX 확정(현재는 갤러리 우선 — 증빙 서류는 사진보다 문서 촬영 빈도가
+    //   높을 수 있어 SafetyInspectBadForm.vue와 달리 'camera' 고정이 아닌 선택지가 필요할 수 있음).
+    const { file, previewUrl } = await selectImage('gallery')
+    if (evidenceFile.value?.previewUrl) revokePreview(evidenceFile.value.previewUrl)
+    evidenceFile.value = {
+      file,
+      previewUrl,
+      name: file.name || 'evidence.jpg',
+      sizeText: formatEvidenceSize(file.size),
+    }
+  } catch (e) {
+    // 선택 취소는 정상 흐름 — 별도 알림 없음(SafetyInspectBadForm.vue 관례 동일)
+    console.log(`[LeaveApplyForm] 증빙 첨부 취소/실패: ${e && e.message}`)
+  } finally {
+    evidencePicking.value = false
+  }
+}
+
+const onRemoveEvidence = () => {
+  if (evidenceFile.value?.previewUrl) revokePreview(evidenceFile.value.previewUrl)
+  evidenceFile.value = null
+}
 
 // 연차 종류 리스트 접힘 상태 — 종류 선택 후 자동 접힘(종류가 많을 때 화면 길이 절약).
 const typeListCollapsed = ref(false)
@@ -1218,6 +1325,9 @@ const onSubmit = () => {
     presetId: undefined,
     // 가불 동의(prafta-com-011-4): 토글 ON 시 true. 미선택이면 false(서버 미전송 시 false 취급).
     isBorrow: borrowAgreed.value,
+    // 연차 신청 증빙 필수화(2026-08-29): Phase2 는 미첨부여도 제출 허용(강제는 서버 Phase3).
+    //   부모 뷰(LeaveApplyView.vue)가 업로드 후 fileMgmtCd 로 치환한다.
+    evidenceFile: evidenceFile.value?.file || null,
   })
 }
 
@@ -1925,5 +2035,83 @@ onMounted(() => {
   background: var(--color-border);
   color: var(--color-text-tertiary);
   cursor: not-allowed;
+}
+
+.evid-guide {
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--color-warning-tint);
+  border: 0.5px solid var(--color-warning);
+  color: var(--color-warning-text);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.evid-attach {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.evid-attach-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 72px;
+  height: 72px;
+  border: 1.5px dashed var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  font-family: inherit;
+  flex-shrink: 0;
+}
+.evid-attach-btn:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+.evid-attach-prv {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.evid-attach-prv img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.evid-attach-prv__rm {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: none;
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+.evid-attach-meta {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  flex: 1;
+  min-width: 0;
+}
+.evid-attach-meta strong {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  display: block;
 }
 </style>

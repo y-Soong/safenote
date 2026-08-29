@@ -44,6 +44,8 @@
                      AND G.DEL_YN    = 'N'
               ), 0)
           END               AS balanceDays
+        , T.EVIDENCE_YN        AS evidenceYn
+        , T.EVIDENCE_GUIDE_MSG AS evidenceGuideMsg
       FROM TB_LEAVE_TYPE_MGMT T
      WHERE T.CMPNY_CD = #{cmpnyCd}
        AND T.USE_YN   = 'Y'
@@ -290,7 +292,7 @@
     SELECT CONCAT('LV', DATE_FORMAT(NOW(), '%Y%m%d'), FNC_CMM_SEQ_NEXTVAL(#{cmpnyCd}, 'LEAVE_USE_ID')) FROM DUAL
     </select>
 
-    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType, leaveType, maxAplyDays, availTermType) 순서 일치(위치매핑) -->
+    <!-- 결과 record LeaveTypeInfoRow(systemYn, aprvUseYn, useUnitType, leaveType, maxAplyDays, availTermType, evidenceYn) 순서 일치(위치매핑) -->
     <select id="selectLeaveTypeInfo" resultType="com.prafta.app.leave.leaveflow.result.LeaveTypeInfoRow">
     /* AppLeaveFlowMapper.selectLeaveTypeInfo */
     SELECT
@@ -300,6 +302,7 @@
         , A.LEAVE_TYPE      AS leaveType
         , A.MAX_APLY_DAYS   AS maxAplyDays
         , A.AVAIL_TERM_TYPE AS availTermType
+        , A.EVIDENCE_YN     AS evidenceYn
       FROM TB_LEAVE_TYPE_MGMT A
      WHERE A.CMPNY_CD = #{cmpnyCd}
        AND A.LEAVE_CD = #{leaveCd}
@@ -461,6 +464,7 @@
         , LEAVE_DAYS
         , LEAVE_MINUTES
         , LEAVE_REASON
+        , EVIDENCE_FILE_ID
         , LEAVE_STATUS
         , DEL_YN
         , INSERT_NO
@@ -482,6 +486,7 @@
         , #{leaveDays}
         , #{leaveMinutes}
         , #{leaveReason}
+        , #{evidenceFileId}
         , #{leaveStatus}
         , 'N'
         , #{insertNo}
@@ -652,6 +657,57 @@
        AND N.SELF_ATTD_APPRV_YN = 'Y'
        AND (N.MAIN_ADMIN_CD = U.USER_CD OR N.SUB_ADMIN_CD = U.USER_CD)
      LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         연차 증빙 자료: 열람 스코프 검증(본인 업로드자 여부 판정용).
+         TB_FILE_INFO.INSERT_NO = 업로드 시 fileSave 에 넘긴 userCd(업로드자). 없으면 null(대상 없음).
+         sec 리뷰(Critical 방어 이중화): FILE_TYPE='008' 강제 — 008 이 아닌(예: 007 근로계약서 등 다른
+         보호 파일타입) fileMgmtCd 가 이 경로로 열람되는 것을 원천 차단(defense-in-depth).
+         ============================================================ -->
+    <select id="selectEvidenceFileOwner" resultType="string">
+    /* AppLeaveFlowMapper.selectEvidenceFileOwner */
+    SELECT F.INSERT_NO
+      FROM TB_FILE_INFO F
+     WHERE F.CMPNY_CD     = #{cmpnyCd}
+       AND F.FILE_MGMT_CD = #{fileMgmtCd}
+       AND F.FILE_TYPE    = '008'
+     LIMIT 1
+    </select>
+
+    <!-- 연차 증빙 자료: 신청에 실제로 실린(제출 완료) 건의 REQ_ID(결재선 스코프 판정용). 아직 제출 전(orphan
+         업로드)이면 null — 이 경우 업로드자 본인만 열람 가능(위 selectEvidenceFileOwner 로 판정).
+         sec 리뷰(Critical 방어 이중화): TB_FILE_INFO 를 조인해 FILE_TYPE='008' 도 함께 강제 —
+         selectEvidenceFileOwner 방어선이 무너지더라도 이 경로 단독으로도 008 이외 파일타입은 걸러낸다. -->
+    <select id="selectReqIdByEvidenceFileId" resultType="string">
+    /* AppLeaveFlowMapper.selectReqIdByEvidenceFileId */
+    SELECT U.REQ_ID
+      FROM TB_USER_LEAVE_USE U
+      JOIN TB_FILE_INFO F
+        ON F.CMPNY_CD     = U.CMPNY_CD
+       AND F.FILE_MGMT_CD = U.EVIDENCE_FILE_ID
+       AND F.FILE_TYPE    = '008'
+     WHERE U.CMPNY_CD         = #{cmpnyCd}
+       AND U.EVIDENCE_FILE_ID = #{fileMgmtCd}
+       AND U.DEL_YN           = 'N'
+     LIMIT 1
+    </select>
+
+    <!-- ============================================================
+         sec 리뷰(Critical): 연차 신청 제출 시 evidenceFileId 존재/타입/소유권 3중 검증.
+         (i) TB_FILE_INFO 에 실제 존재, (ii) FILE_TYPE='008'(연차 증빙자료), (iii) CMPNY_CD 일치,
+         (iv) 업로더(INSERT_NO) = 현재 신청자 본인. 0이면 submitLeave() 가 ATTD_400_216 으로 거부한다.
+         EVIDENCE_YN='Y'/'N' 여부와 무관하게 evidenceFileId 가 오면 항상 이 검증을 수행한다
+         (가짜/타인 파일 ID 로 저장 자체가 되는 것을 차단 — sec.md 재현 시나리오 대응).
+         ============================================================ -->
+    <select id="countValidEvidenceFile" resultType="int">
+    /* AppLeaveFlowMapper.countValidEvidenceFile */
+    SELECT COUNT(1)
+      FROM TB_FILE_INFO F
+     WHERE F.CMPNY_CD     = #{cmpnyCd}
+       AND F.FILE_MGMT_CD = #{fileMgmtCd}
+       AND F.FILE_TYPE    = '008'
+       AND F.INSERT_NO    = #{userCd}
     </select>
 
 </mapper>

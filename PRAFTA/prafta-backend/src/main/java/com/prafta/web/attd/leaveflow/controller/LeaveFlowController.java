@@ -1,16 +1,23 @@
 package com.prafta.web.attd.leaveflow.controller;
 
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.security.JwtUtil;
+import com.prafta.common.util.EmploymentTypeGuard;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApplyParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveApprovalActionParam;
 import com.prafta.web.attd.leaveflow.application.param.LeaveDeductionPreviewParam;
@@ -134,5 +141,48 @@ public class LeaveFlowController {
                 .build();
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    // ============================================================
+    // 연차 신청 증빙 필수화(2026-08-29): 업로드/제출 분리 아키텍처 (앱 AppLeaveFlowController 미러)
+    // ============================================================
+
+    /**
+     * 증빙 파일 업로드(신청과 별도). 반환된 fileMgmtCd 를 {@code /apply} 요청 바디의
+     * {@code evidenceFileId} 로 실어 보낸다.
+     */
+    @PostMapping(value = "/evidence-file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> uploadEvidenceFile(
+            @RequestPart(value = "item", required = false) MultipartFile file,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        // 일용직은 연차 신청 비해당이므로 증빙 업로드 자체도 서버에서 차단
+        // (앱은 security Medium 으로 사후 추가됐던 가드 — 웹은 최초 구현부터 반영).
+        EmploymentTypeGuard.assertNotDailyWorker(tokenInfo);
+
+        String fileMgmtCd = leaveFlowService.uploadEvidenceFile(tokenInfo, file);
+
+        return ResponseEntity.status(HttpStatus.OK).body(java.util.Map.of("fileMgmtCd", fileMgmtCd));
+    }
+
+    /**
+     * 증빙 파일 열람 — 본인(업로드 신청자) 또는 해당 요청 결재선에 포함된 결재자만 접근 가능(스코프 검증은
+     * 서비스 계층). 공개 정적 URL 금지, 인증 스트림 서빙(SEC-1 — 근로계약서와 동일 원칙).
+     */
+    @GetMapping("/evidence-file/{fileMgmtCd}")
+    public ResponseEntity<byte[]> getEvidenceFile(
+            @PathVariable("fileMgmtCd") String fileMgmtCd,
+            @RequestHeader(value = "Authorization", required = true) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        FileBytesResult file = leaveFlowService.loadEvidenceFile(tokenInfo, fileMgmtCd);
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(file.data());
     }
 }

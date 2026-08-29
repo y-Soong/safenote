@@ -24,5 +24,10 @@ public record LeaveDetailBodyRow(
      * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼 borrowDays 와 순서 일치).
      */
     , BigDecimal borrowDays
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID(TB_USER_LEAVE_USE.EVIDENCE_FILE_ID). 미첨부면 null.
+     * borrowDays 다음(맨 끝) 추가 — 위치매핑 규약 준수.
+     */
+    , String evidenceFileId
 ) {
 }

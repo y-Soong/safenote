@@ -37,6 +37,11 @@ public record LeaveApplyParam(
      * — 단일일 경로 무회귀의 근거다. 생성 경로가 {@link #from} 하나뿐이라 여기서 null 로 고정된다.
      */
     , String groupId
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드 응답의 fileMgmtCd. nullable(증빙 불필요 타입은 null).
+     * 서버 강제 검증은 {@code AppLeaveFlowServiceImpl.submitLeave} 가 EVIDENCE_YN='Y' 타입에 한해 수행한다.
+     */
+    , String evidenceFileId
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -68,6 +73,7 @@ public record LeaveApplyParam(
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()
             , null   // groupId — 단일일 신청은 묶음이 아니다(무회귀: 기존 동작 완전 동일)
+            , request.getEvidenceFileId()
         );
     }
 
@@ -98,6 +104,7 @@ public record LeaveApplyParam(
             , gvSiteCd
             , gvUserCd
             , groupId
+            , evidenceFileId // 기간신청은 날짜별로 분해되지만 증빙 파일은 신청 1건 대표값 그대로 승계
         );
     }
 }

@@ -26,6 +26,11 @@ public record LeaveApplyParam(
     , String gvCmpnyCd
     , String gvSiteCd
     , String gvUserCd
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드 응답의 fileMgmtCd. nullable(증빙 불필요 타입은 null).
+     * 서버 강제 검증(4중 — 존재/타입/회사/소유권)은 {@code LeaveFlowServiceImpl.submitLeave} 가 수행한다.
+     */
+    , String evidenceFileId
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -56,6 +61,7 @@ public record LeaveApplyParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()
+            , request.getEvidenceFileId()
         );
     }
 }

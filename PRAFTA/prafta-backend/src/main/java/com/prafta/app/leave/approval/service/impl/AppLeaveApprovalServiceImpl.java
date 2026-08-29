@@ -228,6 +228,9 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
             body.put("unitNm", lb.unitNm());
             // 가불표시-02: 가불 충당 일수(0 이상). FE 는 0 초과일 때만 "가불 N일" 행 표시.
             body.put("borrowDays", lb.borrowDays());
+            // 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID. 열람은 GET /appApi/leaveflow/evidence-file/{fileMgmtCd}
+            // (본인/결재선 스코프 검증은 그 API 안에서 처리 — 여기선 존재 유무만 노출).
+            body.put("evidenceFileId", lb.evidenceFileId());
 
             Map<String, Object> applied = new LinkedHashMap<>();
             applied.put("startDate", lb.startDate());

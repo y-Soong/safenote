@@ -83,4 +83,12 @@ public class LeaveApplyRequest {
      *   true 면 시스템 법정 연차(월차/본연차)에 한해 잔여 부족분을 미래 발생 연차에서 당겨 차감한다(결재 강제).
      */
     private Boolean isBorrow;
+
+    /**
+     * 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드(POST /leaveflow/evidence-file) 응답의 fileMgmtCd.
+     * nullable — 증빙 불필요 타입(EVIDENCE_YN='N')은 미전송. 서버가 EVIDENCE_YN='Y' 타입에 한해 강제 검증한다.
+     */
+    @FieldLabel("증빙파일ID")
+    @Size(max = 50)
+    private String evidenceFileId;
 }

@@ -11,6 +11,7 @@ package com.prafta.web.attd.leaveflow.vo;
  * @param leaveType  연차 타입 [SYS021] ('01':사용자 신청 / '02':관리자 부여·시스템 연차 등)
  * @param maxAplyDays 사용자 신청('01') 최대 신청일수(tinyint unsigned NULL → Integer). '01'인데 NULL이면 한도 0(신청불가)
  * @param availTermType 사용자 신청('01') 사용가능기간 [SYS026] ('01':설정안함=전체누적 / '02':해당연도내=회계연도). prafta-com-016-B(3-1)
+ * @param evidenceYn 증빙 필수 여부(연차 신청 증빙 필수화 2026-08-29 — 맨 끝 추가, 위치매핑 규약)
  */
 public record LeaveTypeInfoVO(
       String systemYn
@@ -19,5 +20,6 @@ public record LeaveTypeInfoVO(
     , String leaveType
     , Integer maxAplyDays
     , String availTermType
+    , String evidenceYn
 ) {
 }
