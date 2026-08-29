@@ -47,53 +47,57 @@
           <!-- 교대 패턴 정의 -->
           <div class="form-section">
             <p class="section-desc">교대 근무에 사용할 패턴을 정의합니다.</p>
-            <div class="form-row pattern-count-row">
-              <div class="field">
-                <label>패턴 수</label>
-                <select
-                  v-model.number="patternCount"
-                  class="select-pattern-count"
-                  :disabled="isReadOnly"
-                >
-                  <option v-for="n in 4" :key="n" :value="n + 1">
-                    {{ n + 1 }}
-                  </option>
-                </select>
-              </div>
-              <div class="field">
-                <label>사용여부</label>
-                <div class="use-yn-wrap">
-                  <BaseSelect v-model="useYn">
-                    <option
-                      v-for="opt in (systCodeArr['SYS003'] || []).filter(
-                        (o) => o.systValDCd != null
-                      )"
-                      :key="opt.systValDCd"
-                      :value="opt.systValDCd"
-                    >
-                      {{ opt.systValDNm }}
+            <div class="pattern-define-layout">
+              <!-- 좌: 패턴 수 / 사용여부 (교대타입코드 input과 동일 폭으로 세로 배치) -->
+              <div class="pattern-define-fields">
+                <div class="form-row">
+                  <label>패턴 수</label>
+                  <select
+                    v-model.number="patternCount"
+                    class="select-pattern-count"
+                    :disabled="isReadOnly"
+                  >
+                    <option v-for="n in 4" :key="n" :value="n + 1">
+                      {{ n + 1 }}
                     </option>
-                  </BaseSelect>
+                  </select>
+                </div>
+                <div class="form-row">
+                  <label>사용여부</label>
+                  <div class="use-yn-wrap">
+                    <BaseSelect v-model="useYn">
+                      <option
+                        v-for="opt in (systCodeArr['SYS003'] || []).filter(
+                          (o) => o.systValDCd != null
+                        )"
+                        :key="opt.systValDCd"
+                        :value="opt.systValDCd"
+                      >
+                        {{ opt.systValDNm }}
+                      </option>
+                    </BaseSelect>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div class="pattern-rows">
-              <div v-for="i in patternCount" :key="i" class="pattern-row">
-                <span class="pattern-label">패턴 {{ i }}</span>
-                <select
-                  v-model="patternSelections[i - 1]"
-                  class="select-pattern"
-                  :disabled="isReadOnly"
-                >
-                  <option value="OFF">휴무</option>
-                  <option
-                    v-for="p in patternOptions"
-                    :key="p.value"
-                    :value="p.value"
+              <!-- 우: 패턴 1 ~ N (좌측 필드와 나란히, 세로 배치) -->
+              <div class="pattern-rows">
+                <div v-for="i in patternCount" :key="i" class="pattern-row">
+                  <span class="pattern-label">패턴 {{ i }}</span>
+                  <select
+                    v-model="patternSelections[i - 1]"
+                    class="select-pattern"
+                    :disabled="isReadOnly"
                   >
-                    {{ p.label }}
-                  </option>
-                </select>
+                    <option value="OFF">휴무</option>
+                    <option
+                      v-for="p in patternOptions"
+                      :key="p.value"
+                      :value="p.value"
+                    >
+                      {{ p.label }}
+                    </option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -674,16 +678,35 @@ function bindDetailToForm(data) {
   font-size: 0.875rem;
 }
 
+/* 교대타입코드 input(12rem)과 동일 폭 — 패턴 수 select */
 .select-pattern-count {
-  width: 5rem;
+  width: 12rem;
+}
+
+/* BaseSelect 는 내부에서 width:100% 이므로 래퍼 폭으로 제어(교대타입코드 input과 동일 폭) */
+.use-yn-wrap {
+  width: 12rem;
+}
+
+/* 패턴 정의: 좌(패턴 수/사용여부 세로 스택) + 우(패턴 1~N 세로 스택)를 한 행에 나란히 배치 */
+.pattern-define-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 2.5rem;
+}
+
+.pattern-define-fields {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
 }
 
 .pattern-rows {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-top: 0.5rem;
-  margin-left: 3rem;
+  flex: 1;
+  min-width: 0;
 }
 
 .pattern-row {
@@ -699,7 +722,7 @@ function bindDetailToForm(data) {
 
 .select-pattern {
   flex: 1;
-  max-width: 320px;
+  max-width: 220px;
 }
 
 .group-day-header {
@@ -833,34 +856,6 @@ function bindDetailToForm(data) {
   font-size: 0.8125rem;
   color: #ef4444;
   margin-top: 0.25rem;
-}
-
-/* 패턴 수 / 사용여부를 같은 행에 반반 영역으로 배치 */
-.pattern-count-row {
-  gap: 1.5rem;
-}
-
-.pattern-count-row .field {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.pattern-count-row .field label {
-  min-width: auto;
-  flex-shrink: 0;
-  font-weight: 500;
-  font-size: 0.875rem;
-}
-
-/* 셀렉트는 각자 영역(절반)에서 라벨을 뺀 나머지를 채움 */
-.pattern-count-row .field .select-pattern-count,
-.pattern-count-row .field .use-yn-wrap {
-  flex: 1 1 auto;
-  width: auto;
-  min-width: 0;
 }
 
 .modal-footer {
