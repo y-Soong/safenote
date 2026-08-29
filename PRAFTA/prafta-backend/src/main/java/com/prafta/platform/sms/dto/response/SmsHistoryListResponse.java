@@ -10,11 +10,14 @@ import lombok.Getter;
  *
  * <p>PII 최소화 — 휴대폰은 <b>마스킹 문자열만</b> 내려간다(평문/암호문/HMAC 전부 금지, 공통 정책서 §11.1).
  *
+ * <p>★[2026-08-30 방침 변경 / 사용자 확정] {@code authCd} 는 <b>미발송(SKIPPED) 행에 한해</b> 내려간다.
+ * 게이트 OFF 환경에서 운영자가 이 화면에서 인증번호를 읽어 검증 흐름을 테스트하기 위함이다.
+ * 실발송(SENT)·실패(FAILED)·대기(PENDING) 행의 인증번호는 종전대로 절대 담지 않는다 —
+ * 만료 전 코드는 타인의 휴대폰 없이 셀프가입 본인인증 · <b>비밀번호 재설정(계정 탈취)</b> ·
+ * 앱 휴대폰 변경을 통과할 수 있는 유효 자격증명이다.
+ *
  * <p>★★<b>절대 추가 금지 필드</b>
  * <ul>
- *   <li>{@code AUTH_CD} — 6자리 인증번호 <b>평문</b>. 만료 전·미인증 행이면 지금 당장 쓸 수 있는
- *       자격증명이라, 노출되면 타인의 휴대폰 없이 셀프가입 본인인증 · <b>비밀번호 재설정(계정 탈취)</b> ·
- *       앱 휴대폰 변경을 통과할 수 있다.</li>
  *   <li>{@code MBL_NO_HMAC} — 검색 <b>입력</b>으로만 쓰고 응답에는 담지 않는다(상관·역추적 재료).</li>
  *   <li>{@code SEND_IP_HASH} — 컬럼 주석에 "역추적 용도가 아니다" 라고 명시돼 있다.</li>
  *   <li>{@code SEND_REF_KEY} / {@code SEND_MSG_KEY} / {@code EXPIRED_AT} / {@code FAIL_LOCKED_AT}
@@ -75,5 +78,11 @@ public class SmsHistoryListResponse {
 
         /** 발송 요청자 코드. 무인증 흐름(셀프가입 등)은 null */
         private final String sendUserCd;
+
+        /**
+         * 인증번호(6자리). ★<b>미발송(SKIPPED) 행에만</b> 값이 있고 그 외는 항상 null
+         * (매퍼 CASE 게이트 — 2026-08-30 방침 변경 주석 참조).
+         */
+        private final String authCd;
     }
 }

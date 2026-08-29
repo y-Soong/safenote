@@ -9,6 +9,10 @@ package com.prafta.platform.sms.application.result;
  *
  * <p>★record 매핑은 SELECT 컬럼 순서에 의존한다 — {@code PlatformSmsMapper.xml} 의
  * {@code selectPolicy} SELECT 순서와 함께 유지할 것.
+ *
+ * <p>★[2026-08-30] 킬스위치 시각 2종은 epoch 초({@code Long})다. 운영 DB 시계가 UTC 라
+ * DATE_FORMAT 문자열 그대로는 KST-9h 로 표시됐다. 이 record 는 {@code SmsConsoleResponse} 에
+ * 그대로 임베드되므로 화면({@code Platform_05.vue})이 Asia/Seoul 로 포맷한다.
  */
 public record SmsPolicyResult(
     int phoneWindowSec
@@ -21,9 +25,9 @@ public record SmsPolicyResult(
     , int userDayLimit
     , int globalHourLimit
     , String killSwitchYn
-    , String killSwitchAt
+    , Long killSwitchAtEpoch
     , String killSwitchReason
-    , String killSwitchReleaseAt
+    , Long killSwitchReleaseAtEpoch
     , String killSwitchReleaseNo
 ) {
 }

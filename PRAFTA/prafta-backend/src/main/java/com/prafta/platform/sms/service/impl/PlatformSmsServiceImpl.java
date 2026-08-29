@@ -1,5 +1,8 @@
 package com.prafta.platform.sms.service.impl;
 
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -77,6 +80,16 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
     /** 마스킹 불가(복호 실패/암호문 결측) 시 표기. ★TB_SMS_AUTH_CODE 에는 LAST4 컬럼이 없어 폴백이 없다. */
     private static final String MASK_UNAVAILABLE = "-";
 
+    /**
+     * 발송 이력 시각 표기 타임존/포맷. [2026-08-30]
+     * ★서버(JVM/DB) 기본 타임존에 기대지 않고 KST 를 명시한다 — 운영 EC2/RDS 시스템시각이 UTC 라
+     *   DB DATE_FORMAT 문자열을 그대로 내리면 KST-9h 로 표시됐다. 매퍼가 epoch 초(타임존 무관
+     *   절대시각)로 내리고 여기서 Asia/Seoul 로 포맷한다(개발 KST·운영 UTC 모두 정확).
+     */
+    private static final ZoneId ZONE_KST = ZoneId.of("Asia/Seoul");
+    private static final DateTimeFormatter KST_DTM_FORMATTER =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
     @Override
     public SmsConsoleResponse selectConsole() {
 
@@ -110,7 +123,8 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
      * 이 메서드를 {@code com.prafta.web.*} / {@code com.prafta.app.*} 컨트롤러에서 호출하면
      * 회사 경계 없이 전 고객사 휴대폰이 새어나간다.
      *
-     * <p>★휴대폰은 서버에서 복호 후 마스킹한다. 인증번호·HMAC·IP 해시는 응답에 담지 않는다.
+     * <p>★휴대폰은 서버에서 복호 후 마스킹한다. HMAC·IP 해시는 응답에 담지 않는다.
+     *    인증번호는 [2026-08-30 방침 변경] 미발송(SKIPPED) 행에 한해 담는다(매퍼 CASE 게이트).
      * <p>★감사 로그(§11.3) 대상이 아니다(마스킹 목록 조회) — 서버 로그만 남긴다.
      *    ※엑셀 다운로드를 추가하면 §11.3 "다운로드" 에 해당해 감사 적재가 <b>필수</b>가 된다.
      * <p>{@code @Transactional} 을 두지 않는다(읽기 전용 단순 조회 — {@code selectConsole} 과 동일).
@@ -133,16 +147,20 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
                 for (SmsHistoryRowResult row : rows) {
                     list.add(SmsHistoryListResponse.Row.builder()
                             .smsId(row.smsId())
-                            .insertDate(row.insertDate())
+                            // [2026-08-30] 매퍼가 epoch 초로 내리고 여기서 KST 로 포맷한다
+                            //   (운영 DB 시계=UTC 라 DATE_FORMAT 문자열 그대로는 KST-9h 표시였다).
+                            .insertDate(formatEpochKst(row.insertEpoch()))
                             .mblNo(maskMblNo(decryptMblNo(row.mblNoEnc())))
                             .purposeCd(row.purposeCd())
                             .sendStatus(row.sendStatus())
-                            .sendDate(row.sendDate())
+                            .sendDate(formatEpochKst(row.sendEpoch()))
                             .verifiedYn(row.verifiedYn())
                             .failCnt(row.failCnt())
                             .sendErrCd(row.sendErrCd())
                             .sendErrMsg(row.sendErrMsg())
                             .sendUserCd(row.sendUserCd())
+                            // [2026-08-30 방침 변경] 미발송(SKIPPED) 행만 매퍼 CASE 게이트로 값이 온다.
+                            .authCd(row.authCdSkipped())
                             .build());
                 }
             }
@@ -159,6 +177,17 @@ public class PlatformSmsServiceImpl implements PlatformSmsService {
                 .historyList(list)
                 .totalCount(totalCount)
                 .build();
+    }
+
+    /**
+     * epoch 초 → {@code yyyy-MM-dd HH:mm:ss}(Asia/Seoul) 포맷. null 이면 null(화면이 "-" 처리).
+     */
+    private String formatEpochKst(Long epochSec) {
+
+        if (epochSec == null) {
+            return null;
+        }
+        return Instant.ofEpochSecond(epochSec).atZone(ZONE_KST).format(KST_DTM_FORMATTER);
     }
 
     /**

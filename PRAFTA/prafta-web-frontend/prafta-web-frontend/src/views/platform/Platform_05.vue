@@ -12,9 +12,11 @@
   - ★발송 게이트(prafta.sms.enabled)는 서버 secrets(PPURIO_ENABLED) 소관이라 화면에서 바꾸지 않는다(읽기전용 표시).
     킬스위치만 DB 상태이며 화면에서 수동 해제한다.
   - ★★[방침 변경] 개별 발송 이력은 이 플랫폼 운영자 콘솔에 한해 노출한다(휴대폰은 서버에서 마스킹).
-    다만 인증번호(AUTH_CD)·MBL_NO_HMAC·SEND_IP_HASH 는 여전히 어떤 응답에도 담지 않는다 —
+    MBL_NO_HMAC·SEND_IP_HASH 는 여전히 어떤 응답에도 담지 않는다.
+  - ★[방침 변경 / 2026-08-30 사용자 확정] 인증번호(authCd)는 미발송(SKIPPED = 게이트 OFF) 행에
+    한해 서버가 내려주고 화면에 표시한다 — 게이트 OFF 환경에서 운영자가 이 화면에서 코드를 읽어
+    검증 흐름을 테스트하기 위함. 실발송(SENT)·실패·대기 행은 종전대로 표시하지 않는다(응답에 null) —
     만료 전 인증번호는 그 자체로 계정 탈취(비밀번호 재설정 통과)에 쓰이는 유효 자격증명이다.
-    화면에도 인증번호를 표시하지 않는다(응답에 아예 없는 필드다).
   - ★TB_SMS_AUTH_CODE 에는 CMPNY_CD 가 없다. 이 조회는 플랫폼 운영자 전용에서만 성립한다.
   - 골격: planner 작성(template + scoped style), script 로직: developer 작성(SMS2-C2 / P05H-4).
 -->
@@ -332,7 +334,8 @@
         </div>
 
         <p class="p05-guide">
-          ⓘ 인증번호는 표시하지 않습니다. 휴대폰 번호는 마스킹 처리되며, 발송
+          ⓘ 인증번호는 미발송(발송 게이트 OFF) 건에 한해 표시됩니다. 실제
+          발송된 건의 인증번호는 표시하지 않습니다. 휴대폰 번호는 마스킹 처리되며, 발송
           요청자는 로그인 상태에서 발송한 경우에만 표시됩니다(셀프가입 등
           비로그인 흐름은 -). 실패 횟수는 인증번호 검증 실패 누적으로, 5회
           이상이면 코드가 무효화되며 무차별 대입 시도를 의심할 수 있습니다.
@@ -360,22 +363,23 @@
                 <th style="width: 10%">목적</th>
                 <th style="width: 7%; text-align: center">상태</th>
                 <th style="width: 11%">결과일시</th>
+                <th style="width: 6%; text-align: center">인증번호</th>
                 <th style="width: 5%; text-align: center">인증</th>
                 <th style="width: 5%; text-align: center">실패</th>
                 <th style="width: 10%">오류코드</th>
-                <th style="width: 17%">오류메시지</th>
+                <th style="width: 11%">오류메시지</th>
                 <th style="width: 11%">요청자</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="histLoading">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">조회 중입니다...</td>
+                  <td colspan="12" class="edu-grid-empty">조회 중입니다...</td>
                 </tr>
               </template>
               <template v-else-if="!histList || histList.length === 0">
                 <tr>
-                  <td colspan="11" class="edu-grid-empty">
+                  <td colspan="12" class="edu-grid-empty">
                     조회된 발송 이력이 없습니다. 기간을 넓혀 다시 조회해 주세요.
                   </td>
                 </tr>
@@ -397,6 +401,8 @@
                     </span>
                   </td>
                   <td>{{ row.sendDate || "-" }}</td>
+                  <!-- 인증번호: 미발송(SKIPPED) 행만 서버가 내려준다(그 외 null → -) -->
+                  <td style="text-align: center">{{ row.authCd || "-" }}</td>
                   <td style="text-align: center">
                     {{ fnVerifiedLabel(row.verifiedYn) }}
                   </td>
@@ -723,11 +729,12 @@ async function fnSearch() {
         };
 
         killSwitchOn.value = p.killSwitchYn === "Y";
-        killSwitchAtLabel.value = p.killSwitchAt || "-";
+        // [2026-08-30] 서버가 epoch 초로 내린다(운영 DB 시계=UTC 라 문자열 그대로는 KST-9h 표시) → KST 포맷
+        killSwitchAtLabel.value = fnFormatEpochKst(p.killSwitchAtEpoch) || "-";
         killSwitchReason.value = p.killSwitchReason || "-";
         // 해제 시각 + 해제자를 한 줄로(둘 중 하나라도 없으면 "-")
-        killSwitchReleaseLabel.value = p.killSwitchReleaseAt
-          ? `${p.killSwitchReleaseAt}${
+        killSwitchReleaseLabel.value = p.killSwitchReleaseAtEpoch
+          ? `${fnFormatEpochKst(p.killSwitchReleaseAtEpoch)}${
               p.killSwitchReleaseNo ? ` (${p.killSwitchReleaseNo})` : ""
             }`
           : "-";
@@ -740,6 +747,22 @@ async function fnSearch() {
   } finally {
     loading.value = false;
   }
+}
+
+/* epoch 초 → "YYYY-MM-DD HH:mm:ss" (Asia/Seoul 명시 — 열람자 기기 타임존과 무관하게 KST 고정) */
+function fnFormatEpochKst(epochSec) {
+  if (epochSec == null) return "";
+  // sv-SE 로케일은 "YYYY-MM-DD HH:mm:ss" 형식을 그대로 돌려준다
+  return new Intl.DateTimeFormat("sv-SE", {
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).format(new Date(epochSec * 1000));
 }
 
 /* 서버 응답 누락 대비 기본값 폴백 */
