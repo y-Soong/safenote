@@ -271,6 +271,15 @@
                 @mouseup="onCellUp"
                 @dblclick="fnOpenLeaveChangeRequest(rowIdx, d.workYmd)"
               >
+                <!-- 근무타입 코드(SCH_NO) 배지 — 근무시간이 같고 휴게시간만 다른 타입 구분용.
+                     시각 라벨 문자열에 끼워 넣지 않고 별도 줄 배지로 분리해, 2구간+고정연장으로
+                     라벨이 여러 줄인 셀에서도 폭이 늘어나지 않게 한다. -->
+                <span
+                  v-if="getCellSchNo(user.userCd, d.workYmd)"
+                  class="td-sch-no"
+                >
+                  {{ getCellSchNo(user.userCd, d.workYmd) }}
+                </span>
                 <span
                   class="td-val"
                   :class="{
@@ -294,10 +303,9 @@
                   type="button"
                   class="td-partial-leave"
                   :class="{
-                    'is-pending': getPartialLeaves(
-                      user.userCd,
-                      d.workYmd
-                    ).some((p) => p.pending),
+                    'is-pending': getPartialLeaves(user.userCd, d.workYmd).some(
+                      (p) => p.pending
+                    ),
                   }"
                   :title="
                     getPartialLeaves(user.userCd, d.workYmd).some(
@@ -582,6 +590,20 @@ const getCellNmValue = (userCd, workYmd) => {
 const getSchTypeNm = (schCd) => {
   const sch = schTypeList.value.find((s) => s.schCd === schCd);
   return sch ? `[${sch.schNo}] · ${sch.schNm}` : schCd;
+};
+
+// ── 셀 근무타입 코드(SCH_NO) 배지 조회 ─────────────────────
+// 근무시간이 같고 휴게시간만 다른 근무타입(예: 09:00~18:00 휴게 90분/89분)은 셀의 시각 라벨만으로
+// 구분이 불가능하다. 관리자가 붙인 코드(SCH_NO)를 셀 상단 배지로 병기해 어떤 타입이 적용됐는지
+// 식별하게 한다. 연차 오버레이/법정휴가 마커/근무타입 외 코드는 배지 미표시(getCellNmValue 가드 미러).
+// SCH_NO 는 버전(effective-dating) 무관 식별자라 현재본(schTypeList) 조회로 충분하다.
+const getCellSchNo = (userCd, workYmd) => {
+  const overlay = leaveOverlay.value[`${userCd}_${workYmd}`];
+  if (overlay?.leaveCd) return "";
+  const code = scheduleData.value[`${userCd}_${workYmd}`];
+  if (!code || code === AUTO_LEGAL_LEAVE_CD) return "";
+  const sch = schTypeList.value.find((s) => s.schCd === code);
+  return sch ? sch.schNo : "";
 };
 
 // ── 사용자명 조회 (prafta-com-016-C-1 팝업 식별자용) ─────────
@@ -2346,6 +2368,26 @@ onUnmounted(() => {
 .td-val {
   display: block;
   white-space: pre-line;
+}
+
+/* 근무타입 코드(SCH_NO) 배지 — 시각이 동일하고 휴게만 다른 타입 구분용(셀 상단 별도 줄).
+   긴 코드는 ellipsis 로 잘라 셀 폭(96px+)이 배지 때문에 늘어나지 않게 한다. */
+.td-sch-no {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 0.3rem;
+  margin-bottom: 0.1rem;
+  border-radius: 0.5rem;
+  font-size: 0.62rem;
+  line-height: 1.5;
+  font-weight: 600;
+  vertical-align: middle;
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg, #f3f4f6);
+  border: 1px solid var(--color-border, #e5e7eb);
 }
 .val-muted {
   color: var(--color-text-muted, #9ca3af);
