@@ -53,16 +53,27 @@
     </nav>
 
     <!-- 본문: 선택 탭 -->
-    <main class="admin-approval-body">
+    <main
+      class="admin-approval-body"
+      ref="bodyEl"
+      @touchstart.passive="onPullStart"
+      @touchmove="onPullMove"
+      @touchend="onPullEnd"
+      @touchcancel="onPullEnd"
+    >
+      <!-- 당겨서 새로고침 인디케이터 — 스크롤 최상단에서 아래로 당기면 노출(공통 컴포저블) -->
+      <PullRefreshIndicator v-bind="indicatorProps" />
+
       <!-- 탭1 승인 대기(디폴트) -->
       <AdminApprovalPendingList
         v-if="activeTab === 'PENDING'"
+        ref="pendingListRef"
         @select="onSelectPending"
         @update:total="onPendingTotal"
       />
 
       <!-- 탭2 승인 이력 (016-G-1: 표시 전용 리스트 — 클릭/네비게이션 없음) -->
-      <AdminApprovalHistoryList v-else />
+      <AdminApprovalHistoryList v-else ref="historyListRef" />
     </main>
 
     <!-- 아이콘 스프라이트 -->
@@ -87,6 +98,9 @@
 <script setup>
 import { ref, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
+
+import { usePullToRefresh } from '@/composables/usePullToRefresh'
+import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
 import AdminApprovalPendingList from './components/AdminApprovalPendingList.vue'
 import AdminApprovalHistoryList from './components/AdminApprovalHistoryList.vue'
@@ -114,6 +128,22 @@ const pendingTotal = ref(0)
 const onPendingTotal = (total) => {
   pendingTotal.value = Number(total) || 0
 }
+
+// 자식 리스트 컴포넌트 ref — 당겨서 새로고침 시 활성 탭의 재조회를 명시 호출하기 위함.
+//   v-if/v-else 배타 렌더이므로 비활성 탭 쪽은 항상 null(옵셔널 체이닝으로 안전 호출).
+const pendingListRef = ref(null)
+const historyListRef = ref(null)
+
+// ── 당겨서 새로고침(공통 컴포저블 usePullToRefresh) ─────────────────────────
+//   스크롤 컨테이너(.admin-approval-body) 최상단에서 아래로 당기면 현재 활성 탭만 재조회한다.
+const bodyEl = ref(null)
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  bodyEl,
+  async () => {
+    const activeRef = activeTab.value === 'PENDING' ? pendingListRef : historyListRef
+    await activeRef.value?.refresh?.()
+  },
+)
 
 // ── 액션 ──────────────────────────────────────────────────────────
 // 관리자 모드(런처) 복귀
@@ -162,7 +192,12 @@ const onSelectPending = (item) => {
   --space-md: 12px;
   --space-lg: 16px;
 
-  min-height: 100%;
+  /* 당겨서 새로고침의 scrollTop 판정 정확도 보장(AdminLauncherView.vue 동일 패턴) —
+     문서(html/body)로 스크롤이 새면 .admin-approval-body 의 scrollTop 이 항상 0 근처로
+     남아 "최상단 여부" 판정이 실제 스크롤 위치와 무관해진다. 뷰포트 높이로 고정해
+     .admin-approval-body 를 유일한 스크롤 컨테이너로 만든다. */
+  height: 100vh;
+  height: 100dvh;
   background: var(--color-bg);
   color: var(--color-text-primary);
   display: flex;
@@ -250,6 +285,10 @@ const onSelectPending = (item) => {
 /* 본문 */
 .admin-approval-body {
   flex: 1;
+  /* flex 자식의 기본 min-height:auto 는 내용이 길면 축소를 막아 overflow-y 스크롤이
+     컨테이너 대신 문서로 새는 원인이 된다(스크롤 위치 오판 → 당겨서 새로고침 오작동).
+     min-height:0 으로 .admin-approval-body 를 실제 스크롤 컨테이너로 고정한다(AdminLauncherView.vue 동일). */
+  min-height: 0;
   padding: var(--space-md) var(--space-lg) calc(var(--space-lg) + env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
 }

@@ -295,6 +295,10 @@ const onResetFilters = () => {
   reload()
 }
 
+// 부모(AdminApprovalView) "당겨서 새로고침"에서 호출하는 재조회 트리거.
+//   기존 reload()(첫 페이지 재조회 + 무한스크롤 재관찰)를 그대로 노출한다.
+defineExpose({ refresh: reload })
+
 // ── 라이프사이클 ──────────────────────────────────────────────────────────
 onMounted(async () => {
   await loadPage(false)
