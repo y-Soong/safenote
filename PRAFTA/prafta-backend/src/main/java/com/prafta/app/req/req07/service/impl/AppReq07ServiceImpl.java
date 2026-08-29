@@ -395,12 +395,14 @@ public class AppReq07ServiceImpl implements AppReq07Service {
     public RegisterReqResponse registerOvertime(OvertimeParam param) {
 
         // ----- 구조 검증 -----
+        //   OT-동시신청-1: 초과근무는 전용 헬퍼 사용 — workSeq 중복 허용(전방+후방 동시신청) +
+        //   슬롯 간 겹침 검사를 시작시각 기준으로 일반화. 보정/스케줄수정용 공유 헬퍼는 무변경.
         validateSlotsSize(param.slots());
-        validateNoDuplicateWorkSeq(param.slots());
+        validateOvertimeSlotWorkSeqs(param.slots());
         if (!StringUtils.hasText(param.reqReason())) {
             throw new ApiException(AttdErrorCode.ATTD_400_096);
         }
-        validateSlotsTimes(param.slots());
+        validateOvertimeSlotTimes(param.slots());
 
         // prafta-043: OT_TYPE(초과근무 유형) 전면 파기.
         //   - tb_user_attd_req.OT_TYPE 컬럼 자체를 제거(마이그 prafta-043-2-contract-drop-ot-type.sql).
@@ -718,6 +720,73 @@ public class AppReq07ServiceImpl implements AppReq07Service {
             int firstIdx = slots.get(0).getWorkSeq() == 1 ? 0 : 1;
             int secondIdx = 1 - firstIdx;
             if (absMin[firstIdx][1] > absMin[secondIdx][0]) {
+                throw new ApiException(AttdErrorCode.ATTD_400_094);
+            }
+        }
+    }
+
+    // ============================================================
+    // OT 전용 검증 헬퍼 (OT-동시신청-1 — registerOvertime 한정)
+    // ============================================================
+
+    /**
+     * OT-동시신청-1: 초과근무 전용 workSeq 검증 — 유효값(1/2)만 강제하고 <b>중복은 허용</b>한다.
+     *
+     * <p>WHY(왜 OT 만 workSeq 중복을 허용하는가): 초과근무 슬롯은 "OT 시간대"이며 workSeq 는 그
+     * 시간대가 속한 실근태 구간을 가리키는 참조값일 뿐이다. 출퇴근 1회(실근태 WORK_SEQ=1 하나)인
+     * 날에 전방(조기출근) OT 와 후방(연장) OT 를 한 신청에 담으면 두 슬롯이 같은 workSeq=1 을
+     * 참조하는 것이 정상이다(정책 attd §9.3.3 — 조기출근/연장 각각 별도 발생 케이스). 등록 시점부터
+     * 슬롯마다 별도 REQ_ID 로 INSERT 되므로 승인/반려 흐름은 REQ 단위로 이미 독립이다(plan §0-1).
+     * 반면 근태보정/스케줄수정은 슬롯이 "구간 그 자체"를 수정 대상(target)으로 삼으므로 같은 구간
+     * 2건은 모순 — 그쪽은 {@link #validateNoDuplicateWorkSeq}(중복 금지, ATTD_400_092)를 계속 쓴다.
+     *
+     * <p>슬롯 상호 시간 겹침은 {@link #validateOvertimeSlotTimes}가 차단하고, 슬롯별 실근태 범위
+     * 포함 여부는 {@link #assertWithinActualAttdWindow}가 종전대로 독립 검증한다(무변경).
+     */
+    private void validateOvertimeSlotWorkSeqs(List<SlotRequest> slots) {
+        for (SlotRequest s : slots) {
+            Integer ws = s.getWorkSeq();
+            if (ws == null || (ws != 1 && ws != 2)) {
+                throw new ApiException(AttdErrorCode.ATTD_400_091);
+            }
+        }
+    }
+
+    /**
+     * OT-동시신청-1: 초과근무 전용 슬롯 시각 검증.
+     *
+     * <p>슬롯 자체 검증(HHmm 4자리 형식·start &lt; end → ATTD_400_093)은
+     * {@link #validateSlotsTimes}와 동일하다. 슬롯 간 검증만 다르다 — 같은 workSeq 슬롯 2개
+     * (전방+후방 OT)가 허용되므로 "workSeq1 끝 ≤ workSeq2 시작" 가정을 버리고
+     * <b>시작시각(절대분) 오름차순 정렬 후 인접 쌍 겹침 검사</b>로 일반화한다
+     * (역순 입력도 정상 판정). 겹치면 기존 ATTD_400_094 재사용,
+     * 접함(prev.end == next.start)은 현행대로 허용({@code >} 비교 유지).
+     */
+    private void validateOvertimeSlotTimes(List<SlotRequest> slots) {
+        // 1) 각 slot 자체 검증 (validateSlotsTimes 1) 과 동일)
+        long[][] absMin = new long[slots.size()][2]; // [i][0]=start_abs_min, [i][1]=end_abs_min
+        for (int i = 0; i < slots.size(); i++) {
+            SlotRequest s = slots.get(i);
+            int sMin = parseHHmm(s.getStartTime());
+            int eMin = parseHHmm(s.getEndTime());
+            if (sMin < 0 || eMin < 0
+                    || !StringUtils.hasText(s.getStartDate())
+                    || !StringUtils.hasText(s.getEndDate())) {
+                throw new ApiException(AttdErrorCode.ATTD_400_093);
+            }
+            long sAbs = ymdToDays(s.getStartDate()) * 1440L + sMin;
+            long eAbs = ymdToDays(s.getEndDate()) * 1440L + eMin;
+            if (eAbs <= sAbs) {
+                throw new ApiException(AttdErrorCode.ATTD_400_093);
+            }
+            absMin[i][0] = sAbs;
+            absMin[i][1] = eAbs;
+        }
+
+        // 2) 슬롯 간 겹침 금지 — 시작시각 오름차순 정렬 후 인접 쌍 검사(workSeq 무관).
+        java.util.Arrays.sort(absMin, java.util.Comparator.comparingLong(a -> a[0]));
+        for (int i = 1; i < absMin.length; i++) {
+            if (absMin[i - 1][1] > absMin[i][0]) {
                 throw new ApiException(AttdErrorCode.ATTD_400_094);
             }
         }

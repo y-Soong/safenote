@@ -11,6 +11,10 @@
       #3 구간별 등록 가능 시간 표시(앞 OT=실출근~스케줄시작 / 뒤 OT=스케줄종료~실퇴근). 표시 전용, 차단 아님.
   - emits: submit ({ slots:[{workSeq, startDate, startTime, endDate, endTime}], reqReason }), cancel
   - ⚠️ workSeq 는 구간 식별자(1/2). 위치 기반 재인덱싱 금지(prafta-app-007 메모리).
+  - OT-동시신청-2(2026-08-29): 슬롯 모델을 "실근태 구간 카드"에서 "OT 시간대 카드"로 전환.
+      카드 key/삭제 식별자는 로컬 slotId(생성 시 부여 후 불변, 서버 미전송)로만 식별하고,
+      workSeq 는 "이 OT 가 속한 실근태 구간" 전송값으로만 유지 — 같은 workSeq 슬롯 2개 허용
+      (단일 근무 날 전방+후방 동시 신청, 백엔드 OT-동시신청-1 이 workSeq 중복 허용).
 -->
 <template>
   <form class="ot-form" @submit.prevent="onSubmit">
@@ -87,39 +91,45 @@
       <p class="fs__title">초과근무 시간</p>
 
       <SlotCard
-        v-for="slot in slots"
-        :key="slot.workSeq"
+        v-for="(slot, si) in slots"
+        :key="slot.slotId"
         :work-seq="slot.workSeq"
-        :title="slot.workSeq + '구간 초과근무'"
+        :title="'초과근무 ' + (si + 1)"
         :removable="slots.length > 1"
-        @remove="onRemoveSlot"
+        @remove="onRemoveSlot(slot.slotId)"
       >
-        <!-- 등록 가능 시간 (구간별). 웹 Attd_07 일자상세 팝업의 "등록 가능" 칩과 동일 동작 —
-             탭하면 그 범위가 시작/종료 입력칸에 그대로 채워진다. -->
-        <div class="ot-window" :class="{ 'ot-window--empty': !slotWindows(slot.workSeq).length }">
+        <!-- OT-동시신청-2: 분할근무 날(실근태 구간 2개)에만 매칭 구간 배지. 제목은 순번 통일 —
+             같은 구간 2카드에서 "1구간 초과근무"가 중복 표기되던 혼란 방지(plan §2-2). -->
+        <span v-if="isSplitWorkDay" class="slot-seq-badge">{{ slot.workSeq }}구간 근무</span>
+
+        <!-- 등록 가능 시간 칩 — 탭하면 그 범위가 시작/종료 입력칸에 그대로 채워진다.
+             OT-동시신청-2: 칩 목록을 "그날 실근태 구간 전체"로 확장(단일 근무 날 카드마다
+             전방/후방 창을 골라 탭). 다른 슬롯에 이미 적용된 창은 비활성("적용됨"). -->
+        <div class="ot-window" :class="{ 'ot-window--empty': !dayWindows.length }">
           <span class="ot-window__lbl">등록 가능 시간</span>
-          <ul v-if="slotWindows(slot.workSeq).length" class="ot-window__list">
-            <li v-for="(w, wi) in slotWindows(slot.workSeq)" :key="wi">
+          <ul v-if="dayWindows.length" class="ot-window__list">
+            <li v-for="(w, wi) in dayWindows" :key="wi">
               <button
                 type="button"
                 class="ot-window__chip"
+                :disabled="isWindowAppliedElsewhere(slot.slotId, w)"
                 :aria-label="`${w.label} 범위로 초과근무 시간 채우기`"
-                @click="applyWindow(slot.workSeq, w)"
+                @click="applyWindow(slot.slotId, w)"
               >
-                {{ w.label }}
+                {{ w.label }}<span v-if="isWindowAppliedElsewhere(slot.slotId, w)"> · 적용됨</span>
               </button>
             </li>
           </ul>
           <span v-else class="ot-window__val">등록 가능한 초과 시간이 없어요</span>
         </div>
 
-        <!-- prafta-app-017(이슈①) 정규 스케줄 겹침 경고 (구간별, 사전차단) -->
-        <p v-if="slotOverlap(slot.workSeq)" class="warn-msg">
+        <!-- prafta-app-017(이슈①) 정규 스케줄 겹침 경고 (슬롯별, 사전차단) -->
+        <p v-if="slotOverlap(slot)" class="warn-msg">
           스케줄 시간 내에는 초과근무를 등록할 수 없어요.
         </p>
 
-        <!-- prafta-app-030 기존 적용 OT 겹침 경고 (구간별, 사전차단) -->
-        <p v-if="slotExistingOverlap(slot.workSeq)" class="warn-msg">
+        <!-- prafta-app-030 기존 적용 OT 겹침 경고 (슬롯별, 사전차단) -->
+        <p v-if="slotExistingOverlap(slot)" class="warn-msg">
           이미 등록된 초과근무와 시간이 겹쳐요.
         </p>
 
@@ -140,7 +150,7 @@
         <!-- #2 유형(OT_TYPE) 칩 제거됨 — 유형 확정은 관리자 승인 단계(서버 NULL 저장) -->
       </SlotCard>
 
-      <button v-if="slots.length === 1" type="button" class="btn-add" @click="onAddSlot">
+      <button v-if="slots.length < 2" type="button" class="btn-add" @click="onAddSlot">
         <svg
           width="16"
           height="16"
@@ -155,7 +165,7 @@
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
         </svg>
-        구간 추가
+        초과근무 시간대 추가
       </button>
 
       <!-- 신청 합계 -->
@@ -165,7 +175,7 @@
       </div>
 
       <p v-if="overlapWarning" class="warn-msg">
-        2구간 시작 시각은 1구간 종료 시각 이후여야 합니다.
+        초과근무 시간대가 서로 겹치지 않게 입력해 주세요.
       </p>
 
       <label class="field">
@@ -284,7 +294,13 @@ function hhmmDisplay(hhmm) {
 //   겹쳐 보여 "이미 올린 걸 또 올리라는 건가" 혼란을 유발했다(08-14 2구간+OT 2건 실증).
 //   날짜는 근무일로 프리필하고, 시각 입력은 "등록 가능 시간" 칩 탭 또는 직접 입력으로 한다
 //   (칩이 날짜·시각을 함께 채우므로 야간/익일 케이스도 칩 경유가 정확하다).
+// OT-동시신청-2: 카드 key/삭제 식별자용 로컬 순번(생성 시 부여 후 불변, 서버 미전송).
+//   workSeq 가 중복 가능해지면서(같은 실근태 구간의 전방+후방 카드) key/삭제를 workSeq 로
+//   식별하면 두 카드가 함께 지워지는 함정이 있어 slotId 로 분리한다.
+let nextSlotId = 1
+
 const slotFromContext = (s, idx) => ({
+  slotId: nextSlotId++,
   workSeq: s?.workSeq ?? idx + 1,
   startDate: ymdToInput(props.context.workYmd),
   startTime: '',
@@ -304,6 +320,7 @@ const buildInitialSlots = () => {
 
 // 빈 카드(폴백/수동 추가용).
 const makeEmptySlot = (workSeq) => ({
+  slotId: nextSlotId++,
   workSeq,
   startDate: ymdToInput(props.context.workYmd),
   startTime: '',
@@ -486,15 +503,57 @@ function makeWindow(startStamp, endStamp) {
   return { startYmd, startHhmm, endYmd, endHhmm, label }
 }
 
-// 칩 탭 → 해당 구간의 시작/종료 입력칸을 그 범위로 채운다(웹 addOtFromWindow 와 동형).
-//   이미 같은 값이면 그대로 둔다(멱등). 사용자가 이후 수동으로 조정하는 건 자유.
-const applyWindow = (workSeq, w) => {
-  const slot = slots.value.find((s) => s.workSeq === workSeq)
+// ── OT-동시신청-2: 그날 전체 등록 가능 창 / 분할근무 판정 / 칩 적용 ──────────
+// 실근태(attendance) 보유 구간이 2개인 날인지(분할근무). 구간 배지·칩 구간 라벨 병기 기준.
+const isSplitWorkDay = computed(() => {
+  const ctxSlots = props.context?.slots || []
+  return ctxSlots.filter((s) => s?.attendance).length >= 2
+})
+
+// 그날 실근태 구간 전체의 등록 가능 창 합산 — 칩 목록의 단일 출처.
+//   단일 근무 날엔 두 카드 모두 같은 목록(전방/후방)에서 골라 탭한다(plan §2-4).
+//   각 창에 파생 구간(workSeq)을 동봉해 칩 적용 시 슬롯 workSeq 를 명시 기록한다.
+//   분할근무 날은 어느 구간의 창인지 라벨에 병기.
+const dayWindows = computed(() => {
+  const ctxSlots = props.context?.slots || []
+  const out = []
+  ctxSlots.forEach((s, i) => {
+    const workSeq = s?.workSeq ?? i + 1
+    for (const w of slotWindows(workSeq)) {
+      out.push({
+        ...w,
+        workSeq,
+        label: isSplitWorkDay.value ? `${w.label} · ${workSeq}구간` : w.label,
+      })
+    }
+  })
+  return out
+})
+
+// 같은 창이 "다른 슬롯"에 이미 적용돼 있는지(stamp 완전 일치) — 칩 비활성("적용됨") 판정.
+//   같은 창 이중 적용 → 상호 겹침 경고로 이어지는 오조작을 사전에 막는다(plan §2-4-2).
+const isWindowAppliedElsewhere = (slotId, w) => {
+  const wStart = stampOf(w.startYmd, w.startHhmm)
+  const wEnd = stampOf(w.endYmd, w.endHhmm)
+  if (Number.isNaN(wStart) || Number.isNaN(wEnd)) return false
+  return slots.value.some((s) => {
+    if (s.slotId === slotId) return false
+    const sStart = stampOf(inputToYmd(s.startDate), timeToHhmm(s.startTime))
+    const sEnd = stampOf(inputToYmd(s.endDate), timeToHhmm(s.endTime))
+    return sStart === wStart && sEnd === wEnd
+  })
+}
+
+// 칩 탭 → 해당 슬롯의 시작/종료 입력칸을 그 범위로 채운다(웹 addOtFromWindow 와 동형).
+//   OT-동시신청-2: 슬롯은 slotId 로 식별하고, 창이 파생된 구간의 workSeq 를 함께 기록한다.
+const applyWindow = (slotId, w) => {
+  const slot = slots.value.find((s) => s.slotId === slotId)
   if (!slot || !w) return
   slot.startDate = ymdToInput(w.startYmd)
   slot.startTime = hhmmToTime(w.startHhmm)
   slot.endDate = ymdToInput(w.endYmd)
   slot.endTime = hhmmToTime(w.endHhmm)
+  if (w.workSeq != null) slot.workSeq = w.workSeq
 }
 
 // HHMM(4자리) → 분. 형식 위반 시 -1.
@@ -537,21 +596,24 @@ function stampToHhmm(stamp) {
   return `${h}${mm}`
 }
 
-// ── 겹침 경고 (2슬롯) ────────────────────────────────────────────────────
-//   prafta-app-030: 기존 시각 문자열 단순비교(s2Start < s1End)는 오버나이트(날짜 넘김)를 무시하는 버그였다.
-//   stampOf(YYYYMMDD, HHMM)(일자+시각 결합)로 1구간 종료 > 2구간 시작 인지를 정확히 판정한다(자정 넘김 안전).
-//   slots.value 의 startDate/startTime 은 input 포맷 → inputToYmd()/timeToHhmm() 로 변환 후 stamp 화.
-//   ⚠️ workSeq 식별자로 1·2 구간을 매칭(위치 index 금지).
+// ── 겹침 경고 (슬롯 상호) ────────────────────────────────────────────────
+//   OT-동시신청-2: 종전 workSeq 1·2 쌍 고정 판정("1구간 종료 ≤ 2구간 시작")을 버리고,
+//   모든 슬롯 쌍을 stamp 겹침으로 검사한다(백엔드 validateOvertimeSlotTimes/ATTD_400_094 미러).
+//   같은 workSeq 슬롯 2개(전방+후방)가 허용되면서 workSeq 로는 순서를 정할 수 없기 때문.
+//   접함(prev.end == next.start)은 허용. 미입력/형식위반(NaN) 슬롯은 판정에서 제외.
 const overlapWarning = computed(() => {
   if (slots.value.length < 2) return false
-  const s1 = slots.value.find((s) => s.workSeq === 1)
-  const s2 = slots.value.find((s) => s.workSeq === 2)
-  if (!s1 || !s2) return false
-  const s1End = stampOf(inputToYmd(s1.endDate), timeToHhmm(s1.endTime))
-  const s2Start = stampOf(inputToYmd(s2.startDate), timeToHhmm(s2.startTime))
-  // 어느 값이라도 NaN(미입력/형식위반) → 경고 안 함(입력 완료 후 판정).
-  if (Number.isNaN(s1End) || Number.isNaN(s2Start)) return false
-  return s2Start < s1End
+  const ranges = slots.value
+    .map((s) => [
+      stampOf(inputToYmd(s.startDate), timeToHhmm(s.startTime)),
+      stampOf(inputToYmd(s.endDate), timeToHhmm(s.endTime)),
+    ])
+    .filter(([st, en]) => !Number.isNaN(st) && !Number.isNaN(en))
+    .sort((a, b) => a[0] - b[0])
+  for (let i = 1; i < ranges.length; i++) {
+    if (ranges[i - 1][1] > ranges[i][0]) return true
+  }
+  return false
 })
 
 // ── prafta-app-030: 기존 적용 OT 표시/겹침 ───────────────────────────────
@@ -600,11 +662,10 @@ const pendingOvertimeDisplays = computed(() =>
 
 // 신규 슬롯 1건이 기존 적용 OT 와 겹치는지(오버나이트 인지). 겹침: otStart < exEnd && exStart < otEnd(접함 허용).
 //   slots.value 는 input 포맷 → 변환 후 stamp 화. 계산 불가(NaN) 슬롯은 false(BE 가 최종 차단).
-const slotExistingOverlap = (workSeq) => {
+//   OT-동시신청-2: workSeq 중복 허용으로 workSeq 조회가 모호해져 슬롯 객체를 직접 받는다.
+const slotExistingOverlap = (slot) => {
   const list = props.existingOvertimes || []
-  if (list.length === 0) return false
-  const slot = slots.value.find((s) => s.workSeq === workSeq)
-  if (!slot) return false
+  if (list.length === 0 || !slot) return false
   const otStart = stampOf(inputToYmd(slot.startDate), timeToHhmm(slot.startTime))
   const otEnd = stampOf(inputToYmd(slot.endDate), timeToHhmm(slot.endTime))
   if (Number.isNaN(otStart) || Number.isNaN(otEnd)) return false
@@ -615,8 +676,8 @@ const slotExistingOverlap = (workSeq) => {
   })
 }
 
-// 어느 한 구간이라도 기존 적용 OT 와 겹치면 true(제출 차단/경고).
-const hasExistingOverlap = computed(() => slots.value.some((s) => slotExistingOverlap(s.workSeq)))
+// 어느 한 슬롯이라도 기존 적용 OT 와 겹치면 true(제출 차단/경고).
+const hasExistingOverlap = computed(() => slots.value.some((s) => slotExistingOverlap(s)))
 
 // ── #프라프타-app-017(이슈①) 정규 스케줄 겹침 사전차단 ───────────────────────
 //   OT [start,end] ∩ 정규스케줄[schStart,schEnd] ≠ ∅ 이면 제출 비활성 + 경고.
@@ -624,16 +685,15 @@ const hasExistingOverlap = computed(() => slots.value.some((s) => slotExistingOv
 //   ⚠️ workSeq 식별자로 schedule/slot 매칭(위치 index 금지).
 //   ⚠️ slots.value 의 startDate/startTime 은 input 포맷(YYYY-MM-DD / HH:MM) →
 //      inputToYmd()/timeToHhmm() 로 변환 후 stampOf(YYYYMMDD, HHMM) 에 전달.
-const slotOverlap = (workSeq) => {
+//   OT-동시신청-2: workSeq 중복 허용으로 슬롯 객체를 직접 받는다(스케줄 매칭은 slot.workSeq 로 유지).
+const slotOverlap = (slot) => {
   try {
+    if (!slot) return false
     const ctxSlots = props.context?.slots || []
-    const ctx = ctxSlots.find((s, i) => (s?.workSeq ?? i + 1) === workSeq)
+    const ctx = ctxSlots.find((s, i) => (s?.workSeq ?? i + 1) === slot.workSeq)
     const schedule = ctx?.schedule
     // 정규구간 없음(스케줄 없는 날/구간) → 겹침 아님.
     if (!schedule || (!schedule.startTime && !schedule.endTime)) return false
-
-    const slot = slots.value.find((s) => s.workSeq === workSeq)
-    if (!slot) return false
 
     // 입력값(input 포맷) → YYYYMMDD / HHMM 변환 후 인스턴트화.
     const otStart = stampOf(inputToYmd(slot.startDate), timeToHhmm(slot.startTime))
@@ -668,8 +728,8 @@ const slotOverlap = (workSeq) => {
   }
 }
 
-// 어느 한 구간이라도 정규 스케줄과 겹치면 true.
-const hasOverlap = computed(() => slots.value.some((s) => slotOverlap(s.workSeq)))
+// 어느 한 슬롯이라도 정규 스케줄과 겹치면 true.
+const hasOverlap = computed(() => slots.value.some((s) => slotOverlap(s)))
 
 // ── 신청 합계 ───────────────────────────────────────────────────────────
 function toMinutes(hhmm) {
@@ -738,26 +798,66 @@ const isValid = computed(() => {
   return true
 })
 
-// ── 구간 추가/삭제 (workSeq 식별자 보존) ────────────────────────────────
+// ── 시간대 추가/삭제 (OT-동시신청-2: 식별은 slotId, workSeq 는 전송값) ────
 const onAddSlot = () => {
   if (slots.value.length >= 2) return
-  const existing = new Set(slots.value.map((s) => s.workSeq))
-  const missing = [1, 2].find((n) => !existing.has(n))
-  if (!missing) return
-  // 추가 구간도 context.slots 의 해당 workSeq 근태로 프리필, 없으면 빈 카드.
   const ctxSlots = props.context?.slots || []
-  const idx = ctxSlots.findIndex((s, i) => (s?.workSeq ?? i + 1) === missing)
-  const added = idx >= 0 ? slotFromContext(ctxSlots[idx], idx) : makeEmptySlot(missing)
-  added.workSeq = missing
+  // 초기 workSeq 결정(plan §2-3): 실근태 보유 구간이 1개면 그 구간(단일 근무 날 전방+후방),
+  //   2개면 아직 안 쓴 구간 우선(종전 분할근무 동작 보존), 0개면 미사용 seq 폴백.
+  //   이후 칩 적용/수동 입력 containment 로 갱신된다.
+  const attSeqs = ctxSlots
+    .map((s, i) => (s?.attendance ? (s?.workSeq ?? i + 1) : null))
+    .filter((v) => v != null)
+  const usedSeqs = new Set(slots.value.map((s) => s.workSeq))
+  let seq
+  if (attSeqs.length >= 2) {
+    seq = attSeqs.find((n) => !usedSeqs.has(n)) ?? attSeqs[0]
+  } else if (attSeqs.length === 1) {
+    seq = attSeqs[0]
+  } else {
+    seq = [1, 2].find((n) => !usedSeqs.has(n)) ?? 1
+  }
+  const idx = ctxSlots.findIndex((s, i) => (s?.workSeq ?? i + 1) === seq)
+  const added = idx >= 0 ? slotFromContext(ctxSlots[idx], idx) : makeEmptySlot(seq)
+  added.workSeq = seq
   slots.value.push(added)
-  slots.value.sort((a, b) => a.workSeq - b.workSeq)
 }
-const onRemoveSlot = (workSeq) => {
-  slots.value = slots.value.filter((s) => s.workSeq !== workSeq)
+// ⚠️ slotId 로만 필터한다 — workSeq 필터는 같은 구간의 카드 2장을 동시에 지우는 함정(plan §0-5).
+const onRemoveSlot = (slotId) => {
+  slots.value = slots.value.filter((s) => s.slotId !== slotId)
+}
+
+// OT-동시신청-2(plan §2-1-3): 수동 입력 슬롯의 workSeq 를 제출 직전 containment 로 재산출.
+//   입력 범위 [start,end] 를 포함하는 실근태 구간이 있으면 그 구간으로 확정(칩 미경유 수동 입력 보정).
+//   포함 구간이 없으면 기존값 유지 → slotOutsideActualSeq 가드가 안내(서버 ATTD_400_104 미러).
+const resolveSlotWorkSeqs = () => {
+  const ctxSlots = props.context?.slots || []
+  for (const s of slots.value) {
+    if (!s.startDate || !s.startTime || !s.endDate || !s.endTime) continue
+    const otStart = stampOf(inputToYmd(s.startDate), timeToHhmm(s.startTime))
+    const otEnd = stampOf(inputToYmd(s.endDate), timeToHhmm(s.endTime))
+    if (Number.isNaN(otStart) || Number.isNaN(otEnd)) continue
+    for (let i = 0; i < ctxSlots.length; i++) {
+      const c = ctxSlots[i]
+      const att = c?.attendance
+      if (!att || !att.checkInTime || !att.checkOutTime) continue
+      const workYmd = props.context.workYmd
+      const attIn = stampOf(att.checkInDate || workYmd, att.checkInTime)
+      const attOut = stampOf(att.checkOutDate || workYmd, att.checkOutTime)
+      if (Number.isNaN(attIn) || Number.isNaN(attOut)) continue
+      if (attIn <= otStart && otEnd <= attOut) {
+        s.workSeq = c?.workSeq ?? i + 1
+        break
+      }
+    }
+  }
 }
 
 // ── 제출 (#2: emit 에서 otType 제거) ────────────────────────────────────
 const onSubmit = () => {
+  // OT-동시신청-2: 가드 판정 전에 수동 입력 슬롯의 workSeq 를 containment 로 확정한다
+  //   (slotOutsideActualSeq 등 후속 가드가 갱신된 workSeq 기준으로 판정하도록 선행).
+  resolveSlotWorkSeqs()
   // 소정-12: 연장근로 제한 기간 안내(서버도 ATTD_400_200 으로 최종 차단).
   if (reducedWorkBlocked.value) {
     showAlert('근로시간 단축 기간에는 연장근로를 신청할 수 없어요.')
@@ -773,9 +873,9 @@ const onSubmit = () => {
     showAlert('스케줄 시간 내에는 초과근무를 등록할 수 없어요.')
     return
   }
-  // prafta-app-030: 2구간 상호 겹침(오버나이트 인지) 안내.
+  // OT-동시신청-2: 슬롯 상호 겹침(오버나이트 인지) 안내 — 전 슬롯 쌍 판정.
   if (overlapWarning.value) {
-    showAlert('2구간 시작 시각은 1구간 종료 시각 이후여야 합니다.')
+    showAlert('초과근무 시간대가 서로 겹치지 않게 입력해 주세요.')
     return
   }
   // prafta-app-030: 기존 적용 초과근무와 시간 겹침 안내(서버도 ATTD_409_002 로 최종 차단).
@@ -786,7 +886,7 @@ const onSubmit = () => {
   // A안 부속(2026-08-17): 구간 실근태 밖 입력 안내(서버도 ATTD_400_104 로 최종 차단).
   if (slotOutsideActualSeq.value != null) {
     showAlert(
-      `${slotOutsideActualSeq.value}구간 초과근무는 해당 구간의 실제 출퇴근 시간 안에서만 신청할 수 있어요.`
+      `${slotOutsideActualSeq.value}구간 초과근무는 해당 구간의 실제 출퇴근 시간 안에서만 신청할 수 있어요.`,
     )
     return
   }
@@ -1052,6 +1152,24 @@ const onSubmit = () => {
 }
 .ot-window__chip:active {
   background: var(--color-primary-tint-border);
+}
+/* OT-동시신청-2: 다른 슬롯에 이미 적용된 창은 비활성("적용됨") */
+.ot-window__chip:disabled {
+  border-color: var(--color-border);
+  color: var(--color-text-tertiary);
+  background: var(--color-surface);
+  cursor: default;
+}
+
+/* OT-동시신청-2: 분할근무 날 매칭 구간 배지(카드 제목은 순번 통일 — plan §2-2) */
+.slot-seq-badge {
+  align-self: flex-start;
+  padding: 2px var(--space-sm);
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
 }
 
 .field {
