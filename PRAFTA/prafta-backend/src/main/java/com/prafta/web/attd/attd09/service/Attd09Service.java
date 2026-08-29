@@ -12,6 +12,7 @@ import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
+import com.prafta.web.attd.attd09.application.param.UsageHistoryParam;
 import com.prafta.web.attd.attd09.dto.response.CoverGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
@@ -25,6 +26,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
+import com.prafta.web.attd.attd09.dto.response.UsageHistoryResponse;
 
 /**
  * attd09 — 연차 현황 대시보드/상세/수동 부여 (PRAFTA-017-2, 정책서 §8.5).
@@ -39,6 +41,9 @@ public interface Attd09Service {
 
     /** 직원별 연차 상세 조회. */
     LeaveDetailResponse getDetail(LeaveDetailParam param);
+
+    /** 직원별 연도별 연차 사용 이력 조회(일자 전개, dateYmd 오름차순). */
+    UsageHistoryResponse getUsageHistory(UsageHistoryParam param);
 
     /** 수동 부여 가능 휴가 종류 조회. */
     ManualTypesResponse getManualTypes(ManualTypesParam param);

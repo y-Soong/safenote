@@ -388,6 +388,71 @@
      ORDER BY G.GRANT_DATE DESC, G.GRANT_ID DESC
     </select>
 
+    <!-- ============ 직원 연도별 사용 이력 (일자 전개) ============
+      Attd_16(selectLeaveUsageCalendarList)와 동일한 date_seq 일자 전개 + 분할차감 대표행 dedupe
+      규약을 단일 사용자(userCd) 스코프로 재사용한다. 사업장/부서 조건은 없음(userCd 자체가 스코프). -->
+    <select id="selectUsageHistory" resultType="com.prafta.common.cmm.leave.vo.LeaveUsageHistoryRowVO">
+    /* LeaveDashboardMapper.selectUsageHistory */
+        WITH RECURSIVE
+        date_seq AS (
+            SELECT STR_TO_DATE(#{yearStart}, '%Y%m%d') AS D
+
+            UNION ALL
+
+            SELECT D + INTERVAL 1 DAY
+            FROM date_seq
+            WHERE D <![CDATA[ < ]]> STR_TO_DATE(#{yearEnd}, '%Y%m%d')
+        )
+        SELECT
+              DATE_FORMAT(D.D, '%Y%m%d')  AS dateYmd
+            , LU.LEAVE_CD                 AS leaveCd
+            , LT.LEAVE_NM                 AS leaveNm
+            , LU.USE_UNIT_TYPE            AS useUnitType
+            , LU.START_TIME               AS startTime
+            , LU.END_TIME                 AS endTime
+            <!-- 분할차감(PC-02/PC-05): 요청 연결 use 행은 부여별 N개로 나뉠 수 있어 단일 행 일수는
+                 부분값 — REQ 단위 합산으로 총 일수를 낸다(Attd16Mapper 관례, record 위치매핑 불변). -->
+            , CASE WHEN LU.REQ_ID IS NULL THEN LU.LEAVE_DAYS
+                   ELSE ( SELECT SUM(X.LEAVE_DAYS)
+                            FROM TB_USER_LEAVE_USE X
+                           WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                             AND X.REQ_ID       = LU.REQ_ID
+                             AND X.LEAVE_STATUS = 'CONFIRMED'
+                             AND X.DEL_YN       = 'N' )
+              END                       AS leaveDays
+            , LU.LEAVE_MINUTES            AS leaveMinutes
+            , CASE WHEN DATE_FORMAT(D.D, '%Y%m%d') <![CDATA[ <= ]]> #{todayYmd} THEN 'USED'
+                   ELSE 'SCHEDULED' END   AS status
+
+        FROM TB_USER_LEAVE_USE LU
+
+        /* 기간형(START_DATE~END_DATE) 연차를 일자 단위로 전개한다. */
+        INNER JOIN date_seq D
+            ON  DATE_FORMAT(D.D, '%Y%m%d') BETWEEN LU.START_DATE AND LU.END_DATE
+
+        /* 연차 종류명. 조인 키는 tb_leave_type_mgmt PK(CMPNY_CD, LEAVE_CD) 복합. */
+        LEFT JOIN TB_LEAVE_TYPE_MGMT LT
+            ON  LT.CMPNY_CD = LU.CMPNY_CD
+            AND LT.LEAVE_CD = LU.LEAVE_CD
+
+        WHERE LU.CMPNY_CD     = #{cmpnyCd}
+          AND LU.USER_CD      = #{userCd}
+          AND LU.LEAVE_STATUS = 'CONFIRMED'
+          AND LU.DEL_YN       = 'N'
+          AND LU.START_DATE   <![CDATA[ <= ]]> #{yearEnd}
+          AND LU.END_DATE     <![CDATA[ >= ]]> #{yearStart}
+          <!-- 분할차감 dedupe: 같은 REQ의 분할행 중 첫 행(MIN LEAVE_ID)만 노출(Attd16Mapper 관례). -->
+          AND ( LU.REQ_ID IS NULL
+             OR LU.LEAVE_ID = ( SELECT MIN(X.LEAVE_ID)
+                                  FROM TB_USER_LEAVE_USE X
+                                 WHERE X.CMPNY_CD     = LU.CMPNY_CD
+                                   AND X.REQ_ID       = LU.REQ_ID
+                                   AND X.LEAVE_STATUS = 'CONFIRMED'
+                                   AND X.DEL_YN       = 'N' ) )
+
+        ORDER BY D.D, LU.START_TIME, LU.LEAVE_ID
+    </select>
+
     <!-- ============ 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 ============
       사용자 신청 휴가(LEAVE_TYPE='01' AND USE_YN='Y')를 법정/관리자부여(02) 그룹과 합산하지 않고
       타입별 별도 항목으로 반환한다. 타입당 한도(MAX_APLY_DAYS, NULL 허용) + 당해 회계연도 사용 합계.

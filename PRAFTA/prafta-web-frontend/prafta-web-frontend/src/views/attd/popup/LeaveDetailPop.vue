@@ -251,6 +251,84 @@
               다음
             </button>
           </div>
+
+          <!-- ===== 사용 이력 (연도별) ===== -->
+          <div class="ldp-usage-header">
+            <p class="ldp-section-title">사용 이력</p>
+            <div class="ldp-usage-year-select">
+              <BaseSelect v-model="usageYear">
+                <option v-for="y in usageYearOptions" :key="y" :value="y">
+                  {{ y }}년
+                </option>
+              </BaseSelect>
+            </div>
+          </div>
+          <div class="ldp-table-wrap">
+            <table class="ldp-table">
+              <colgroup>
+                <col style="width: 20%" />
+                <col style="width: 36%" />
+                <col style="width: 22%" />
+                <col style="width: 22%" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>날짜</th>
+                  <th>연차 종류</th>
+                  <th class="is-right">일수</th>
+                  <th class="is-center">상태</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(h, idx) in pagedUsageHistory" :key="idx">
+                  <td>{{ fnFormatDate(h.dateYmd) }}</td>
+                  <td>{{ h.leaveNm || "-" }}</td>
+                  <td class="is-right">{{ fnDays(h.leaveDays) }}</td>
+                  <td class="is-center">
+                    <span
+                      class="ldp-status-badge"
+                      :class="
+                        h.status === 'USED' ? 'is-active' : 'is-exhausted'
+                      "
+                    >
+                      {{ h.status === "USED" ? "사용" : "사용예정" }}
+                    </span>
+                  </td>
+                </tr>
+
+                <!-- empty -->
+                <tr v-if="usageHistory.length === 0">
+                  <td colspan="4" class="ldp-table-empty">
+                    {{ usageYear }}년 사용 이력이 없습니다.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 사용 이력 페이징 (클라이언트 사이드, 연도 전량 조회 → 프론트 분할, pageSize=10) -->
+          <div v-if="usageHistory.length > 0" class="ldp-pager">
+            <button
+              type="button"
+              class="btn btn-second"
+              :disabled="usagePage <= 1"
+              @click="fnGoUsagePage(usagePage - 1)"
+            >
+              이전
+            </button>
+            <span class="ldp-pager-info">
+              {{ usagePage }} / {{ totalUsagePages }} (총
+              {{ usageHistory.length }}건)
+            </span>
+            <button
+              type="button"
+              class="btn btn-second"
+              :disabled="usagePage >= totalUsagePages"
+              @click="fnGoUsagePage(usagePage + 1)"
+            >
+              다음
+            </button>
+          </div>
         </div>
 
         <!-- ============ 푸터 ============ -->
@@ -266,13 +344,14 @@
 
 <script setup>
 // ================ Imports ================
-import { ref, computed, onMounted, getCurrentInstance } from "vue";
+import { ref, computed, watch, onMounted, getCurrentInstance } from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 // 2026-08-09 규약: 일수 표기는 일 단위 단독(formatLeaveDaysOnly) — E4 분모 환산 제거.
 import { formatLeaveDaysOnly, formatLeaveMinutes } from "@/utils/leaveFormat";
+import BaseSelect from "@/components/common/BaseSelect.vue";
 import ManualGrantPop from "./ManualGrantPop.vue";
 import LeaveRecallPop from "./LeaveRecallPop.vue";
 
@@ -323,6 +402,19 @@ const grantHistory = ref([]);
 const page = ref(1);
 const pageSize = ref(5);
 
+// 사용 이력(연도별) — 각 행: { dateYmd, leaveCd, leaveNm, leaveDays, status('USED'|'SCHEDULED') }
+const usageHistory = ref([]);
+// 조회 연도(YYYY 문자열, BaseSelect option value와 타입 일치). 기본값=올해.
+const currentYear = new Date().getFullYear();
+const usageYear = ref(String(currentYear));
+// 연도 선택지: 최근 5년 전 ~ 내년(스케줄 조회 여유분), 최신순.
+const usageYearOptions = Array.from({ length: 7 }, (_, i) =>
+  String(currentYear + 1 - i)
+);
+// 사용 이력 클라이언트 사이드 페이징 (연도 전량 조회 → 프론트에서 분할)
+const usagePage = ref(1);
+const usagePageSize = ref(10);
+
 const isLoading = ref(false);
 
 // ================ Computed ================
@@ -343,9 +435,26 @@ const pagedHistory = computed(() => {
   return grantHistory.value.slice(start, start + pageSize.value);
 });
 
+// 사용 이력 총 페이지 수 (최소 1)
+const totalUsagePages = computed(() =>
+  Math.max(1, Math.ceil(usageHistory.value.length / usagePageSize.value))
+);
+
+// 현재 페이지에 해당하는 사용 이력 슬라이스
+const pagedUsageHistory = computed(() => {
+  const start = (usagePage.value - 1) * usagePageSize.value;
+  return usageHistory.value.slice(start, start + usagePageSize.value);
+});
+
 // ================ Life Cycle Functions ================
 onMounted(() => {
   fnLoadDetail();
+  fnLoadUsageHistory();
+});
+
+// 조회 연도 변경 시 사용 이력 재조회 (BaseSelect v-model 갱신 이후 시점 보장을 위해 watch 사용)
+watch(usageYear, () => {
+  fnLoadUsageHistory();
 });
 
 // ================ API Functions ================
@@ -416,12 +525,42 @@ const fnLoadDetail = async () => {
 // [새로고침] — 상세 데이터 재조회 (요청서: 기존 [이력 상세] 명칭/동작 변경)
 const fnReload = () => {
   fnLoadDetail();
+  fnLoadUsageHistory();
+};
+
+// 연도별 사용 이력 조회 (연도 변경 시 / 새로고침 시 공통)
+const fnLoadUsageHistory = async () => {
+  const targetUserCd = user.value.userCd ?? props.userCd;
+  if (!targetUserCd) return;
+  try {
+    const response = await axios.get(
+      `/webApi/attd09/leave-dashboard/${encodeURIComponent(targetUserCd)}/usage-history`,
+      { params: { year: usageYear.value } }
+    );
+    usageHistory.value = Array.isArray(response.data?.usageHistory)
+      ? response.data.usageHistory
+      : [];
+    // 연도 변경/재조회 시 항상 1페이지부터 표시
+    usagePage.value = 1;
+  } catch (err) {
+    const msg = resolveApiErrorMessage(
+      err,
+      "사용 이력 조회 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  }
 };
 
 // 부여 이력 페이지 이동 (범위 가드)
 const fnGoPage = (target) => {
   if (target < 1 || target > totalPages.value) return;
   page.value = target;
+};
+
+// 사용 이력 페이지 이동 (범위 가드)
+const fnGoUsagePage = (target) => {
+  if (target < 1 || target > totalUsagePages.value) return;
+  usagePage.value = target;
 };
 
 // ================ Methods/Functions ================
@@ -693,6 +832,20 @@ const fnMinutes = (v) => formatLeaveMinutes(v);
   font-weight: 600;
   color: var(--color-text-strong);
   margin: 0;
+}
+
+/* ===== 사용 이력 헤더(제목 + 연도 선택) ===== */
+.ldp-usage-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+
+.ldp-usage-year-select {
+  width: 6.5rem;
+  flex-shrink: 0;
 }
 
 .ldp-table-wrap {

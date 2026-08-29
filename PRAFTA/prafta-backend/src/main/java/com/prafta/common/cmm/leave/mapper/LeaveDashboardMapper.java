@@ -14,6 +14,7 @@ import com.prafta.common.cmm.leave.vo.LeaveGrantInsertVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
+import com.prafta.common.cmm.leave.vo.LeaveUsageHistoryRowVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
 import com.prafta.common.cmm.leave.vo.ShortfallCandidateVO;
 
@@ -83,6 +84,25 @@ public interface LeaveDashboardMapper {
      */
     List<LeaveGrantHistoryRowVO> selectGrantHistory(@Param("cmpnyCd") String cmpnyCd,
                                                     @Param("userCd") String userCd);
+
+    /**
+     * 직원 연도별 사용 이력 목록 (dateYmd 오름차순, 일자 전개 완료본).
+     *
+     * <p>Attd_16 연차 사용 현황 캘린더(selectLeaveUsageCalendarList)와 동일하게 date_seq CTE로
+     * 기간형 연차를 일자 단위 전개하며, 분할차감(PC-02/PC-05) 대표행 dedupe 규약도 동일하게 따른다.
+     * 사업장/부서 스코프 없이 단일 사용자(userCd) 전체 사용분(LEAVE_STATUS='CONFIRMED')을 대상으로 한다.
+     *
+     * @param cmpnyCd   회사 코드 (CMPNY_CD 스코프)
+     * @param userCd    대상 직원 코드
+     * @param yearStart 조회 연도 시작일 (YYYYMMDD, YYYY0101)
+     * @param yearEnd   조회 연도 종료일 (YYYYMMDD, YYYY1231)
+     * @param todayYmd  오늘 날짜 (YYYYMMDD) — 행별 status(USED/SCHEDULED) 산출 기준
+     */
+    List<LeaveUsageHistoryRowVO> selectUsageHistory(@Param("cmpnyCd") String cmpnyCd,
+                                                     @Param("userCd") String userCd,
+                                                     @Param("yearStart") String yearStart,
+                                                     @Param("yearEnd") String yearEnd,
+                                                     @Param("todayYmd") String todayYmd);
 
     /**
      * 신청형 휴가(사용자 신청 LEAVE_TYPE='01') 타입별 잔여 현황 조회 (연차 대시보드 상세 — 신청형 휴가 섹션).

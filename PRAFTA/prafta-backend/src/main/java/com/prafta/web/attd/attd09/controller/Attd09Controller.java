@@ -25,6 +25,7 @@ import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
+import com.prafta.web.attd.attd09.application.param.UsageHistoryParam;
 import com.prafta.web.attd.attd09.dto.request.BulkManualGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.CoverGrantRequest;
 import com.prafta.web.attd.attd09.dto.request.HireDateGrantRequest;
@@ -46,6 +47,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
+import com.prafta.web.attd.attd09.dto.response.UsageHistoryResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -61,6 +63,7 @@ import lombok.extern.slf4j.Slf4j;
  * <ul>
  *   <li>GET  /attd09/leave-dashboard/list                  — 대시보드 목록 + 메트릭 + 부서옵션</li>
  *   <li>GET  /attd09/leave-dashboard/{userCd}/detail        — 직원별 연차 상세</li>
+ *   <li>GET  /attd09/leave-dashboard/{userCd}/usage-history — 직원별 연도별 연차 사용 이력</li>
  *   <li>GET  /attd09/leave-grant/manual-types               — 수동 부여 가능 휴가 종류</li>
  *   <li>POST /attd09/leave-grant/manual-grant               — 수동 부여 (단일)</li>
  *   <li>POST /attd09/leave-grant/bulk-manual-grant          — 수동 부여 (일괄)</li>
@@ -102,6 +105,19 @@ public class Attd09Controller {
 
         LeaveDetailResponse response = attd09Service.getDetail(
                 LeaveDetailParam.from(userCd, jwtUtil.getAllClaimsAsMap(authorization)));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /** 직원별 연도별 연차 사용 이력 조회. */
+    @GetMapping("/leave-dashboard/{userCd}/usage-history")
+    public ResponseEntity<?> getUsageHistory(
+            @PathVariable("userCd") String userCd,
+            @RequestParam("year") String year,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        UsageHistoryResponse response = attd09Service.getUsageHistory(
+                UsageHistoryParam.from(userCd, year, jwtUtil.getAllClaimsAsMap(authorization)));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

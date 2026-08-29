@@ -8,6 +8,7 @@ import com.prafta.common.cmm.leave.vo.LeaveDashboardResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveDetailResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveRecallResultVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
+import com.prafta.common.cmm.leave.vo.LeaveUsageHistoryRowVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
 import com.prafta.common.cmm.leave.vo.ShortfallListResultVO;
 
@@ -54,6 +55,19 @@ public interface LeaveDashboardService {
      * @param userCd  대상 직원 코드
      */
     LeaveDetailResultVO getDetail(String cmpnyCd, String authCd, String userCd);
+
+    /**
+     * 직원별 연도별 연차 사용 이력 조회(일자 전개, dateYmd 오름차순). 대상 직원이 스코프 밖이면 ApiException(NOT_FOUND).
+     *
+     * <p>Attd_16 연차 사용 현황 캘린더와 동일한 일자 전개 방식을 단일 사용자 스코프로 재사용한다.
+     * 상태(status)는 dateYmd를 오늘과 비교해 'USED'(사용) / 'SCHEDULED'(사용예정)로 산출한다.
+     *
+     * @param cmpnyCd 회사 코드 (JWT)
+     * @param authCd  수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제 (§8.5.7)
+     * @param userCd  대상 직원 코드
+     * @param year    조회 연도 (YYYY, 4자리)
+     */
+    List<LeaveUsageHistoryRowVO> getUsageHistory(String cmpnyCd, String authCd, String userCd, String year);
 
     /**
      * 수동 부여 가능 휴가 종류 옵션.

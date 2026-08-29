@@ -46,6 +46,7 @@ import com.prafta.common.cmm.leave.vo.LeaveRecallTargetVO;
 import com.prafta.common.cmm.leave.vo.LeaveSummaryVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeAvailTermVO;
 import com.prafta.common.cmm.leave.vo.LeaveTypeOptionVO;
+import com.prafta.common.cmm.leave.vo.LeaveUsageHistoryRowVO;
 import com.prafta.common.cmm.leave.vo.LeavePolicyVO;
 import com.prafta.common.cmm.leave.vo.ManualGrantResultVO;
 import com.prafta.common.cmm.leave.vo.NotiOutboxInsertVO;
@@ -390,6 +391,44 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 .convMinutes(convMinutes)
                 .hourlyUsedMinutes(hourlyUsedMinutes == null ? 0 : hourlyUsedMinutes)
                 .build();
+    }
+
+    // ============================================================
+    // 연도별 사용 이력
+    // ============================================================
+
+    @Override
+    public List<LeaveUsageHistoryRowVO> getUsageHistory(String cmpnyCd, String authCd, String userCd, String year) {
+        requireCmpnyCd(cmpnyCd);
+        // 권한 가드 (정책서 §8.5.7): 상세 조회와 동일 — MASTER/HR + 사업장 스코프. 특정 직원 PII 노출 차단.
+        ensureManager(cmpnyCd, authCd, "연차 사용 이력 조회");
+        if (userCd == null || userCd.isBlank()) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+        if (year == null || !year.matches("\\d{4}")) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 대상 직원 스코프 확인(상세 조회와 동일 존재/스코프 가드 재사용 — 없는 직원의 이력을 조용히 빈 목록으로
+        // 내려주면 존재 여부를 다른 API 응답과 대조해 추정할 수 있어, getDetail과 동일하게 404로 통일한다).
+        LeaveDetailUserVO u = leaveDashboardMapper.selectDetailUser(cmpnyCd, userCd);
+        if (u == null) {
+            log.warn("연차 사용 이력 - 대상 직원 없음/스코프 밖. cmpnyCd={}, userCd={}", cmpnyCd, userCd);
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+
+        // 연도 범위는 서버가 year(YYYY)에서 재계산한다(클라이언트 값 불신 — Attd16 monthStart/monthEnd 관례).
+        String yearStart = year + "0101";
+        String yearEnd = year + "1231";
+        String todayYmd = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+
+        List<LeaveUsageHistoryRowVO> history =
+                leaveDashboardMapper.selectUsageHistory(cmpnyCd, userCd, yearStart, yearEnd, todayYmd);
+
+        log.info("연차 사용 이력 조회. cmpnyCd={}, userCd={}, year={}, 건수={}",
+                cmpnyCd, userCd, year, history.size());
+
+        return history;
     }
 
     /**

@@ -36,6 +36,7 @@ import com.prafta.web.attd.attd09.application.param.PolicyInfoParam;
 import com.prafta.web.attd.attd09.application.param.RemnantReportParam;
 import com.prafta.web.attd.attd09.application.param.RemnantSummaryParam;
 import com.prafta.web.attd.attd09.application.param.ShortfallListParam;
+import com.prafta.web.attd.attd09.application.param.UsageHistoryParam;
 import com.prafta.web.attd.attd09.dto.response.CoverGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.HireDateGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.LeaveDashboardResponse;
@@ -49,6 +50,7 @@ import com.prafta.web.attd.attd09.dto.response.PolicyGrantResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantCoverSummaryResponse;
 import com.prafta.web.attd.attd09.dto.response.RemnantReportResponse;
 import com.prafta.web.attd.attd09.dto.response.ShortfallListResponse;
+import com.prafta.web.attd.attd09.dto.response.UsageHistoryResponse;
 import com.prafta.web.attd.attd09.service.Attd09Service;
 
 import lombok.RequiredArgsConstructor;
@@ -110,6 +112,15 @@ public class Attd09ServiceImpl implements Attd09Service {
                 .grantHistory(result.getGrantHistory())
                 .convMinutes(result.getConvMinutes())           // LC-07(표기)
                 .hourlyUsedMinutes(result.getHourlyUsedMinutes()) // LC-07(표기)
+                .build();
+    }
+
+    @Override
+    public UsageHistoryResponse getUsageHistory(UsageHistoryParam param) {
+        return UsageHistoryResponse.builder()
+                .year(param.year())
+                .usageHistory(leaveDashboardService.getUsageHistory(
+                        param.gvCmpnyCd(), param.gvAuthCd(), param.userCd(), param.year()))
                 .build();
     }
 
