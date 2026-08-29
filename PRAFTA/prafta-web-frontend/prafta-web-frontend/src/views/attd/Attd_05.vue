@@ -1507,15 +1507,17 @@ const fnGetSchTypeList = async () => {
   }
 };
 
-// ── 법정 휴가 목록 조회 (셀 표시명 변환용) ──────────
+// ── 휴가 목록 조회 (셀 표시명 변환용) ──────────
 // prafta-com-016-C-4: 종류 직접 선택(드롭다운)은 제거됐고, 이 목록은 leaveOverlay/셀 코드의
-//   표시명 변환(getCellNmValue)에만 사용한다. 법정 휴가(LEAVE_NATURE_TYPE='01') 목록을 받는다.
+//   표시명 변환(getCellNmValue)에만 사용한다.
+// 2026-08-29: 종전의 법정(LEAVE_NATURE_TYPE='01') 필터를 제거 — 수기 생성 특별휴가(nature='02',
+//   예: 포상휴가)를 근로자가 사용하면 오버레이 leaveCd 가 목록에 없어 셀에 코드값('00001' 등)이
+//   그대로 노출되던 결함. 이 목록의 소비처는 전부 표시명 변환뿐이라(직접지정 화이트리스트는
+//   별도 상수 DIRECT_LEAVE_CDS) 전체 활성 목록을 받아도 적용/저장 동작에는 영향이 없다.
 const fnGetLeaveTypeList = async () => {
   try {
     const response = await axios.get("/webApi/attd05/leave-type-lists", {});
-    leaveTypeList.value = (response.data?.leaveTypeResultList ?? []).filter(
-      (t) => t.leaveNatureType === "01"
-    );
+    leaveTypeList.value = response.data?.leaveTypeResultList ?? [];
   } catch (err) {
     const msg = resolveApiErrorMessage(err, "스케줄 목록 조회 오류.");
     await proxy.$alert(msg);
