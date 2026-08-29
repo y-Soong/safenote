@@ -1,0 +1,18 @@
+package com.prafta.app.admin.employeestatus.result;
+
+/**
+ * PRAFTA-003: GPS 궤적 조회 인가 판정용 근태 행 스코프(사업장/부서/소유자).
+ *
+ * <p>웹 {@code Attd08Mapper.selectAttdOwnerScope}/{@code AttdOwnerScopeResult}를 앱 패키지로 그대로 이식했다
+ * (SQL·용도 동일 — plan §0-2). {@code attdId} 만으로는 인가를 판정할 수 없어, 좌표를 읽기 전에 이 행으로
+ * 사업장 접근 권한·부서 관리 권한을 먼저 확인한다.
+ *
+ * <p>⚠️ record 매핑은 SELECT 컬럼 순서 의존 — {@code AppAdminEmployeeStatusMapper.selectAttdOwnerScope}와
+ * 순서 일치.
+ */
+public record EmployeeOwnerScopeResult(
+      String siteCd
+    , String nodeCd
+    , String userCd
+) {
+}

@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.prafta.app.admin.employeestatus.mapper.AppAdminEmployeeStatusMapper">
+
+    <!--
+      PRAFTA-002/003 앱 관리자 "직원관리" — 실시간 근태 현황(로스터 기반) + 외근 GPS 궤적.
+
+      PRAFTA-002 로스터 스코프 WHERE 규칙(AppAdminAttdMapper.scopeWhere 동형, 별칭만 U 로 변경):
+        - companyWide(master): 사업장 내 노드 무필터.
+        - useNodeScope(노드관리자): U.NODE_CD ∈ scopedNodeCds(서비스가 비어있지 않음 보장).
+        - hr(둘 다 false): 사업장 전부서(노드 무필터) — siteCd 만으로 제한.
+
+      PRAFTA-003 GPS 궤적(selectAttdOwnerScope/selectAttdGpsTrail)은 웹 Attd08Mapper 의 동일 SQL을
+      그대로 이식했다(재설계 금지 — plan §0-2). 복호화는 서비스 계층에서만 수행한다.
+    -->
+
+    <!-- 노드 스코프 WHERE 조각(별칭 U = TB_USER, 로스터 기준 테이블). 회사·사업장은 항상 필터. -->
+    <sql id="scopeWhere">
+        AND U.CMPNY_CD = #{cmpnyCd}
+        AND U.SITE_CD  = #{siteCd}
+        <if test="useNodeScope">
+            AND U.NODE_CD IN
+            <foreach collection="scopedNodeCds" item="nc" open="(" separator="," close=")">
+                #{nc}
+            </foreach>
+        </if>
+    </sql>
+
+    <!-- ============================ PRAFTA-002: 일자 직원 현황 로스터 ============================ -->
+    <select id="selectDailyRoster"
+            parameterType="com.prafta.app.admin.employeestatus.application.query.EmployeeStatusScopeQuery"
+            resultType="com.prafta.app.admin.employeestatus.result.EmployeeStatusRosterRow">
+    /* AppAdminEmployeeStatusMapper.selectDailyRoster */
+        SELECT
+              U.USER_CD                                                          AS userCd
+            , U.USER_NM                                                          AS userNm
+            , FNC_CMM_INFO_SRCH(U.CMPNY_CD, 'NODE', U.SITE_CD, U.NODE_CD)        AS nodeNm
+
+            , CASE WHEN P.WORK_PLAN_CD IS NULL THEN 'N' ELSE 'Y' END             AS hasWorkPlanYn
+
+            , A.CHECK_IN_TIME                                                    AS checkInTime
+            , A.CHECK_OUT_TIME                                                   AS checkOutTime
+
+            <!-- 외근: 대표(1차) 근태 행의 GPS 존재 여부(web attd08/AppAdminAttdMapper 동일 규칙). -->
+            , CASE
+                WHEN EXISTS (
+                    SELECT 1 FROM TB_USER_ATTD_GPS G
+                    WHERE G.CMPNY_CD = U.CMPNY_CD AND G.ATTD_ID = A.ATTD_ID
+                ) THEN 'Y' ELSE 'N'
+              END                                                                AS isOffsiteYn
+
+            <!-- 연차 계열(종일+반차+시간차) 존재 — AppAdminAttdMapper 서브쿼리 그대로 재사용(§0-3-2). -->
+            , CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM TB_USER_LEAVE_USE LX
+                    WHERE LX.CMPNY_CD     = U.CMPNY_CD
+                      AND LX.USER_CD      = U.USER_CD
+                      AND LX.LEAVE_STATUS = 'CONFIRMED'
+                      AND LX.DEL_YN       = 'N'
+                      AND ( ( LX.USE_UNIT_TYPE = '00'
+                              AND LX.START_DATE <![CDATA[ <= ]]> #{workYmd}
+                              AND LX.END_DATE   <![CDATA[ >= ]]> #{workYmd} )
+                         OR ( LX.USE_UNIT_TYPE <![CDATA[ <> ]]> '00'
+                              AND LX.START_DATE = #{workYmd} ) )
+              ) THEN 'Y' ELSE 'N' END                                            AS isOnLeaveYn
+
+            <!-- 그날 이 사용자의 ATTD_ID 전부(콤마 구분, 최대 2개=1·2구간) — GPS 조회(PRAFTA-003)용.
+                 DISTINCT 없이 WORK_SEQ 오름차순 정렬(사용자 단위로 이미 유일하므로 함정 비대상). -->
+            , (
+                SELECT GROUP_CONCAT(A2.ATTD_ID ORDER BY A2.WORK_SEQ SEPARATOR ',')
+                FROM TB_USER_ATTD_MGMT A2
+                WHERE A2.CMPNY_CD = U.CMPNY_CD
+                  AND A2.SITE_CD  = U.SITE_CD
+                  AND A2.USER_CD  = U.USER_CD
+                  AND A2.WORK_YMD = #{workYmd}
+                  AND A2.DEL_YN   = 'N'
+                  AND A2.WORK_SEQ IN (1, 2)
+              )                                                                  AS attdIds
+
+        FROM TB_USER U
+        LEFT JOIN TB_USER_WORK_PLAN P
+            ON  P.CMPNY_CD = U.CMPNY_CD
+            AND P.SITE_CD  = U.SITE_CD
+            AND P.USER_CD  = U.USER_CD
+            AND P.WORK_YMD = #{workYmd}
+        LEFT JOIN TB_USER_ATTD_MGMT A
+            ON  A.CMPNY_CD = U.CMPNY_CD
+            AND A.SITE_CD  = U.SITE_CD
+            AND A.USER_CD  = U.USER_CD
+            AND A.WORK_YMD = #{workYmd}
+            AND A.DEL_YN   = 'N'
+            AND A.WORK_SEQ = 1
+        WHERE U.USE_YN = 'Y'
+          <include refid="scopeWhere"/>
+        <if test="keyword != null">
+          <bind name="safeKeyword"
+                value="keyword.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')" />
+          AND U.USER_NM LIKE CONCAT('%', #{safeKeyword}, '%') ESCAPE '\'
+        </if>
+        ORDER BY U.USER_NM, U.USER_CD
+    </select>
+
+    <!-- ============================ PRAFTA-003: GPS 궤적 인가 스코프 ============================ -->
+    <select id="selectAttdOwnerScope" resultType="com.prafta.app.admin.employeestatus.result.EmployeeOwnerScopeResult">
+    /* AppAdminEmployeeStatusMapper.selectAttdOwnerScope (Attd08Mapper.selectAttdOwnerScope 이식) */
+        SELECT
+              M.SITE_CD  AS siteCd
+            , M.NODE_CD  AS nodeCd
+            , M.USER_CD  AS userCd
+        FROM TB_USER_ATTD_MGMT M
+        WHERE M.CMPNY_CD = #{cmpnyCd}
+          AND M.ATTD_ID  = #{attdId}
+          AND M.DEL_YN   = 'N'
+        LIMIT 1
+    </select>
+
+    <!-- 암호문(ENC)+구 평문 4컬럼을 함께 내려 서비스에서 fallback 복호화한다(매퍼 복호화 금지).
+         ⚠️ record 매핑은 SELECT 컬럼 순서 의존 — EmployeeGpsTrailRow 순서 유지. -->
+    <select id="selectAttdGpsTrail" resultType="com.prafta.app.admin.employeestatus.result.EmployeeGpsTrailRow">
+    /* AppAdminEmployeeStatusMapper.selectAttdGpsTrail (Attd08Mapper.selectAttdGpsTrail 이식) */
+        SELECT
+              G.GPS_ID         AS gpsId
+            , G.LAT_ENC        AS latEnc
+            , G.LON_ENC        AS lonEnc
+            , G.LAT            AS lat
+            , G.LON            AS lon
+            , G.ACCURACY       AS accuracy
+            , G.API_CALL_DATE  AS apiCallDate
+            , G.API_CALL_TIME  AS apiCallTime
+            , G.IS_MOCKED      AS isMocked
+            , G.GPS_INFO_TYPE  AS gpsInfoType
+        FROM TB_USER_ATTD_GPS G
+        WHERE G.CMPNY_CD = #{gvCmpnyCd}
+          AND G.ATTD_ID  = #{attdId}
+          AND EXISTS (
+                SELECT 1
+                FROM TB_USER_ATTD_MGMT M
+                WHERE M.ATTD_ID  = #{attdId}
+                  AND M.CMPNY_CD = #{gvCmpnyCd}
+                  AND M.DEL_YN   = 'N'
+              )
+        ORDER BY G.GPS_INFO_TYPE ASC, G.API_CALL_DATE ASC, G.API_CALL_TIME ASC
+    </select>
+
+</mapper>

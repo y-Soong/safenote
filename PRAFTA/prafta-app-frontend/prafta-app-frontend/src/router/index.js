@@ -250,6 +250,14 @@ const routes = [
     component: () => import('@/views/admin/attd/AdminAttdDetailView.vue'),
   },
 
+  // PRAFTA-004: 관리자 모드 직원 관리(실시간 근태 현황 + 외근 위치) (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
+  //   진입: AdminLauncherView 의 EMPLOYEE_STATUS 섹션 → /AdminEmployeeStatus. 서버 access-context 가 진입 최종 판정.
+  {
+    path: '/AdminEmployeeStatus',
+    name: 'AdminEmployeeStatus',
+    component: () => import('@/views/admin/employee/AdminEmployeeStatusView.vue'),
+  },
+
   // prafta-app-025 J1-7: 관리자 모드 현장 처리(일용직 QR 출퇴근 등록) (보호 — publicPaths 미포함, beforeEach 토큰 게이트).
   //   진입: AdminLauncherView 본문 SITE_OPS 섹션(moduleActiveMap.SITE_OPS===true) → /AdminSiteOps.
   //   진입 게이트/사업장 스코프/대상 유효성/멱등은 서버 EP(/appApi/admin/site-ops/*)가 최종 판정(C1).

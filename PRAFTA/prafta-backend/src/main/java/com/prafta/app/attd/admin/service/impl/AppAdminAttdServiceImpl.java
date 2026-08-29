@@ -10,10 +10,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
-import com.prafta.app.admin.common.scope.application.query.ScopedNodeQuery;
-import com.prafta.app.admin.common.scope.mapper.AdminScopeMapper;
+import com.prafta.app.admin.common.scope.application.helper.AdminAttdLikeScopeResolver;
 import com.prafta.app.attd.admin.application.param.AdminDailyAttdParam;
 import com.prafta.app.attd.admin.application.param.AdminMonthlyAttdParam;
 import com.prafta.app.attd.admin.application.query.AdminAttdScopeQuery;
@@ -26,9 +24,6 @@ import com.prafta.app.attd.admin.result.MonthlyAttdRow;
 import com.prafta.app.attd.admin.service.AppAdminAttdService;
 import com.prafta.common.cmm.attd.util.FixedOtMinutesUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
-import com.prafta.common.error.attd.AttdErrorCode;
-import com.prafta.common.exception.ApiException;
-import com.prafta.common.util.AuthRoleUtils;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -50,80 +45,25 @@ import lombok.extern.slf4j.Slf4j;
 public class AppAdminAttdServiceImpl implements AppAdminAttdService {
 
     private final AppAdminAttdMapper mapper;
-    private final AdminScopeMapper adminScopeMapper;   // 노드 자손 전개(재귀 CTE) — Phase 1 재사용
+    /**
+     * ATTD_DETAIL 축 스코프 판정(master=전사 / hr=사업장 / 노드관리자=자기노드+자손, safe 단독 ⛔) 공용 헬퍼.
+     * PRAFTA-002(EMPLOYEE_STATUS)와 완전히 동일한 판정을 공유한다(중복 구현 금지 — 두 화면의 "노드관리자
+     * 여부" 판정이 어긋나면 그 자체로 보안 결함).
+     */
+    private final AdminAttdLikeScopeResolver scopeResolver;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     // 사용자 단위 집계 후 메모리 슬라이스 상한(노드/사업장 단위 조회라 통상 수백 명 이내 — DoS 방어용 넉넉한 천장).
     private static final int MAX_OFFSET = 10000;
 
-    // ============================ 스코프 산출 ============================
-
-    /**
-     * 근태 상세 스코프: master=전사(회사 내 siteCd) / hr=사업장 / 노드관리자=자기노드+자손. safe 단독 ⛔.
-     * <p>승인관리 AppAdminApprovalServiceImpl.resolveScope 와 동일 축(ATTD_DETAIL=APPROVAL 활성식).
-     */
-    private ScopeContext resolveScope(String cmpnyCd, String userCd, String siteCd, String authCd) {
-        if (AuthRoleUtils.isAccessDenied(authCd)) {
-            log.warn("근태 상세 접근 차단(권한 없음) - authCd={}", authCd);
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
-        if (!StringUtils.hasText(siteCd)) {
-            // 사업장 미지정이면 어느 축이든 노드/사업장 필터를 적용할 수 없다 → 차단.
-            log.warn("근태 상세 사업장 미지정 - userCd={}, authCd={}", userCd, authCd);
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
-        if (AuthRoleUtils.AUTH_MASTER.equals(authCd) || AuthRoleUtils.AUTH_HR_MANAGER.equals(authCd)) {
-            // master/hr: 사업장 전부서(노드 무필터). companyWide 플래그는 매퍼에서 노드 필터 생략 의미로만 쓴다.
-            return new ScopeContext(true, false, Collections.emptyList());
-        }
-        // safe 단독 또는 노드관리자 후보 → 노드 스코프. 노드관리자 아니면(빈 집합) 차단(safe ⛔).
-        List<String> scopedNodeCds =
-                adminScopeMapper.selectScopedNodeCds(ScopedNodeQuery.of(cmpnyCd, siteCd, userCd));
-        if (scopedNodeCds == null || scopedNodeCds.isEmpty()) {
-            log.warn("근태 상세 진입 권한 없음(노드관리자 아님/safe 단독) - authCd={}, siteCd={}", authCd, siteCd);
-            throw new ApiException(AttdErrorCode.ATTD_403_002);
-        }
-        return new ScopeContext(false, true, scopedNodeCds);
-    }
-
-    /**
-     * 요청 nodeCd(있으면)를 토큰 스코프로 좁힌다(IDOR 재검증).
-     * <ul>
-     *   <li>master/hr(companyWide): nodeCd 지정 시 단일 노드로 좁힘(사업장 내 임의 노드 허용 — 사업장 권한 보유).</li>
-     *   <li>노드관리자(useNodeScope): nodeCd 가 자기 스코프 밖이면 빈 결과(403 대신 스코프 외 노출 0).
-     *       nodeCd 미지정이면 전체 스코프 노드를 사용한다.</li>
-     * </ul>
-     * @return 매퍼에 실을 노드 IN 집합(companyWide 이고 nodeCd 미지정이면 null=무필터).
-     */
-    private List<String> effectiveScopedNodes(ScopeContext s, String nodeCd) {
-        if (s.companyWide()) {
-            // master/hr: nodeCd 지정 시 그 노드만(사업장 내), 미지정이면 사업장 전부서(무필터).
-            if (StringUtils.hasText(nodeCd)) {
-                return List.of(nodeCd);
-            }
-            return null;
-        }
-        // 노드관리자: nodeCd 지정 시 스코프 교집합(밖이면 빈 집합 → 빈 결과), 미지정이면 전체 스코프.
-        if (StringUtils.hasText(nodeCd)) {
-            if (s.scopedNodeCds().contains(nodeCd)) {
-                return List.of(nodeCd);
-            }
-            log.warn("근태 상세 노드 스코프 위반(IDOR 차단) - 요청 nodeCd={}", nodeCd);
-            return Collections.emptyList();
-        }
-        return s.scopedNodeCds();
-    }
-
-    private record ScopeContext(boolean companyWide, boolean useNodeScope, List<String> scopedNodeCds) {
-    }
-
     // ============================ 일자 근태 현황 ============================
 
     @Override
     public DailyAttdResponse selectDaily(AdminDailyAttdParam param) {
-        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
-        List<String> nodes = effectiveScopedNodes(scope, param.nodeCd());
+        AdminAttdLikeScopeResolver.ScopeContext scope = scopeResolver.resolveScope(
+                param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+        List<String> nodes = scopeResolver.effectiveScopedNodes(scope, param.nodeCd());
 
         // IDOR: 노드관리자가 스코프 밖 노드를 지정 → 빈 결과(노출 0).
         if (nodes != null && nodes.isEmpty()) {
@@ -275,8 +215,9 @@ public class AppAdminAttdServiceImpl implements AppAdminAttdService {
 
     @Override
     public MonthlyAttdResponse selectMonthly(AdminMonthlyAttdParam param) {
-        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
-        List<String> nodes = effectiveScopedNodes(scope, param.nodeCd());
+        AdminAttdLikeScopeResolver.ScopeContext scope = scopeResolver.resolveScope(
+                param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+        List<String> nodes = scopeResolver.effectiveScopedNodes(scope, param.nodeCd());
 
         if (nodes != null && nodes.isEmpty()) {
             return MonthlyAttdResponse.builder()

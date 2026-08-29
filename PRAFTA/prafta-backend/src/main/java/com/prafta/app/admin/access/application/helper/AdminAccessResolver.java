@@ -32,6 +32,12 @@ public final class AdminAccessResolver {
     public static final String MODULE_ENTRY = "ENTRY";
     /** 셀프가입(회원가입) 승인. 서버 최종 강제는 User09Service 의 2단 게이트. */
     public static final String MODULE_SELF_JOIN = "SELF_JOIN";
+    /**
+     * 직원관리(실시간 근태 현황 + 외근 위치). 별도 판정 기준을 신설하지 않고 {@link #MODULE_ATTD_DETAIL}과
+     * 완전히 동일한 셀 값을 재사용한다(작업지시서_관리자앱-직원관리-신규화면.plan.md §0-1 — 동일 데이터 스코프는
+     * 동일 셀 값 원칙). 서버 최종 강제는 AppAdminEmployeeStatusServiceImpl 이 ATTD_DETAIL과 동일 축으로 재검증.
+     */
+    public static final String MODULE_EMPLOYEE_STATUS = "EMPLOYEE_STATUS";
 
     private AdminAccessResolver() {
         // 유틸리티 클래스 - 인스턴스 생성 금지
@@ -70,7 +76,9 @@ public final class AdminAccessResolver {
      *       전사역할 보유자이거나 현재 선택 사업장의 노드관리자일 때만 활성.
      *       단순 진입가능(canEnterAdmin)만으로 열지 않는다 — 타 사업장 전용 노드관리자가
      *       권한 없는 현재 사업장에서 전사 스코프로 열리는 권한상승/스코프 누수를 차단한다.</li>
-     *   <li>APPROVAL/ATTD_DETAIL : master ∥ hr ∥ nodeAdmin (safe 단독 ⛔).</li>
+     *   <li>APPROVAL/ATTD_DETAIL/EMPLOYEE_STATUS : master ∥ hr ∥ nodeAdmin (safe 단독 ⛔).
+     *       EMPLOYEE_STATUS 는 신규 판정식이 아니라 ATTD_DETAIL 셀을 그대로 재사용한다(plan §0-1 근거 —
+     *       두 화면이 다루는 데이터의 민감도·조직 스코프가 동일하다).</li>
      *   <li>SAFETY/TBM : master ∥ safe ∥ nodeAdmin (hr 동시보유는 합집합으로 활성 — §3.2 확정).</li>
      *   <li>BOARD/SETTINGS : 데이터 스코프 없는 모듈이므로 항상 활성(BOARD 는 web 미구현=준비중).</li>
      *   <li>ENTRY : master ∥ hr (일용직 입장 승인 — 일용직 계약서+승인제 T4).
@@ -96,6 +104,8 @@ public final class AdminAccessResolver {
         map.put(MODULE_HOME, homeActive);
         map.put(MODULE_APPROVAL, approvalActive);
         map.put(MODULE_ATTD_DETAIL, approvalActive);
+        // 직원관리 — ATTD_DETAIL 활성식 재사용(plan §0-1, 새 변수 없음).
+        map.put(MODULE_EMPLOYEE_STATUS, approvalActive);
         map.put(MODULE_ENTRY, entryActive);
         // 셀프가입 승인 — 서버 게이트(canManageNodeExcludeSafe)와 동일 집합이라 approvalActive 재사용.
         map.put(MODULE_SELF_JOIN, approvalActive);
@@ -128,6 +138,8 @@ public final class AdminAccessResolver {
         map.put(MODULE_HOME, isNodeAdminInSite && !anyCompanyWide);
         map.put(MODULE_APPROVAL, isNodeAdminInSite && !approvalCompanyWide);
         map.put(MODULE_ATTD_DETAIL, isNodeAdminInSite && !approvalCompanyWide);
+        // 직원관리 — ATTD_DETAIL 스코프식 재사용(plan §0-1, 새 변수 없음).
+        map.put(MODULE_EMPLOYEE_STATUS, isNodeAdminInSite && !approvalCompanyWide);
         map.put(MODULE_SELF_JOIN, isNodeAdminInSite && !approvalCompanyWide);
         map.put(MODULE_SAFETY, isNodeAdminInSite && !safetyCompanyWide);
         map.put(MODULE_TBM, isNodeAdminInSite && !safetyCompanyWide);

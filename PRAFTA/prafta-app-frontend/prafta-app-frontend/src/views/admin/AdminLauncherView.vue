@@ -27,42 +27,165 @@
     <!-- 아이콘 스프라이트(본 화면 전역 use 참조 전제) -->
     <svg width="0" height="0" class="admin-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-admin-mappin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="11" r="3" /><path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" />
+        <symbol
+          id="i-admin-mappin"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="11" r="3" />
+          <path d="M17.657 16.657L13.414 20.9a2 2 0 0 1-2.827 0l-4.244-4.243a8 8 0 1 1 11.314 0z" />
         </symbol>
-        <symbol id="i-admin-chev-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-admin-chev-right"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="9 18 15 12 9 6" />
         </symbol>
-        <symbol id="i-admin-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-admin-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
-        <symbol id="i-admin-chev-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-admin-chev-down"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="6 9 12 15 18 9" />
         </symbol>
         <!-- 모듈/탭 아이콘 (라인 아이콘) -->
-        <symbol id="i-admin-home" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 11l9-8 9 8" /><path d="M5 10v10h14V10" />
+        <symbol
+          id="i-admin-home"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M3 11l9-8 9 8" />
+          <path d="M5 10v10h14V10" />
         </symbol>
-        <symbol id="i-admin-approval" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M9 11l3 3L22 4" /><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+        <symbol
+          id="i-admin-approval"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M9 11l3 3L22 4" />
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
         </symbol>
-        <symbol id="i-admin-attd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
+        <symbol
+          id="i-admin-attd"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M16 2v4M8 2v4M3 10h18" />
         </symbol>
-        <symbol id="i-admin-safety" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- PRAFTA-004: 직원 관리(EMPLOYEE_STATUS) -->
+        <symbol
+          id="i-admin-employee"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </symbol>
+        <symbol
+          id="i-admin-safety"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />
         </symbol>
-        <symbol id="i-admin-tbm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="3" width="20" height="14" rx="2" /><path d="M8 21h8M12 17v4" />
+        <symbol
+          id="i-admin-tbm"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="2" y="3" width="20" height="14" rx="2" />
+          <path d="M8 21h8M12 17v4" />
         </symbol>
-        <symbol id="i-admin-siteops" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 17.5h7M17.5 14v7" />
+        <symbol
+          id="i-admin-siteops"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="3" width="7" height="7" rx="1" />
+          <rect x="3" y="14" width="7" height="7" rx="1" />
+          <path d="M14 17.5h7M17.5 14v7" />
         </symbol>
-        <symbol id="i-admin-board" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 4h16v12H7l-3 3z" /><path d="M8 9h8M8 12h5" />
+        <symbol
+          id="i-admin-board"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <path d="M4 4h16v12H7l-3 3z" />
+          <path d="M8 9h8M8 12h5" />
         </symbol>
-        <symbol id="i-admin-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 7 2.6 1.6 1.6 0 0 0 8 1.1V1a2 2 0 0 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8a1.6 1.6 0 0 0 1.1 1.5H23a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z" />
+        <symbol
+          id="i-admin-settings"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 0 1-4 0v-.1A1.6 1.6 0 0 0 7 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0-1.1-2.7H1a2 2 0 0 1 0-4h.1A1.6 1.6 0 0 0 2.6 7a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.6 1.6 0 0 0 7 2.6 1.6 1.6 0 0 0 8 1.1V1a2 2 0 0 1 4 0v.1A1.6 1.6 0 0 0 17 2.6a1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V8a1.6 1.6 0 0 0 1.1 1.5H23a2 2 0 0 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"
+          />
         </symbol>
       </defs>
     </svg>
@@ -109,7 +232,8 @@
           <span class="confirm-banner__icon" aria-hidden="true">!</span>
           <span class="confirm-banner__text">
             근로자가 동의한 연차 변경/삭제 확인이
-            <strong>{{ pendingConfirmCount }}</strong>건 있어요
+            <strong>{{ pendingConfirmCount }}</strong
+            >건 있어요
           </span>
           <span class="confirm-banner__cta" aria-hidden="true">확인 ▸</span>
         </button>
@@ -118,19 +242,32 @@
              currentSiteCd 를 prop 으로 전달해 현장 전환 시 재조회되게 한다(C1: 서버 산출만 신뢰). -->
         <AdminDashboard ref="dashboardRef" :site-cd="currentSiteCd" />
 
-        <!-- 2~7) 모듈 세로 섹션 — enabled/scoped/note 는 서버 맵에서만(C1) -->
+        <!-- 2~7) 모듈 카테고리 그룹(GRP-2, plan.md 참조) — enabled/scoped/note/배지는
+             여전히 서버 맵에서만(C1). AdminModuleGroup 은 순수 표시용 컨테이너이며,
+             그룹 안의 AdminModuleSection 은 무변경 재사용(props/emit 동일).
+             펼침 여부는 groupExpandMap(부모 소유, sessionStorage 지속)에서 온다. -->
         <div class="module-list">
-          <AdminModuleSection
-            v-for="m in modules"
-            :key="m.key"
-            :title="m.title"
-            :icon-id="m.iconId"
-            :enabled="moduleActiveMap[m.key] === true"
-            :scoped="moduleScopedMap[m.key] === true"
-            :note="m.note"
-            :badge-count="moduleBadgeMap[m.key] || 0"
-            @select="onModuleSelect(m)"
-          />
+          <AdminModuleGroup
+            v-for="g in moduleGroups"
+            :key="g.key"
+            :title="g.title"
+            :group-key="g.key"
+            :expanded="groupExpandMap[g.key] === true"
+            :badge-count="g.badgeCount || 0"
+            @toggle="onToggleGroup"
+          >
+            <AdminModuleSection
+              v-for="m in g.modules"
+              :key="m.key"
+              :title="m.title"
+              :icon-id="m.iconId"
+              :enabled="moduleActiveMap[m.key] === true"
+              :scoped="moduleScopedMap[m.key] === true"
+              :note="m.note"
+              :badge-count="moduleBadgeMap[m.key] || 0"
+              @select="onModuleSelect(m)"
+            />
+          </AdminModuleGroup>
         </div>
       </template>
     </main>
@@ -153,7 +290,7 @@
 </template>
 
 <script setup>
-import { ref, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -163,6 +300,7 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminHeader from './components/AdminHeader.vue'
 import AdminTabBar from './components/AdminTabBar.vue'
 import AdminModuleSection from './components/AdminModuleSection.vue'
+import AdminModuleGroup from './components/AdminModuleGroup.vue'
 import AdminSiteSwitchSheet from './components/AdminSiteSwitchSheet.vue'
 import AdminDashboard from './components/AdminDashboard.vue'
 
@@ -190,15 +328,41 @@ const accessibleSites = ref([]) // [{ siteCd, siteNo, siteNm }]
 const moduleActiveMap = ref({}) // { HOME:true, APPROVAL:false, ... }
 const moduleScopedMap = ref({}) // { APPROVAL:true, ... } → 🔵 배지
 
+// 모듈 카테고리 그룹 정의(GRP-2, 2026-08-29 확정) — 표시명/순서만 담는 정적 설정.
+//   그룹 소속은 아래 modules[].group 필드로 갖는다 — 신규 모듈 추가 시 group 값만 지정하면
+//   자동으로 해당 그룹에 편입된다(그룹 컨테이너/헤더 구조 변경 불필요,
+//   예: 직원관리(EMPLOYEE_STATUS, 별도 작업지시서) → group: 'ATTD_GROUP').
+const MODULE_GROUP_DEFS = [
+  { key: 'APPROVAL_GROUP', title: '승인' },
+  { key: 'ATTD_GROUP', title: '근태' },
+  { key: 'SAFETY_GROUP', title: '안전·교육' },
+  { key: 'SITE_GROUP', title: '현장 운영' },
+]
+
 // 본문 세로 섹션 표시 구성(정적 — 표시명/아이콘/라우트는 프레젠테이션 설정).
 //   설정(SETTINGS)·홈(HOME)은 본문 섹션에서 제외(설정=우상단 버튼, 홈=대시보드 placeholder).
 //   enabled/scoped 값은 서버 맵에서만(위 moduleActiveMap/moduleScopedMap).
 //   route 는 Phase 1 빈 골격(ComingSoon) → Phase 2~8 실화면으로 developer 가 교체.
+//   group 은 위 MODULE_GROUP_DEFS 의 key 를 가리킨다(GRP-2, plan.md §1-6).
 const modules = [
-  { key: 'APPROVAL', title: '승인 관리', iconId: 'i-admin-approval', route: '/AdminApproval', note: '' },
+  {
+    key: 'APPROVAL',
+    title: '승인 관리',
+    iconId: 'i-admin-approval',
+    route: '/AdminApproval',
+    note: '',
+    group: 'APPROVAL_GROUP',
+  },
   // 일용직 계약서+승인제 T4: 일용직 입장 승인(활성=서버 moduleActiveMap.ENTRY, master∥hr).
   //   아이콘은 기존 스프라이트(i-admin-approval) 재사용 — template(스프라이트) 무변경.
-  { key: 'ENTRY', title: '입장 승인', iconId: 'i-admin-approval', route: '/AdminEntryApproval', note: '' },
+  {
+    key: 'ENTRY',
+    title: '입장 승인',
+    iconId: 'i-admin-approval',
+    route: '/AdminEntryApproval',
+    note: '',
+    group: 'APPROVAL_GROUP',
+  },
   // A8: 셀프가입(회원가입) 승인. 활성=서버 moduleActiveMap.SELF_JOIN(master∥hr∥노드관리자).
   //   아이콘은 기존 스프라이트(i-admin-approval) 재사용 — template(스프라이트) 무변경.
   {
@@ -207,12 +371,58 @@ const modules = [
     iconId: 'i-admin-approval',
     route: '/AdminSelfJoin',
     note: '',
+    group: 'APPROVAL_GROUP',
   },
-  { key: 'ATTD_DETAIL', title: '근태 상세', iconId: 'i-admin-attd', route: '/AdminAttdDetail', note: '' },
-  { key: 'SAFETY', title: '안전 관리', iconId: 'i-admin-safety', route: '/AdminSafety', note: '' },
-  { key: 'TBM', title: 'TBM 관리', iconId: 'i-admin-tbm', route: '/AdminTbm', note: '' },
-  { key: 'SITE_OPS', title: '현장 처리', iconId: 'i-admin-siteops', route: '/AdminSiteOps', note: '' },
-  { key: 'BOARD', title: '게시판', iconId: 'i-admin-board', route: '/AdminBoard', note: '' },
+  {
+    key: 'ATTD_DETAIL',
+    title: '근태 상세',
+    iconId: 'i-admin-attd',
+    route: '/AdminAttdDetail',
+    note: '',
+    group: 'ATTD_GROUP',
+  },
+  // PRAFTA-004: 직원 관리(실시간 근태 현황 + 외근 GPS 지도, 작업지시서_관리자앱-직원관리-신규화면.md).
+  //   활성=서버 moduleActiveMap.EMPLOYEE_STATUS(ATTD_DETAIL 과 동일 축, PRAFTA-001).
+  {
+    key: 'EMPLOYEE_STATUS',
+    title: '직원 관리',
+    iconId: 'i-admin-employee',
+    route: '/AdminEmployeeStatus',
+    note: '',
+    group: 'ATTD_GROUP',
+  },
+  {
+    key: 'SAFETY',
+    title: '안전 관리',
+    iconId: 'i-admin-safety',
+    route: '/AdminSafety',
+    note: '',
+    group: 'SAFETY_GROUP',
+  },
+  {
+    key: 'TBM',
+    title: 'TBM 관리',
+    iconId: 'i-admin-tbm',
+    route: '/AdminTbm',
+    note: '',
+    group: 'SAFETY_GROUP',
+  },
+  {
+    key: 'SITE_OPS',
+    title: '현장 처리',
+    iconId: 'i-admin-siteops',
+    route: '/AdminSiteOps',
+    note: '',
+    group: 'SITE_GROUP',
+  },
+  {
+    key: 'BOARD',
+    title: '게시판',
+    iconId: 'i-admin-board',
+    route: '/AdminBoard',
+    note: '',
+    group: 'SITE_GROUP',
+  },
 ]
 
 // 현장 전환 시트 토글 (UI 토글 — 허용 범위)
@@ -226,6 +436,53 @@ const pendingConfirmCount = ref(0)
 //   ⚠️ C1: 건수도 서버 산출값만 신뢰한다. 조회 실패/비권한은 0(배지 비노출)이며 진입을 막지 않는다.
 const moduleBadgeMap = ref({})
 
+// 모듈 카테고리 그룹 렌더용 파생 목록 — [{ key, title, modules:[...], badgeCount }].
+//   MODULE_GROUP_DEFS(그룹 표시명) + modules(그룹별 group 필드) + moduleBadgeMap(배지 합계)을 조합한다.
+//   빈 그룹은 없음(그룹 자체는 항상 고정 노출 — plan.md §1-5), 모듈 개별 활성/비활성 처리는
+//   AdminModuleSection 이 그대로 담당(여기서 필터링하지 않는다).
+//   badgeCount 는 그룹 내 모듈들의 moduleBadgeMap 값 합계(접힘 상태 헤더 배지, UI-GRP-1 §상태별 동작 참조).
+const moduleGroups = computed(() =>
+  MODULE_GROUP_DEFS.map((g) => {
+    const groupModules = modules.filter((m) => m.group === g.key)
+    const badgeCount = groupModules.reduce((sum, m) => sum + (moduleBadgeMap.value[m.key] || 0), 0)
+    return { key: g.key, title: g.title, modules: groupModules, badgeCount }
+  }),
+)
+
+// sessionStorage 저장 키(그룹 펼침 상태 지속용, plan.md §1-4). localStorage 가 아닌 이유:
+//   계정/현장이 바뀌어도 이전 사용자의 취향이 새 세션에 새어 들어가지 않게 하기 위함.
+const GROUP_EXPAND_STORAGE_KEY = 'admin_module_group_expand'
+
+// 그룹별 기본 펼침/접힘(최초 세션 전용, plan.md §1-3) — 승인/근태는 대기 건수 배지가 주로 발생하고
+//   상시 조회 대상이라 기본 펼침, 안전·교육/현장 운영은 세션·이벤트성 사용이라 기본 접힘.
+const DEFAULT_GROUP_EXPAND = {
+  APPROVAL_GROUP: true,
+  ATTD_GROUP: true,
+  SAFETY_GROUP: false,
+  SITE_GROUP: false,
+}
+
+// 그룹별 펼침 상태 — { APPROVAL_GROUP:true, ATTD_GROUP:true, SAFETY_GROUP:false, SITE_GROUP:false }.
+//   초기값은 onMounted 에서 loadGroupExpandMap() 이 sessionStorage 를 읽어 채운다.
+const groupExpandMap = ref({ ...DEFAULT_GROUP_EXPAND })
+
+// sessionStorage 저장값이 있으면 그대로(누락 키는 기본값 보완), 없거나 손상됐으면 기본값으로 초기화.
+const loadGroupExpandMap = () => {
+  try {
+    const raw = sessionStorage.getItem(GROUP_EXPAND_STORAGE_KEY)
+    if (raw) {
+      const parsed = JSON.parse(raw)
+      if (parsed && typeof parsed === 'object') {
+        groupExpandMap.value = { ...DEFAULT_GROUP_EXPAND, ...parsed }
+        return
+      }
+    }
+  } catch (e) {
+    // 저장값 파싱 실패(손상/사생활 모드 등)는 무시하고 기본값으로 폴백
+  }
+  groupExpandMap.value = { ...DEFAULT_GROUP_EXPAND }
+}
+
 // 대시보드 컴포넌트 ref — 당겨서 새로고침 시 대시보드 재조회를 명시 호출하기 위함.
 //   (현장 전환은 props.siteCd watch 로 자동 재조회되지만, 당겨서 새로고침은 siteCd 가
 //    바뀌지 않으므로 expose 된 refresh() 를 직접 호출한다.)
@@ -236,12 +493,15 @@ const dashboardRef = ref(null)
 //   access-context 는 진입 로딩(isLoading)을 켜지 않고 인디케이터만 쓰도록 silent 호출.
 //   대시보드는 currentSiteCd 가 그대로라 watch 가 발화하지 않으므로 expose refresh 를 직접 호출.
 const bodyEl = ref(null)
-const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(bodyEl, async () => {
-  await Promise.all([
-    loadAccessContext(undefined, { silent: true }),
-    dashboardRef.value?.refresh?.(),
-  ])
-})
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  bodyEl,
+  async () => {
+    await Promise.all([
+      loadAccessContext(undefined, { silent: true }),
+      dashboardRef.value?.refresh?.(),
+    ])
+  },
+)
 
 // ── 진입판정 조회 ─────────────────────────────────────────────────────────────
 // access-context 조회. siteCd 지정 시 현장전환 재조회(D5 — 서버가 USE_YN='Y' 검증).
@@ -406,15 +666,30 @@ const onModuleSelect = (module) => {
   if (!module?.route) return
 
   const query = { module: module.key }
-  // A8: 셀프가입 승인 화면만 현장 전환 컨텍스트(siteCd)를 넘긴다.
+  // A8/PRAFTA-004: 셀프가입 승인·직원 관리 화면만 현장 전환 컨텍스트(siteCd)를 넘긴다.
   //   관리자 모드는 현장 전환 시 토큰을 재발급하지 않아 화면이 조회 사업장을 알아야 한다.
   //   ★전 모듈 공통으로 siteCd 를 붙이지 않은 이유: 기존 화면들이 query 를 어떻게 소비하는지에
   //     의존하지 않기 위해서다(회귀 위험 0 을 택했다). 서버는 값이 없으면 토큰 gv_siteCd 로 폴백한다.
-  if (module.key === 'SELF_JOIN' && currentSiteCd.value) {
+  if ((module.key === 'SELF_JOIN' || module.key === 'EMPLOYEE_STATUS') && currentSiteCd.value) {
     query.siteCd = currentSiteCd.value
   }
 
   router.push({ path: module.route, query })
+}
+
+// 그룹 헤더 탭 — 펼침/접힘 토글(순수 UI 토글). 서버 데이터/권한 판정과 무관(C1 대상 아님).
+//   sessionStorage 에도 반영해 화면 재진입(리마운트) 후에도 마지막 상태가 유지되게 한다(plan.md §1-4).
+//   당겨서 새로고침은 컴포넌트가 리마운트되지 않으므로 이 저장 로직 없이도 세션 내 유지된다.
+const onToggleGroup = (groupKey) => {
+  groupExpandMap.value = {
+    ...groupExpandMap.value,
+    [groupKey]: !groupExpandMap.value[groupKey],
+  }
+  try {
+    sessionStorage.setItem(GROUP_EXPAND_STORAGE_KEY, JSON.stringify(groupExpandMap.value))
+  } catch (e) {
+    // sessionStorage 저장 실패(사생활 모드 등 용량/권한 제약)는 무시 — 세션 내 메모리 상태로는 계속 유지됨
+  }
 }
 
 // 탭 key ↔ access-context 모듈 key 매핑(단순 식별자 매핑 — 역할 분기 아님, C1 무관).
@@ -485,8 +760,9 @@ const onSelectSite = (site) => {
   loadAccessContext(site.siteCd)
 }
 
-// 진입 시 1회 조회(토큰 사업장 기준).
+// 진입 시 1회 조회(토큰 사업장 기준) + 그룹 펼침 상태 복원(sessionStorage, plan.md §1-4).
 onMounted(() => {
+  loadGroupExpandMap()
   loadAccessContext()
 })
 </script>
