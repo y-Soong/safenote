@@ -774,15 +774,6 @@
 	ORDER BY A.SYSTEM_YN DESC, A.LEAVE_NO ASC, A.LEAVE_CD ASC
     </select>
 
-    <select id="selectLegalLeaveCds" resultType="string">
-    /* Attd05Mapper.selectLegalLeaveCds */
-    SELECT A.LEAVE_CD
-      FROM TB_LEAVE_TYPE_MGMT A
-     WHERE A.CMPNY_CD = #{cmpnyCd}
-       AND A.USE_YN = 'Y'
-       AND A.LEAVE_NATURE_TYPE = '01'
-    </select>
-    
     <update id="saveUserWorkPlans" parameterType="com.prafta.web.attd.attd05.application.command.SchTypeCommand">
     /* Attd05Mapper.saveUserWorkPlans */
 	INSERT INTO TB_USER_WORK_PLAN (

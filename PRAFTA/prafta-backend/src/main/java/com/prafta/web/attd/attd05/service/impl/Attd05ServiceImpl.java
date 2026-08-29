@@ -369,10 +369,6 @@ public class Attd05ServiceImpl implements Attd05Service {
     	// SCH_CD 별 버전 목록 (APPLY_DATE 오름차순)
     	Map<String, List<SchTypeUseYnResult>> versionMap = groupBySchCd(useYnList);
 
-    	// 법정 휴가 코드 집합 — 이 코드로 적용된 셀은 결재 없이 즉시 연차 사용 기록(차감) (prafta-021 B)
-    	java.util.Set<String> legalLeaveCds = new java.util.HashSet<>(
-    			attd05Mapper.selectLegalLeaveCds(firstModel.gvCmpnyCd()));
-
     	List<SkippedCellResult> skippedList = new ArrayList<>();
     	int savedCount = 0;
 
@@ -385,10 +381,15 @@ public class Attd05ServiceImpl implements Attd05Service {
     	// 교차일 겹침 가드용 pending 맵 — 같은 저장 배치에서 함께 바뀌는 이웃 날짜의 적용 코드를 DB 보다 우선 반영.
     	//   userCd → (workYmd → 적용 SCH_CD). 휴가 셀/빈값은 "" 로 두어 "그 날 스케줄 없음" 으로 취급한다.
     	//   (배치 내에서 인접 두 날을 동시에 오버나이트로 바꾸는 경우의 겹침도 정확히 잡기 위함.)
+    	// prafta-060: 429행(isLegalLeaveCell, prafta-059)과 동일 기준으로 통일한다. 종전에는 이 판정만
+    	//   legalLeaveCds(LEAVE_NATURE_TYPE='01' 게이트)를 썼는데, nature='02'(특별휴가류) 코드가 leaveCd 로
+    	//   명시돼도 leaveCell=false 로 오판정되어 pendingSchByUser 에 "" 대신 코드값 원문이 그대로 들어갔다.
+    	//   그 값이 우연히 실제 SCH_CD 와 같으면(코드값은 공용 컬럼이라 유니크 제약 없음) 겹침가드가 엉뚱한
+    	//   근무타입 시간창으로 오탐/미탐할 수 있었다. hasExplicitLeaveCd 단독 기준으로 맞춰 이 결함을 제거한다.
     	Map<String, Map<String, String>> pendingSchByUser = new java.util.HashMap<>();
     	for (SchTypeModel m : modelList) {
     		boolean leaveCell = m.autoLegalLeave()
-    				|| (m.leaveCd() != null && !m.leaveCd().isEmpty() && legalLeaveCds.contains(m.leaveCd()));
+    				|| (m.leaveCd() != null && !m.leaveCd().isEmpty());
     		String schForNeighbor = (leaveCell || m.workPlanCd() == null) ? "" : m.workPlanCd();
     		pendingSchByUser.computeIfAbsent(m.userCd(), k -> new java.util.HashMap<>())
     				.put(m.workYmd(), schForNeighbor);
@@ -420,8 +421,13 @@ public class Attd05ServiceImpl implements Attd05Service {
     		//   LEAVE_CD 를 저장하지 않아 폴백 자체가 불필요).
     		boolean hasExplicitLeaveCd = model.leaveCd() != null && !model.leaveCd().isEmpty();
     		String effectiveLeaveCd = hasExplicitLeaveCd ? model.leaveCd() : workPlanCd;
-    		boolean isLegalLeaveCell = isAutoLegal
-    				|| (hasExplicitLeaveCd && legalLeaveCds.contains(model.leaveCd()));
+    		// prafta-059: legalLeaveCds(LEAVE_NATURE_TYPE='01' 한정) 게이트를 제거한다.
+    		//   nature='02'(특별휴가류, 예: SYS_BIRTHDAY 또는 관리자가 attd03 에서 만든 커스텀 연차)로
+    		//   등록된 코드가 leaveCd 로 명시 전송돼도 이 게이트에 걸려 isLegalLeaveCell=false 가 되면서
+    		//   잔액검증·화이트리스트체크·실차감(552행 DIRECT_LEAVE_CD_WHITELIST, recordDirectLeaveUsage)을
+    		//   전부 우회하는 결함이 있었다. hasExplicitLeaveCd 만으로 연차 셀로 인식시키고, 화이트리스트 밖
+    		//   코드는 이어지는 552행 체크(REASON_LEAVE_CD_NOT_ALLOWED)에서 nature 무관하게 걸러낸다.
+    		boolean isLegalLeaveCell = isAutoLegal || hasExplicitLeaveCd;
 
     		// prafta-com-008-D: 교대 잠금 가드 — 교대팀 소속 구간의 일반 근무(SCH) 셀 저장 차단.
     		//   ★연차 셀(법정연차 코드)은 D-3 정합으로 잠금 통과(연차만 허용). 가드를 연차 분기 이전에

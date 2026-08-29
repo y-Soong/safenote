@@ -289,8 +289,17 @@ const { sortKey, sortOrder, sortedData, onSort } = useTableSort(userList);
 const { colWidths, onResize } = useColumnResize({ userId: 100, userNm: 100 });
 const daysInMonth = ref([]);
 const scheduleData = ref({});
+// prafta-058-1: scheduleData 는 코드 문자열만 보관(Attd_05.vue 와 동일 포맷 유지).
+//   SCH_CD/LEAVE_CD 가 같은 WORK_PLAN_CD 컬럼을 공유해 값만으로는 구분 불가하므로,
+//   fnProcessExcelFile() 파싱 시점에 leaveTypeList 매칭으로 판정된 셀 키만 별도로 추적한다
+//   (getCellNmValue 표시명 변환, fnSave payload 의 leaveCd 결정에 공유 재사용).
+const leaveCellKeys = ref(new Set());
 const schTypeList = ref([]);
 const leaveTypeList = ref([]);
+// prafta-058-2: 이 화면(엑셀 업로드)에서 직접 지정 가능한 연차종류 화이트리스트.
+//   Attd_05.vue 의 DIRECT_LEAVE_CDS(그리드 저장) 와 동일 값 — 백엔드
+//   Attd05ServiceImpl.DIRECT_LEAVE_CD_WHITELIST 와 일치시켜야 한다.
+const DIRECT_LEAVE_CDS = ["SYS_ANNUAL", "SYS_MONTHLY"];
 
 // ── 행 체크박스 ───────────────────────────────────────────────
 const checkedRows = ref([]);
@@ -311,13 +320,17 @@ const getSchTypeNm = (schCd) => {
 
 // ── 셀 값 조회 (코드 → 표시명) ───────────────────────────────
 const getCellNmValue = (userCd, workYmd) => {
-  const code = scheduleData.value[`${userCd}_${workYmd}`];
+  const key = `${userCd}_${workYmd}`;
+  const code = scheduleData.value[key];
   if (!code) return "";
+  // fnProcessExcelFile() 이 기록한 판정(leaveCellKeys)을 그대로 재사용 —
+  //   SCH_CD/LEAVE_CD 코드가 우연히 같은 문자열이어도 잘못된 목록에서 이름을 찾지 않는다.
+  if (leaveCellKeys.value.has(key)) {
+    const leave = leaveTypeList.value.find((l) => l.leaveCd === code);
+    return leave ? leave.leaveNm : code;
+  }
   const sch = schTypeList.value.find((s) => s.schCd === code);
-  if (sch) return sch.schNm;
-  const leave = leaveTypeList.value.find((l) => l.leaveCd === code);
-  if (leave) return leave.leaveNm;
-  return code;
+  return sch ? sch.schNm : code;
 };
 
 // ── 사업장 조회 ───────────────────────────────────────────────
@@ -325,6 +338,7 @@ const fnResetTableData = () => {
   userList.value = [];
   daysInMonth.value = [];
   scheduleData.value = {};
+  leaveCellKeys.value = new Set();
   checkedRows.value = [];
 };
 
@@ -442,6 +456,7 @@ const fnSiteSearchPopOpen = () => {
       userList.value = [];
       daysInMonth.value = [];
       scheduleData.value = {};
+      leaveCellKeys.value = new Set();
       checkedRows.value = [];
     },
   });
@@ -483,6 +498,7 @@ const fnSearch = async () => {
   loading.value = true;
   userList.value = [];
   scheduleData.value = {};
+  leaveCellKeys.value = new Set();
   daysInMonth.value = [];
   checkedRows.value = [];
 
@@ -570,7 +586,12 @@ const fnDownloadTemplate = async () => {
           { header: "연차타입코드", fixed: false, width: 20 },
           { header: "연차타입명", fixed: false, width: 25 },
         ],
-        data: leaveTypeList.value.map((l) => [l.leaveCd, l.leaveNm]),
+        // prafta-058-2: 이 화면에서 직접 지정 가능한 화이트리스트(연차/월차)만 노출 —
+        //   관리자 수기 생성분 등 화이트리스트 밖 연차코드는 어차피 백엔드가 거부하므로
+        //   양식에서부터 혼란을 주지 않는다.
+        data: leaveTypeList.value
+          .filter((l) => DIRECT_LEAVE_CDS.includes(l.leaveCd))
+          .map((l) => [l.leaveCd, l.leaveNm]),
       },
     ],
   });
@@ -646,14 +667,19 @@ const fnProcessExcelFile = (event) => {
         for (const [colIdxStr, workYmd] of Object.entries(dayColMap)) {
           const colIdx = Number(colIdxStr);
           const rawVal = String(row[colIdx] ?? "").trim();
+          const cellKey = `${userCd}_${workYmd}`;
 
           if (!rawVal) {
-            delete scheduleData.value[`${userCd}_${workYmd}`];
+            delete scheduleData.value[cellKey];
+            leaveCellKeys.value.delete(cellKey);
             continue;
           }
 
           // schNo → schCd 변환, schCd 직접 매칭, leaveNo → leaveCd 변환, leaveCd 직접 매칭
+          // isLeave: 어느 목록(schTypeList vs leaveTypeList)에서 매칭됐는지 판정 결과.
+          //   저장(fnSave) 시 leaveCd 동반 여부, 표시명(getCellNmValue) 조회에 그대로 재사용한다.
           let resolvedCode;
+          let isLeave = false;
           const schByNo = schTypeList.value.find(
             (s) => String(s.schNo) === rawVal
           );
@@ -669,16 +695,23 @@ const fnProcessExcelFile = (event) => {
               );
               if (leaveByNo) {
                 resolvedCode = leaveByNo.leaveCd;
+                isLeave = true;
               } else {
                 const leaveByCd = leaveTypeList.value.find(
                   (l) => l.leaveCd === rawVal
                 );
                 resolvedCode = leaveByCd ? leaveByCd.leaveCd : rawVal;
+                isLeave = !!leaveByCd;
               }
             }
           }
 
-          scheduleData.value[`${userCd}_${workYmd}`] = resolvedCode;
+          scheduleData.value[cellKey] = resolvedCode;
+          if (isLeave) {
+            leaveCellKeys.value.add(cellKey);
+          } else {
+            leaveCellKeys.value.delete(cellKey);
+          }
           updatedUserCds.add(userCd);
           updated++;
         }
@@ -723,7 +756,18 @@ const fnSave = async () => {
     .map(([key, workPlanCd]) => {
       const workYmd = key.slice(-8);
       const userCd = key.substring(0, key.length - 9);
-      return { cmpnyCd, siteCd: siteCd.value, userCd, workYmd, workPlanCd };
+      // prafta-058-1: 연차로 판정된 셀은 leaveCd 를 함께 실어보내야 백엔드가
+      //   화이트리스트 검증·잔액확인·실차감(TB_USER_LEAVE_USE 등)을 수행한다
+      //   (Attd_05.vue 그리드 저장과 동일 계약 — leaveCd 없으면 일반 SCH 셀로 오판정됨).
+      const leaveCd = leaveCellKeys.value.has(key) ? workPlanCd : null;
+      return {
+        cmpnyCd,
+        siteCd: siteCd.value,
+        userCd,
+        workYmd,
+        workPlanCd,
+        leaveCd,
+      };
     });
 
   if (saveList.length === 0) {
