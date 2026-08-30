@@ -158,6 +158,8 @@
             <thead>
               <tr ref="theadRow1El">
                 <th rowspan="2">사용자명</th>
+                <!-- 고용구분: 정규직/일용직 (TB_USER.EMPLOYMENT_TYPE, NULL=정규직 취급) -->
+                <th rowspan="2">고용구분</th>
                 <th rowspan="2">부서</th>
                 <th rowspan="2">근무구분</th>
                 <th rowspan="2">근무일</th>
@@ -181,7 +183,7 @@
             </thead>
             <tbody>
               <tr v-if="displayRows.length === 0">
-                <td colspan="16" class="a08-empty">조회 결과가 없습니다.</td>
+                <td colspan="17" class="a08-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr
                 v-for="r in displayRows"
@@ -190,6 +192,17 @@
                 @click="fnSelectRow(r)"
               >
                 <td>{{ r.userNm }}</td>
+                <!-- 고용구분: 정규직/일용직 배지 -->
+                <td>
+                  <span
+                    :class="[
+                      'a08-badge',
+                      r.employmentType === 'DAILY' ? 'b-emp-daily' : 'b-emp-regular',
+                    ]"
+                  >
+                    {{ empTypeLabel(r) }}
+                  </span>
+                </td>
                 <td>{{ r.nodeNm }}</td>
                 <!-- 근무구분: 정상근무 / 초과근무 (prafta-043: 유형 파기) -->
                 <td>
@@ -439,6 +452,7 @@
             <thead>
               <tr>
                 <th>사용자명</th>
+                <th>고용구분</th>
                 <th>부서</th>
                 <th>근무일</th>
                 <th>요일</th>
@@ -452,7 +466,7 @@
             </thead>
             <tbody>
               <tr v-if="summaryRows.length === 0">
-                <td colspan="10" class="a08-empty">조회 결과가 없습니다.</td>
+                <td colspan="11" class="a08-empty">조회 결과가 없습니다.</td>
               </tr>
               <tr
                 v-for="s in summaryRows"
@@ -460,6 +474,17 @@
                 :class="summaryRowClass(s)"
               >
                 <td>{{ s.userNm }}</td>
+                <!-- 고용구분: 정규직/일용직 배지 (사용자 단위 속성이라 그룹 대표값 사용) -->
+                <td>
+                  <span
+                    :class="[
+                      'a08-badge',
+                      s.employmentType === 'DAILY' ? 'b-emp-daily' : 'b-emp-regular',
+                    ]"
+                  >
+                    {{ empTypeLabel(s) }}
+                  </span>
+                </td>
                 <td>{{ s.nodeNm }}</td>
                 <td>{{ fmtYmd(s.workYmd) }}</td>
                 <td>{{ fmtDow(s.workYmd) }}</td>
@@ -860,6 +885,7 @@ const fnExcel = async () => {
     }
     const columns = [
       { header: "사용자명", fixed: false, width: 12 },
+      { header: "고용구분", fixed: false, width: 10 },
       { header: "부서", fixed: false, width: 16 },
       { header: "근무일", fixed: false, width: 12 },
       { header: "요일", fixed: false, width: 6 },
@@ -872,6 +898,7 @@ const fnExcel = async () => {
     ];
     const data = summaryRows.value.map((s) => [
       s.userNm ?? "",
+      empTypeLabel(s),
       s.nodeNm ?? "",
       fmtYmd(s.workYmd),
       fmtDow(s.workYmd),
@@ -900,6 +927,7 @@ const fnExcel = async () => {
   }
   const columns = [
     { header: "사용자명", fixed: false, width: 12 },
+    { header: "고용구분", fixed: false, width: 10 },
     { header: "부서", fixed: false, width: 16 },
     { header: "근무구분", fixed: false, width: 14 },
     { header: "근무일", fixed: false, width: 12 },
@@ -918,6 +946,7 @@ const fnExcel = async () => {
   ];
   const data = displayRows.value.map((r) => [
     r.userNm ?? "",
+    empTypeLabel(r),
     r.nodeNm ?? "",
     workTypeLabel(r),
     fmtYmd(r.workYmd),
@@ -1188,6 +1217,9 @@ const statusBadgeClass = (cd) => {
   }
 };
 
+// 고용구분 라벨: DAILY=일용직, 그 외(REGULAR/NULL)=정규직 — NULL 은 레거시 행이라 정규직 취급.
+const empTypeLabel = (r) => (r?.employmentType === "DAILY" ? "일용직" : "정규직");
+
 // 근무구분 라벨: 정상근무 / 초과근무
 // prafta-043: 초과근무 유형(연장/야간/휴일) 전면 파기 — 유형 표기 없이 '초과근무' 단일 표기.
 const workTypeLabel = (r) => {
@@ -1386,6 +1418,8 @@ const summaryRows = computed(() => {
       g = {
         _key: key,
         userNm: r.userNm,
+        // 고용구분(사용자 단위 속성 — 같은 그룹 행은 전부 동일)
+        employmentType: r.employmentType,
         nodeNm: r.nodeNm,
         workYmd: r.workYmd,
         workedMin: 0,
@@ -1979,6 +2013,16 @@ onBeforeUnmount(() => {
 .b-ot {
   background: #ffedd5;
   color: #9a3412;
+}
+
+/* 고용구분 배지: 정규직(중립 회색) / 일용직(청록 — 근무구분·상태 배지 팔레트와 겹치지 않게) */
+.b-emp-regular {
+  background: #e5e7eb;
+  color: #374151;
+}
+.b-emp-daily {
+  background: #ccfbf1;
+  color: #115e59;
 }
 
 .a08-btn-detail {

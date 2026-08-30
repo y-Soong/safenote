@@ -133,6 +133,10 @@
             , CAST(NULL AS CHAR(1))                                              AS fixedOtUnfulfilledYn
             , CAST(NULL AS SIGNED)                                               AS fixedOtActMinutes
 
+            <!-- 고용형태(REGULAR/DAILY/NULL) - 화면 정규직/일용직 구분 컬럼용(NULL=정규직 취급).
+                 record(AttdListsResult) 마지막 필드 - UNION 분기 동수 유지. -->
+            , U.EMPLOYMENT_TYPE                                                  AS employmentType
+
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
             ON  A.CMPNY_CD = NT.CMPNY_CD
@@ -339,6 +343,9 @@
             , NULL                                                               AS fixedOtExemptYn
             , NULL                                                               AS fixedOtUnfulfilledYn
             , NULL                                                               AS fixedOtActMinutes
+
+            <!-- 고용형태 - 초과근무 행도 동일 표기(정규근태 분기와 컬럼 수/순서 동수 유지) -->
+            , U.EMPLOYMENT_TYPE                                                  AS employmentType
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와

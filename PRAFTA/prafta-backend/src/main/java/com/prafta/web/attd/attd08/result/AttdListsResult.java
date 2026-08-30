@@ -88,6 +88,13 @@ public record AttdListsResult(
      * 슬롯 행에만 실리며(일 단위 값의 행 중복 방지) 고정연장 없는 타입은 null.
      */
     , Integer fixedOtActMinutes
+
+    /**
+     * 고용형태(TB_USER.EMPLOYMENT_TYPE) — 'REGULAR'/'DAILY'/NULL.
+     * 화면(Attd_08)의 정규직/일용직 구분 컬럼용. NULL 은 정규직 취급(레거시 행 — DAILY 아님).
+     * ⚠️ record 끝 = SELECT 끝 동일 순서(위치 매핑) — UNION 양 분기 끝에 동수로 추가되어 있다.
+     */
+    , String employmentType
 ) {
 
     /**
@@ -105,6 +112,7 @@ public record AttdListsResult(
             , newEffPlanStart, newEffPlanEnd
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, fixedOtUnfulfilledYn, fixedOtActMinutes
+            , employmentType
         );
     }
 
@@ -123,6 +131,7 @@ public record AttdListsResult(
             , effPlanStart, effPlanEnd
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
+            , employmentType
         );
     }
 }
