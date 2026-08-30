@@ -320,7 +320,7 @@ const baseCodeArr = ref({});
 
 // 탭 / 결과
 const activeTab = ref("answer"); // answer | defect
-const histList = ref([]); // 서버 원본(좌표별 오름차순)
+const histList = ref([]); // 서버 원본(점검일자 내림차순 · 좌표 내 타임라인 오름차순)
 
 // 화면 제어
 const siteDisabled = ref(false);
@@ -334,8 +334,9 @@ const targetDisabled = computed(() => proxy.$util.isEmpty(chkLstType.value));
 const overwriteOnly = ref(true);
 
 // 좌표(사업장·점검대상·문항·일자) 단위 그룹핑 결과
-//   서버가 (siteNm, chkptNm, inspectItemSubj, workDate, actionDtime) 오름차순으로 정렬해 내려주므로
-//   순차 스캔하며 좌표 키가 바뀔 때 새 그룹을 연다(타임라인 오름차순 보존).
+//   서버가 (workDate 내림차순, siteNm, chkptNm, inspectItemSubj, actionDtime 오름차순)으로 정렬해
+//   내려주므로 순차 스캔하며 좌표 키가 바뀔 때 새 그룹을 연다.
+//   → 화면 정렬축 = 점검일자 최신순(위가 최신), 좌표 내부는 타임라인 오름차순 보존.
 //   그룹을 닫을 때 직전 행 대비 변경점(valueChanged/performerChanged/isRevert)을 함께 표시해 둔다 —
 //   스냅샷만 나열하면 "무엇이 바뀌었는지"를 사용자가 위아래로 눈 비교해야 하기 때문.
 const groupedList = computed(() => {

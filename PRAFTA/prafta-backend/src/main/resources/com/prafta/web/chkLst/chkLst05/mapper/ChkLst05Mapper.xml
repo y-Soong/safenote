@@ -79,7 +79,7 @@
       <if test="inspectItemCd != null and inspectItemCd != ''">
         AND H.INSPECT_ITEM_CD = #{inspectItemCd}
       </if>
-    ORDER BY S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.WORK_DATE, H.ACTION_DTIME ASC, H.HIST_ID ASC
+    ORDER BY H.WORK_DATE DESC, S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.ACTION_DTIME ASC, H.HIST_ID ASC
     </select>
 
     <!-- 불량조치 덮어쓰기 이력. 사진 서빙 조인(F)은 조치 사진 파일유형(fileType='006').
@@ -152,7 +152,7 @@
       <if test="inspectItemCd != null and inspectItemCd != ''">
         AND H.INSPECT_ITEM_CD = #{inspectItemCd}
       </if>
-    ORDER BY S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.WORK_DATE, H.ACTION_DTIME ASC, H.HIST_ID ASC
+    ORDER BY H.WORK_DATE DESC, S.SITE_NM, T.CHKPT_NM, I.INSPECT_ITEM_SUBJ, H.ACTION_DTIME ASC, H.HIST_ID ASC
     </select>
 
 </mapper>
