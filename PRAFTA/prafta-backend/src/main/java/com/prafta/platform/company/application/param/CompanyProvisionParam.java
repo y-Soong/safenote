@@ -24,6 +24,8 @@ public record CompanyProvisionParam(
     , String schEndTime
     , String brkStrTime
     , String brkEndTime
+    // 기본 근무타입(ST001) 적용일(YYYYMMDD, 선택 — prafta-061 R1. 미입력 시 오늘 폴백). 검증은 서비스 계층.
+    , String schApplyDate
     , String adminNm
     , String adminId
     , String adminMbl
@@ -48,6 +50,7 @@ public record CompanyProvisionParam(
             , request.getSchEndTime()
             , request.getBrkStrTime()
             , request.getBrkEndTime()
+            , request.getSchApplyDate()
             , request.getAdminNm()
             , request.getAdminId()
             , request.getAdminMbl()

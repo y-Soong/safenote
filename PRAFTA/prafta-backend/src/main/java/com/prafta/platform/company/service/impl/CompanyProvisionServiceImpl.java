@@ -2,6 +2,8 @@ package com.prafta.platform.company.service.impl;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.time.format.ResolverStyle;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
@@ -84,6 +86,15 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
     private static final int ADMIN_ID_MAX_LENGTH = 50;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
+
+    /**
+     * 적용일 실존 날짜 검증용 strict 파서(prafta-061 R1).
+     *
+     * <p>기본 YMD 포맷터(yyyy + SMART)는 20250230 같은 비실존일을 월말로 보정해 통과시킨다 —
+     * STRICT + 'uuuu'(proleptic year) 조합이어야 실존하지 않는 날짜에 예외가 난다.
+     */
+    private static final DateTimeFormatter YMD_STRICT =
+            DateTimeFormatter.ofPattern("uuuuMMdd").withResolverStyle(ResolverStyle.STRICT);
 
     @Override
     @Transactional(rollbackFor = Exception.class)
@@ -170,6 +181,32 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
             brkMin = String.valueOf(brkEnd - brkStr); // FST_SCH_BRK_MIN varchar(3) — 구간상한(1440미만)으로 자릿수 안전
         }
 
+        // 6-2) 기본 근무타입 적용일(선택 입력 — prafta-061 R1. 미입력 시 오늘=회사 생성일, 종전 동작과 동일).
+        //   과거 날짜 허용 — 과거 입사자의 재직 기간에 스케줄 지정이 BEFORE_CREATE 로 차단되던 문제의 해소축.
+        //   미래 날짜 금지 — 계정 생성/로그인 게이트의 기본 근무타입 유효성 검증(countActiveSchOnSite,
+        //   asOfDate=명일)이 적용일>명일이면 유효 버전을 못 찾아 계정 생성이 막힌다. 오늘까지 허용(=종전값).
+        //   ★todayYmd 는 종전 9단계(채번)에서 선언하던 것을 여기로 호이스팅했다 — 11-1(소정이력)·12(사이트)·
+        //     18-2(연차정책) 등 다른 사용처는 동일 트랜잭션 내 동일 값이라 무영향.
+        String todayYmd = LocalDate.now().format(YMD);
+        String schApplyDate = todayYmd;
+        if (!isBlank(param.schApplyDate())) {
+            String normalizedApplyDate = normalizeYmdOrNull(param.schApplyDate());
+            if (normalizedApplyDate == null) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_022);
+            }
+            LocalDate parsedApplyDate;
+            try {
+                // strict 파싱 — 20250230 같은 비실존 날짜 거부(SMART 보정 차단).
+                parsedApplyDate = LocalDate.parse(normalizedApplyDate, YMD_STRICT);
+            } catch (DateTimeParseException e) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_022);
+            }
+            if (parsedApplyDate.isAfter(LocalDate.now())) {
+                throw new ApiException(PlatformErrorCode.PLATFORM_400_022);
+            }
+            schApplyDate = normalizedApplyDate;
+        }
+
         // 7) 회사코드 확정 — 운영자 직접 입력(2026-08-16 전환, 종전 서버 랜덤 20자 발급).
         //    형식 검증 + 중복 검사를 여기서 한다. CMPNY_CD 는 22개 테이블 복합 PK 선두 컬럼이라
         //    한 번 저장되면 사실상 되돌릴 수 없다 — 저장 직전 마지막 관문이다.
@@ -190,7 +227,7 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
         String siteCd = companyProvisionMapper.selectNextSiteCd(cmpnyCd);
         String userCd = companyProvisionMapper.selectNextUserCd(cmpnyCd);
         String nodeCd = FIRST_NODE_CD;
-        String todayYmd = LocalDate.now().format(YMD);
+        // todayYmd 는 6-2(적용일 검증)로 호이스팅됨(prafta-061 R1) — 이하 사용처는 종전과 동일 값.
 
         // 10) master 계정 PII/비밀번호 가공(User01ServiceImpl 와 동일 규약).
         //     USER_ID = 관리자가 지정한 adminId, 초기 비밀번호 = 휴대폰번호(BCrypt).
@@ -285,13 +322,14 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
         companyProvisionMapper.seedCmmSeqFromBaimValD(cmpnyCd);
 
         // 18) 기본 근무타입(ST001, 1구간) 시드 — 시각·휴게는 운영자 입력값(6-1 검증 통과분, 미입력 시 09:00~18:00·휴게 없음).
+        //     적용일은 운영자 입력값(6-2 검증 통과분 — prafta-061 R1. 미입력 시 오늘=종전 동작).
         companyProvisionMapper.insertWorktype(new WorktypeSeedCommand(
                 cmpnyCd
                 , siteCd
                 , DEFAULT_SCH_CD
                 , DEFAULT_SCH_NO
                 , DEFAULT_SCH_TYPE
-                , todayYmd
+                , schApplyDate
                 , schStrTime
                 , schEndTime
                 , brkMin

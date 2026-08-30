@@ -76,6 +76,12 @@ public enum PlatformErrorCode implements ApiErrorCode {
     // ===== 신규 고객사 기본 근무타입 시간(Platform_01, 2026-08-17 확장) =====
     // 기본 근무시간/휴게시간 검증 실패(HHMM 형식, 종료>시작, 휴게는 근무구간 안에서 시작·종료 쌍 입력).
     , PLATFORM_400_019(HttpStatus.BAD_REQUEST, "기본 근무시간 입력이 올바르지 않습니다.\n종료는 시작 이후여야 하고, 휴게시간은 근무시간 안에서 시작·종료를 함께 입력해 주세요.")
+
+    // ===== 신규 고객사 기본 근무타입 적용일(Platform_01, prafta-061 R1) =====
+    // 적용일 검증 실패(YYYYMMDD 형식·실존 날짜·미래 금지 — 오늘까지 허용).
+    //   미래 금지 근거: 계정 생성/로그인 게이트의 기본 근무타입 유효성 검증(asOfDate=명일)과
+    //   충돌해 적용일이 명일보다 미래면 계정 생성이 막힌다.
+    , PLATFORM_400_022(HttpStatus.BAD_REQUEST, "기본 근무타입 적용일이 올바르지 않습니다.\nYYYYMMDD 형식이어야 하며, 미래 날짜는 지정할 수 없습니다.")
     ;
 
     private final HttpStatus httpStatus;

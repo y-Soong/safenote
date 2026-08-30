@@ -242,6 +242,19 @@
      LIMIT 1
     </select>
 
+    <!--
+      prafta-061 R2: 단건 사용자 입사일(HIRE_DATE, YYYYMMDD) - 자동생성 시작일 하한 클램프용.
+      미설정(NULL)/사용자 없음이면 null 반환. 클램프 생략(fail-open) 판단은 서비스가 한다.
+    -->
+    <select id="selectUserHireDate" resultType="string">
+    /* DefaultSchGenMapper.selectUserHireDate */
+    SELECT U.HIRE_DATE
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
     <!-- prafta-com-008-E-8: 기본 근무타입 + 설정시점 갱신(로그인 게이트 저장 경로). -->
     <update id="updateUserDefaultSch">
     /* DefaultSchGenMapper.updateUserDefaultSch */

@@ -60,6 +60,15 @@ public class CompanyProvisionRequest {
     private String brkStrTime;
     private String brkEndTime;
 
+    /**
+     * 기본 근무타입(ST001) 적용일 YYYYMMDD (선택 — prafta-061 R1).
+     *
+     * <p>미입력 시 오늘(회사 생성일) — 종전 동작. 과거 날짜 허용(과거 입사자의 재직 기간에
+     * 스케줄을 지정할 수 있게 하는 것이 이 필드의 존재 이유), 미래 날짜 금지(계정 생성/로그인
+     * 게이트의 기본 근무타입 유효성 검증 asOfDate=명일과 충돌 — PLATFORM_400_022).
+     */
+    private String schApplyDate;
+
     /** 최초 master 계정 관리자명(TB_USER.USER_NM). */
     private String adminNm;
 

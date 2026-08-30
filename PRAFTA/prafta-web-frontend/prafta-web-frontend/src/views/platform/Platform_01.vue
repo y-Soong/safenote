@@ -158,6 +158,26 @@
               </p>
             </td>
           </tr>
+          <!-- 근무제도 적용일 — 기본 근무타입(ST001)의 APPLY_DATE. 미입력 시 서버가 오늘로 폴백(종전 동작).
+               과거 소급 허용(이 필드의 존재 이유), 미래 금지(서버 PLATFORM_400_022 최종 방어). -->
+          <tr>
+            <th>근무제도 적용일</th>
+            <td>
+              <input
+                v-model.trim="form.schApplyDate"
+                type="text"
+                inputmode="numeric"
+                maxlength="8"
+                placeholder="YYYYMMDD (미입력 시 오늘 = 회사 생성일)"
+                :disabled="saving"
+              />
+              <p class="hint">
+                기본 근무타입의 적용 시작일입니다. 과거 입사자의 재직 기간에 스케줄을
+                지정하려면 그 기간을 포함하는 과거 날짜로 입력하세요. 미래 날짜는
+                지정할 수 없으며, 미입력 시 오늘(회사 생성일)부터 적용됩니다.
+              </p>
+            </td>
+          </tr>
           <tr>
             <th>관리자명 <span class="req">*</span></th>
             <td>
@@ -274,6 +294,10 @@ const form = reactive({
   schEndTime: "18:00",
   brkStrTime: "12:00",
   brkEndTime: "13:00",
+  // 근무제도 적용일(YYYYMMDD, 선택) — 빈 값이면 서버가 오늘(회사 생성일)로 폴백.
+  //   오늘 날짜 프리필은 하지 않는다: 클라 시계가 서버와 어긋나면 자정 경계에서
+  //   "미래 날짜" 오거부가 날 수 있어 빈 값=서버 todayYmd 폴백이 안전하다.
+  schApplyDate: "",
   adminNm: "",
   adminId: "",
   adminMbl: "",
@@ -404,6 +428,22 @@ function validate() {
       return "휴게시간은 근무시간 안에 있어야 하고, 종료가 시작보다 늦어야 합니다.";
     }
   }
+  // 근무제도 적용일: 입력 시 8자리 숫자 + 미래 날짜 1차 차단(서버 PLATFORM_400_022가 최종 권위).
+  if (form.schApplyDate) {
+    const applyDate = digits(form.schApplyDate);
+    if (applyDate.length !== 8) {
+      return "근무제도 적용일은 YYYYMMDD 8자리여야 합니다(미입력 시 오늘부터 적용).";
+    }
+    // 8자리 YYYYMMDD 끼리는 문자열 비교가 날짜 비교와 동치다.
+    const now = new Date();
+    const todayYmd =
+      `${now.getFullYear()}` +
+      `${String(now.getMonth() + 1).padStart(2, "0")}` +
+      `${String(now.getDate()).padStart(2, "0")}`;
+    if (applyDate > todayYmd) {
+      return "근무제도 적용일에 미래 날짜는 지정할 수 없습니다.\n미입력 시 오늘(회사 생성일)부터 적용됩니다.";
+    }
+  }
   // 통상근로시간: 입력했다면 0 초과 ~ 주 40시간(2400분) 이하.
   const stdMinutes = stdWorkWeekMinutes();
   if (stdMinutes !== null) {
@@ -448,6 +488,8 @@ async function fnSave() {
       schEndTime: form.schEndTime.replace(":", ""),
       brkStrTime: form.brkStrTime ? form.brkStrTime.replace(":", "") : "",
       brkEndTime: form.brkEndTime ? form.brkEndTime.replace(":", "") : "",
+      // 근무제도 적용일 — 빈 값이면 빈 문자열 전송(서버가 오늘=회사 생성일로 폴백, 종전 동작).
+      schApplyDate: form.schApplyDate ? digits(form.schApplyDate) : "",
       adminNm: form.adminNm,
       adminId: form.adminId,
       adminMbl: digits(form.adminMbl),
@@ -473,6 +515,7 @@ async function fnSave() {
     form.schEndTime = "18:00";
     form.brkStrTime = "12:00";
     form.brkEndTime = "13:00";
+    form.schApplyDate = "";
     form.adminNm = "";
     form.adminId = "";
     form.adminMbl = "";

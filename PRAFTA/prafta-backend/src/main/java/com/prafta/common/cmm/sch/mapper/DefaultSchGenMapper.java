@@ -96,6 +96,13 @@ public interface DefaultSchGenMapper {
                             @Param("userCd") String userCd);
 
     /**
+     * prafta-061 R2: 단건 사용자의 입사일(tb_user.HIRE_DATE, YYYYMMDD) 조회 —
+     * 자동생성 시작일 하한 클램프용. 미설정(NULL)/사용자 없음이면 null(서비스가 fail-open).
+     */
+    String selectUserHireDate(@Param("cmpnyCd") String cmpnyCd,
+                              @Param("userCd") String userCd);
+
+    /**
      * prafta-com-008-E-8: tb_user.DEFAULT_SCH_CD + DEFAULT_SCH_SET_DATE=NOW() 갱신(로그인 게이트 저장).
      * @return 갱신 행 수(1 이면 성공)
      */

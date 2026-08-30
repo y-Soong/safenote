@@ -48,6 +48,33 @@ public class DefaultSchGenServiceImpl implements DefaultSchGenService {
         }
         LocalDate from = LocalDate.parse(fromYmd, YMD);
         LocalDate to = LocalDate.parse(toYmd, YMD);
+
+        // 입사일 하한 클램프(prafta-061 R2): from = max(from, HIRE_DATE).
+        // 입사 예정자를 미리 등록하면 입사 전 기간에 스케줄이 깔려 결근처럼 집계되는 문제 방지.
+        // 서비스 내부 단일 지점 — 전 호출 경로(연 배치 1/1~ / 계정생성·기본타입 변경 명일~ /
+        // 소속이동 발효일~)에 공통 적용된다.
+        // ★fail-open: HIRE_DATE 미설정(NULL — 운영 실존, 예: manager 계정)/비정형/파싱 실패는
+        //   클램프 없이 종전 동작 유지(예외로 생성을 막지 않는다. 비정형만 warn 로그 1줄).
+        String hireDateRaw = defaultSchGenMapper.selectUserHireDate(cmpnyCd, userCd);
+        if (hireDateRaw != null) {
+            if (hireDateRaw.matches("^\\d{8}$")) {
+                try {
+                    LocalDate hireDate = LocalDate.parse(hireDateRaw, YMD);
+                    if (hireDate.isAfter(from)) {
+                        from = hireDate;
+                        fromYmd = hireDateRaw; // 휴일 배치 로딩 범위 정합(클램프된 시작일로 조회)
+                    }
+                } catch (Exception e) {
+                    log.warn("기본근무 자동생성 — 입사일 파싱 실패로 클램프 생략(fail-open). cmpnyCd={}, userCd={}, hireDate={}",
+                            cmpnyCd, userCd, hireDateRaw);
+                }
+            } else {
+                log.warn("기본근무 자동생성 — 입사일 비정형으로 클램프 생략(fail-open). cmpnyCd={}, userCd={}, hireDate={}",
+                        cmpnyCd, userCd, hireDateRaw);
+            }
+        }
+
+        // 클램프 후 재검사 — 입사일이 범위 끝(to)보다 뒤면 0건(전 기간이 입사 전).
         if (from.isAfter(to)) {
             return 0;
         }
