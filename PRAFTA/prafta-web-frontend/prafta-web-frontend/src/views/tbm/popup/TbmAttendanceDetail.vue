@@ -9,22 +9,7 @@
         <div class="modal-header" @mousedown="startDrag">
           <span>출결 상세 - {{ props.sessionTitle_p || sessionCd }}</span>
           <div class="header-actions">
-            <button class="icon-button no-print" @click="fnPrint" title="인쇄">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke-width="1.5"
-                stroke="currentColor"
-                class="w-6 h-6"
-              >
-                <path
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  d="M6.72 13.829c-.24.03-.48.062-.72.096m.72-.096a42.415 42.415 0 0110.56 0m-10.56 0L6.34 18m10.94-4.171c.24.03.48.062.72.096m-.72-.096L17.66 18m0 0l.229 2.523a1.125 1.125 0 01-1.12 1.227H7.231c-.662 0-1.18-.568-1.12-1.227L6.34 18m11.318 0h1.091A2.25 2.25 0 0021 15.75V9.456c0-1.081-.768-2.015-1.837-2.175a48.055 48.055 0 00-1.913-.247M6.34 18H5.25A2.25 2.25 0 013 15.75V9.456c0-1.081.768-2.015 1.837-2.175a48.041 48.041 0 011.913-.247m10.5 0a48.536 48.536 0 00-10.5 0m10.5 0V3.375c0-.621-.504-1.125-1.125-1.125h-8.25c-.621 0-1.125.504-1.125 1.125v3.659M18 10.5h.008v.008H18V10.5zm-3 0h.008v.008H15V10.5z"
-                />
-              </svg>
-            </button>
+            <!-- 프린트 버튼 제거(2026-08-30 요청) — 닫기만 유지 -->
             <button class="icon-button no-print" @click="$emit('close')">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -186,6 +171,7 @@
                         <button
                           type="button"
                           class="btn btn-second btn-xs"
+                          title="이상신호 이벤트 타임라인(앱 이탈/GPS 벗어남/네트워크 끊김 기록)을 펼칩니다"
                           @click="fnToggleEvents(row)"
                         >
                           이벤트
@@ -227,6 +213,43 @@
         <div class="modal-footer no-print">
           <div class="btn-group">
             <button class="btn btn-second" @click="$emit('close')">닫기</button>
+          </div>
+        </div>
+
+        <!-- 서명 이미지 오버레이(2026-08-30) — 파일코드 텍스트 alert 대신 실제 서명 이미지 표시.
+             이미지는 인증 스트림 EP(blob)로만 로드한다(공개 정적 URL 금지). -->
+        <div
+          v-if="signTarget"
+          class="sign-overlay"
+          @click.self="fnCloseSignature"
+        >
+          <div class="sign-panel">
+            <p class="sign-panel__title">서명 확인 - {{ signTarget.userNm }}</p>
+            <p v-if="signLoading" class="sign-panel__empty">불러오는 중...</p>
+            <template v-else>
+              <div v-if="signEntryUrl" class="sign-panel__item">
+                <span class="sign-panel__label">입실 서명</span>
+                <img :src="signEntryUrl" alt="입실 서명" class="sign-panel__img" />
+              </div>
+              <div v-if="signExitUrl" class="sign-panel__item">
+                <span class="sign-panel__label">종료 서명</span>
+                <img :src="signExitUrl" alt="종료 서명" class="sign-panel__img" />
+              </div>
+              <p v-if="signTarget.forcedEnd" class="sign-panel__note">
+                종료: 관리자 강제 종료(종료 서명 없음)
+              </p>
+              <p
+                v-if="!signEntryUrl && !signExitUrl"
+                class="sign-panel__empty"
+              >
+                표시할 서명 이미지가 없습니다.
+              </p>
+            </template>
+            <div class="sign-panel__btns">
+              <button class="btn btn-second" @click="fnCloseSignature">
+                닫기
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -341,25 +364,53 @@ const fnUserHistory = (row) => {
   });
 };
 
-// 서명 미리보기(입실/종료 서명 파일). 강제종료 등 서명 없음은 버튼 미노출.
+// ─────────── 서명 이미지 오버레이(2026-08-30) ───────────
+// 종전엔 파일코드 텍스트만 alert 로 보여줬다 → 인증 스트림 EP 로 실제 서명 이미지를 표시한다.
+const signTarget = ref(null);
+const signLoading = ref(false);
+const signEntryUrl = ref("");
+const signExitUrl = ref("");
+
+// 서명 이미지 blob 단건 로드. 실패(404 등)는 해당 칸만 비운다(오버레이 자체는 유지).
+const fnLoadSignBlobUrl = async (attendanceCd, kind) => {
+  try {
+    const response = await axios.get("/webApi/tbm04/attendance-sign-image", {
+      params: { attendanceCd, kind },
+      responseType: "blob",
+    });
+    return URL.createObjectURL(response.data);
+  } catch (e) {
+    return "";
+  }
+};
+
 const fnSignature = async (row) => {
-  const parts = [];
-  if (row.entrySignFileMgmtCd)
-    parts.push("입실 서명: " + row.entrySignFileMgmtCd);
-  if (row.exitSignFileMgmtCd)
-    parts.push("종료 서명: " + row.exitSignFileMgmtCd);
-  if (row.forcedEnd) parts.push("종료: 관리자 강제 종료(서명 없음)");
-  await proxy.$alert(
-    parts.length > 0 ? parts.join("\n") : "등록된 서명이 없습니다."
-  );
+  signTarget.value = row;
+  signLoading.value = true;
+  signEntryUrl.value = "";
+  signExitUrl.value = "";
+  try {
+    if (row.entrySignFileMgmtCd) {
+      signEntryUrl.value = await fnLoadSignBlobUrl(row.attendanceCd, "ENTRY");
+    }
+    if (row.exitSignFileMgmtCd) {
+      signExitUrl.value = await fnLoadSignBlobUrl(row.attendanceCd, "EXIT");
+    }
+  } finally {
+    signLoading.value = false;
+  }
+};
+
+const fnCloseSignature = () => {
+  if (signEntryUrl.value) URL.revokeObjectURL(signEntryUrl.value);
+  if (signExitUrl.value) URL.revokeObjectURL(signExitUrl.value);
+  signEntryUrl.value = "";
+  signExitUrl.value = "";
+  signTarget.value = null;
 };
 
 const hasSignature = (row) =>
   !!(row.entrySignFileMgmtCd || row.exitSignFileMgmtCd);
-
-const fnPrint = () => {
-  window.print();
-};
 
 // 행 색상: 미이수=빨강 / 강제종료=회색 / 이상신호 HIGH=노랑 / 정상=기본
 const rowClass = (row) => {
@@ -567,6 +618,66 @@ const anomalyClass = (level) => {
   padding: 0 0.5rem;
   font-size: var(--btn-font-sm);
   margin: 0 0.15rem;
+}
+
+/* ─── 서명 이미지 오버레이 ─── */
+.sign-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--color-overlay, rgba(0, 0, 0, 0.45));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 95;
+}
+
+.sign-panel {
+  width: min(440px, calc(100vw - 2rem));
+  max-height: 85vh;
+  overflow-y: auto;
+  background: var(--color-surface, #ffffff);
+  border-radius: var(--btn-radius, 8px);
+  padding: 1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.sign-panel__title {
+  margin: 0;
+  font-weight: 700;
+  color: var(--color-text, #374151);
+}
+
+.sign-panel__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sign-panel__label {
+  font-size: var(--btn-font-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.sign-panel__img {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-bg, #f9fafb);
+}
+
+.sign-panel__note,
+.sign-panel__empty {
+  margin: 0;
+  font-size: var(--btn-font-sm);
+  color: var(--color-text-muted);
+}
+
+.sign-panel__btns {
+  display: flex;
+  justify-content: flex-end;
 }
 
 /* 이름 링크(W-15 사용자별 이수 진입) */

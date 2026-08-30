@@ -344,6 +344,16 @@
 	  AND AT.DEL_YN = 'N'
 	</select>
 
+	<!-- 해당 사업장의 노드(부서) 정/부 관리자 여부(서명 이미지 역할 게이트 - Baim05Mapper.countNodeAdminInSite 동형). -->
+	<select id="countNodeAdminInSite" resultType="int">
+	/* Tbm04Mapper.countNodeAdminInSite */
+	SELECT COUNT(1)
+	FROM TB_SITE_NODE A
+	WHERE A.CMPNY_CD = #{cmpnyCd}
+	  AND A.SITE_CD = #{siteCd}
+	  AND (A.MAIN_ADMIN_CD = #{userCd} OR A.SUB_ADMIN_CD = #{userCd})
+	</select>
+
 	<!-- ============================ W-14 미이수 처리 ============================ -->
 	<select id="selectAttendanceGuard" parameterType="com.prafta.web.tbm.tbm04.application.query.AttendanceGuardQuery" resultType="com.prafta.web.tbm.tbm04.result.AttendanceGuardResult">
 	/* Tbm04Mapper.selectAttendanceGuard */

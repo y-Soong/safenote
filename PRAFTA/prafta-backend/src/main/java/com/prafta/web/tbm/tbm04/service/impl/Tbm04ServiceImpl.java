@@ -479,6 +479,18 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		// 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장 세션의 출결만.
 		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), info.sessionSiteCd());
 
+		// [security High #1, 2026-08-30] 관리자 역할 게이트 — 사업장 스코프만으로는 같은 사업장
+		// 일반/일용직 근로자('99999')도 도달해 attendanceCd 열거로 자필 서명(PII) 실물을 수집할 수 있다
+		// (신규 조회 EP 노드 게이트 누락 3회 재발 패턴). 전사 관리자(master/hr/safe/system) 또는
+		// 해당 사업장의 노드(부서) 정/부 관리자만 허용한다(Baim_05 assertSlotWriteRole 패턴 미러 —
+		// 노드 관리자인 TBM 개설자의 열람은 막지 않는다).
+		if (!AuthRoleUtils.canManageSite(param.gvAuthCd())
+				&& tbm04Mapper.countNodeAdminInSite(param.gvCmpnyCd(), info.sessionSiteCd(), param.gvUserCd()) <= 0) {
+			log.warn("TBM 출결 서명 이미지 접근 차단(관리자 역할 아님) - userCd={}, authCd={}, siteCd={}",
+					param.gvUserCd(), param.gvAuthCd(), info.sessionSiteCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
 		String fileMgmtCd = "ENTRY".equals(param.kind())
 				? info.entrySignFileMgmtCd()
 				: info.exitSignFileMgmtCd();

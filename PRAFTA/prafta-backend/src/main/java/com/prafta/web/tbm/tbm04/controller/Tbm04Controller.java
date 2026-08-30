@@ -98,6 +98,8 @@ public class Tbm04Controller {
 		return ResponseEntity.status(HttpStatus.OK)
 				.contentType(MediaType.parseMediaType(file.contentType()))
 				.header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+				// [security Low #5] 저장 contentType 스니핑 우회 방지(이미지 외 해석 차단)
+				.header("X-Content-Type-Options", "nosniff")
 				.body(file.data());
 	}
 

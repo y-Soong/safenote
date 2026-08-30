@@ -51,6 +51,9 @@ public interface Tbm04Mapper {
 	/** 서명 파일 식별 정보(세션이 내 회사 소유일 때만 행 반환 — 클라 파일코드 신뢰 금지). */
 	AttendanceSignInfoResult selectAttendanceSignInfo(@org.apache.ibatis.annotations.Param("gvCmpnyCd") String gvCmpnyCd, @org.apache.ibatis.annotations.Param("attendanceCd") String attendanceCd);
 
+	/** 해당 사업장의 노드(부서) 정/부 관리자 여부(서명 이미지 역할 게이트 — Baim05 동형). 1 이상이면 관리자. */
+	int countNodeAdminInSite(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd, @org.apache.ibatis.annotations.Param("siteCd") String siteCd, @org.apache.ibatis.annotations.Param("userCd") String userCd);
+
 	/* ===== W-14 미이수 처리 ===== */
 	/** 게이트 검증용: 출결 + 소속 세션 메타(스코프/개설자). */
 	AttendanceGuardResult selectAttendanceGuard(AttendanceGuardQuery query);
