@@ -85,7 +85,23 @@
             </div>
             <div v-if="session.managerSignYn === 'Y'" class="meta__row">
               <dt>주관자 서명</dt>
-              <dd>{{ session.managerSignedAt }} 서명 완료</dd>
+              <dd>
+                <span class="meta__text">{{ session.managerSignedAt }} 서명 완료</span>
+                <!-- 서명 이미지: 보호 파일타입('009')이라 정적 URL 로 열람 불가 →
+                     인증 스트림(manager-sign-image) 응답 blob 의 objectURL 로 렌더한다.
+                     로드 실패 시 깨진 이미지 대신 안내 문구만 노출(화면 전체는 정상 유지). -->
+                <span class="sign-view">
+                  <span v-if="signImgLoading" class="sign-view__fallback">불러오는 중…</span>
+                  <img
+                    v-else-if="managerSignUrl && !signImgError"
+                    class="sign-view__img"
+                    :src="managerSignUrl"
+                    alt="주관자 서명"
+                    @error="onSignImgError"
+                  />
+                  <span v-else class="sign-view__fallback">서명 이미지를 불러올 수 없어요</span>
+                </span>
+              </dd>
             </div>
           </dl>
         </section>
@@ -172,7 +188,7 @@
 </template>
 
 <script setup>
-import { ref, computed, getCurrentInstance, onMounted } from 'vue'
+import { ref, computed, getCurrentInstance, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -233,6 +249,57 @@ const signSheetOpen = ref(false)
 const signSubmitting = ref(false)
 const signError = ref('')
 
+// ── 주관자 서명 이미지 열람(tbm04-manager-sign) ────────────────────
+// 서명 파일은 보호 파일타입('009') 이라 공개 정적 URL 로 열 수 없다 → 인증 스트림 EP 를 blob 으로 받아
+// objectURL 로 렌더한다(TbmCompletedDetailView.loadSignImage 패턴 동일).
+const managerSignUrl = ref('')
+const signImgError = ref(false)
+const signImgLoading = ref(false)
+
+// blob objectURL 해제 — 재조회/재할당/화면 이탈 3지점에서 정리(메모리 누수 방지).
+const revokeSignUrl = () => {
+  if (managerSignUrl.value) {
+    try {
+      URL.revokeObjectURL(managerSignUrl.value)
+    } catch (e) {
+      console.warn('[AdminTbmHistoryDetailView] objectURL 해제 실패:', e?.message)
+    }
+    managerSignUrl.value = ''
+  }
+}
+
+// 서명 이미지 로드 — GET /appApi/admin/tbm/sessions/{sessionCd}/manager-sign-image (인증 스트림).
+//   서명 존재(managerSignYn==='Y')일 때만 호출한다. 실패해도 화면 전체를 에러로 만들지 않는다(문구 폴백).
+const loadManagerSignImage = async () => {
+  if (!sessionCd.value || session.value?.managerSignYn !== 'Y') return
+  signImgError.value = false
+  signImgLoading.value = true
+  try {
+    const res = await api.get(
+      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/manager-sign-image`,
+      { responseType: 'blob' },
+    )
+    // 재할당 전 이전 objectURL 해제.
+    revokeSignUrl()
+    // blob 타입을 이미지로 고정한다 — objectURL 내비게이션은 앱 origin 을 상속하므로,
+    // 서버 Content-Type 이 예기치 않게 액티브 콘텐츠여도 실행되지 않도록 방어한다.
+    const serverType = res.headers?.['content-type'] || ''
+    const imageType = serverType.startsWith('image/') ? serverType.split(';')[0] : 'image/png'
+    managerSignUrl.value = URL.createObjectURL(new Blob([res.data], { type: imageType }))
+  } catch (e) {
+    console.warn('[AdminTbmHistoryDetailView] 주관자 서명 이미지 조회 실패:', e?.message)
+    // objectURL 을 비워 '서명 이미지를 불러올 수 없어요' 폴백을 띄운다(깨진 이미지 노출 방지).
+    revokeSignUrl()
+  } finally {
+    signImgLoading.value = false
+  }
+}
+
+// 인라인 렌더 실패(웹뷰 디코딩 실패 등) → 폴백 문구로 전환
+const onSignImgError = () => {
+  signImgError.value = true
+}
+
 const onOpenSignSheet = () => {
   signError.value = ''
   signSheetOpen.value = true
@@ -284,12 +351,17 @@ const loadDetail = async () => {
   }
   isLoading.value = true
   loadError.value = false
+  // 재조회 전 이전 objectURL 해제(누수 방지).
+  revokeSignUrl()
+  signImgError.value = false
   try {
     const { data } = await api.get(
       `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}`,
     )
     session.value = data?.session || null
     if (!session.value) loadError.value = true
+    // 서명 이미지는 인증 스트림으로 별도 로드(사후서명 성공 후 재조회에도 함께 갱신된다).
+    await loadManagerSignImage()
   } catch (e) {
     console.error('[AdminTbmHistoryDetailView] 상세 조회 실패:', e?.message)
     loadError.value = true
@@ -337,6 +409,11 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 onMounted(() => {
   loadDetail()
   loadAttendees()
+})
+
+// 화면 이탈 시 서명 blob objectURL 해제.
+onUnmounted(() => {
+  revokeSignUrl()
 })
 </script>
 
@@ -488,6 +565,36 @@ onMounted(() => {
   font-size: 14px;
   color: var(--color-text-primary);
   word-break: break-all;
+}
+.meta__text {
+  display: block;
+}
+
+/* 주관자 서명 이미지 박스(tbm04-manager-sign) — 메타 행 안의 작은 미리보기 */
+.sign-view {
+  margin-top: var(--space-sm);
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.sign-view__img {
+  max-width: 100%;
+  max-height: 120px;
+  height: auto;
+  display: block;
+}
+.sign-view__fallback {
+  padding: var(--space-md);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  word-break: keep-all;
 }
 
 /* 사후서명 카드(tbm04-manager-sign) */

@@ -308,6 +308,31 @@ public class AppAdminTbmController {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
+    /**
+     * tbm04-manager-sign: 주관자 서명 이미지 스트림(이력 상세 열람용).
+     *
+     * <p>GET /prafta/appApi/admin/tbm/sessions/{sessionCd}/manager-sign-image
+     * <p>서명 파일이 보호 파일타입('009')이라 공개 정적 URL 로 열람할 수 없어 인증 스트림으로 서빙한다
+     * (웹 tbm04 manager-sign-image / 앱 tbm01 my-sign-image 원칙 미러 — no-store + nosniff).
+     * <p>열람 권한 = 이력 상세 진입 가능한 스코프 내 관리자 공통(등록과 달리 개설자 한정 아님).
+     * 세션 없음/서명 미등록/파일 부재는 존재 비노출 단일 404.
+     */
+    @GetMapping("/sessions/{sessionCd}/manager-sign-image")
+    public ResponseEntity<byte[]> getManagerSignImage(@PathVariable("sessionCd") String sessionCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        com.prafta.common.cmm.file.application.model.FileBytesResult file =
+                appAdminTbmService.loadManagerSignImage(AdminSessionDetailParam.of(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                // 저장 contentType 스니핑 우회 방지(이미지 외 해석 차단).
+                .header("X-Content-Type-Options", "nosniff")
+                .body(file.data());
+    }
+
     /** R3 출결 리스트(phase=LIVE: 입실자만 / COMPLETED: 출결 전체). */
     @GetMapping("/sessions/{sessionCd}/attendees")
     public ResponseEntity<?> getAttendees(@PathVariable("sessionCd") String sessionCd,

@@ -85,6 +85,12 @@ public interface AppAdminTbmService {
     /** tbm04-manager-sign: 종료(COMPLETED) 세션 사후 주관자 서명 등록(개설자 본인·서명 NULL·재서명 불가). */
     AdminManagerSignResponse signCompletedSession(AdminManagerSignParam param);
 
+    /**
+     * tbm04-manager-sign: 주관자 서명 이미지 스트림(앱 관리자 이력 상세 열람용).
+     * <p>열람 권한 = 이력 상세에 진입 가능한 관리자(스코프 내) 전원. 등록(사후서명)과 달리 개설자 한정이 아니다.
+     */
+    com.prafta.common.cmm.file.application.model.FileBytesResult loadManagerSignImage(AdminSessionDetailParam param);
+
     AdminAttendeeListResponse selectAttendees(AdminAttendeeListParam param);
 
     AdminForceExitResponse forceExitAttendee(AdminForceExitParam param);

@@ -977,6 +977,55 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     }
 
     /**
+     * 주관자 서명 이미지 스트림(앱 관리자 이력 상세 열람용).
+     *
+     * <p>서명 파일은 보호 파일타입('009')이라 공개 정적 URL(/uploads/**)로 열람할 수 없다.
+     * 웹 {@code Tbm04ServiceImpl.loadManagerSignImage} / 앱 {@code AppTbm01ServiceImpl.loadMySignImage} 와
+     * 동일 원칙 — 인증 스트림 서빙, 파일 식별자는 서버가 세션 가드 행에서 재조회(클라 파일코드 신뢰 금지, IDOR 방지).
+     *
+     * <p>인가: 이력 상세(T-A2/출결)와 동일 체인 — {@code resolveScope}(관리자 진입) →
+     * {@code loadGuard}(자사 세션) → {@code verifyScope}(사업장/노드 스코프). 열람은 스코프 내 관리자 공통이므로
+     * {@code verifyManager}(개설자 본인)는 호출하지 않는다(등록 게이트와 분리 — 확정 설계).
+     *
+     * <p>회사키: 앱 관리자 이력은 자사 개설 세션 스코프(loadGuard 가 gvCmpnyCd 로 강제)이므로 서명 파일도
+     * 자사 스코프로 로드한다(공유 세션 타사 분기 없음).
+     *
+     * <p>세션 없음 / 서명 미등록 / 파일 원본 부재는 모두 존재 비노출 단일 404(TBM_404_010).
+     */
+    @Override
+    public com.prafta.common.cmm.file.application.model.FileBytesResult loadManagerSignImage(
+            AdminSessionDetailParam param) {
+
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+
+        if (!StringUtils.hasText(guard.managerSignFileMgmtCd())) {
+            // 서명 미등록 — 존재 비노출 단일 404.
+            throw new ApiException(TbmErrorCode.TBM_404_010);
+        }
+
+        com.prafta.common.cmm.file.application.model.FileBytesResult file = fileService.loadFileBytes(
+                new com.prafta.common.cmm.file.application.query.FileReadQuery(
+                        param.gvCmpnyCd(), guard.managerSignFileMgmtCd()));
+        if (file == null) {
+            // DB 행/디스크 원본 부재 — 존재 비노출 단일 404.
+            throw new ApiException(TbmErrorCode.TBM_404_010);
+        }
+
+        // 열람 주체를 함께 남긴다 — 개설자 본인 외 스코프 내 관리자도 열람 가능한 EP 라
+        // 서명(개인 서명 이미지) 열람 이력 추적이 필요하다(공통 정책서 §11.3 누가/언제/무엇을).
+        log.info("앱 관리자 TBM 주관자 서명 이미지 스트림 - sessionCd={}, userCd={}",
+                param.sessionCd(), param.gvUserCd());
+        return file;
+    }
+
+    /**
      * 주관자 서명 파일 서버측 검증 — AppTbm01ServiceImpl.validateSignatureFile(c-003) 동형 복제.
      * <p>contentType 화이트리스트(PNG/JPEG) + 크기 상한(5MB) + 매직바이트 확인. 위반 시 TBM_400_070.
      * <p>tbm01 의 private 메서드라 공용 추출 대신 동형 복제(추출 시 tbm01 exit 회귀 위험 회피 — plan §3 재량).
