@@ -136,10 +136,12 @@
       </div>
     </DashboardWidgetCard>
 
-    <!-- A5. 요청정보: 숫자 카드 3분할 + 합계 강조 → Attd_10 (탭 열기만 — T1 확정)
-         표현(사용자 확정): 숫자 카드 3분할(근태보정/초과근무/연차) + 합계 강조.
-         카운트 출처(T3 plan §1 A5): Attd_10 이 쓰는 기존 3 엔드포인트의 목록 length 그대로
-         (건수 일치를 구조적으로 보장). 상단 조회조건과 무관한 "내 결재함" 기준이다.
+    <!-- A5. 요청정보: 대기 요청 숫자 카드 → Attd_10 (탭 열기만 — T1 확정)
+         2026-08-30 사용자 요청: "n건 결재 대기" 합계 텍스트를 제거하고, 빠져 있던 대기 유형
+         (스케줄 수정/근무타입 변경/연차 변경/일용직 입장/셀프가입)을 카드로 채운다.
+         카운트 출처: 각 처리 화면(Attd_10/User_08/User_09)이 쓰는 기존 엔드포인트의 목록 length
+         그대로(건수 일치를 구조적으로 보장). 근태·연차 계열은 "내 결재함" 기준이고,
+         일용직 입장·셀프가입·연차 변경은 서버가 사업장/부서 스코프를 요구해 상단 조회조건을 쓴다.
          API가 값을 주면 그대로 표시, 거부/미제공(403 등) 시 "-" (T3 plan §5 확정 4). -->
     <DashboardWidgetCard
       class="area-req"
@@ -150,13 +152,9 @@
       <div v-if="isReqLoading" class="dash-state">조회 중…</div>
       <div v-else-if="reqError" class="dash-state is-error">{{ reqError }}</div>
       <div v-else class="req-info">
-        <!-- 합계 강조 -->
-        <div class="req-info__total">
-          <strong class="req-info__total-num">{{ reqTotalCnt }}</strong>
-          <span class="req-info__total-label">건 결재 대기</span>
-        </div>
-
-        <!-- 숫자 카드 3분할 (Attd_10 탭 3종과 1:1 대응) -->
+        <!-- 숫자 카드 3×2 (2026-08-30 사용자 요청: 8장 → 6장 병합)
+             연차 = 결재 대기 + 변경 대기 합산(Attd_10 연차 탭 배지와 동일 합산),
+             스케줄·근무타입 = 스케줄 수정 + 근무타입 변경 합산(둘 다 Attd_10 접수함). -->
         <div class="req-info__cards">
           <div class="req-info__card">
             <span class="req-info__card-label">근태 보정</span>
@@ -168,17 +166,26 @@
           </div>
           <div class="req-info__card">
             <span class="req-info__card-label">연차</span>
-            <span class="req-info__card-num">{{ fmtCnt(leaveCnt) }}</span>
+            <span class="req-info__card-num">{{ fmtCnt(leaveTotalCnt) }}</span>
+          </div>
+          <div class="req-info__card">
+            <span class="req-info__card-label">스케줄·근무타입</span>
+            <span class="req-info__card-num">{{ fmtCnt(workChangeCnt) }}</span>
+          </div>
+          <div class="req-info__card">
+            <span class="req-info__card-label">일용직 입장</span>
+            <span class="req-info__card-num">{{ fmtCnt(dailyEntryCnt) }}</span>
+          </div>
+          <div class="req-info__card">
+            <span class="req-info__card-label">셀프가입</span>
+            <span class="req-info__card-num">{{ fmtCnt(selfJoinCnt) }}</span>
           </div>
         </div>
 
-        <p class="req-info__note">내 결재함(요청 승인 관리) 기준</p>
-        <p
-          v-if="
-            correctionCnt === null || overtimeCnt === null || leaveCnt === null
-          "
-          class="req-info__note"
-        >
+        <p class="req-info__note">
+          일용직 입장·셀프가입은 조회 사업장 기준
+        </p>
+        <p v-if="hasNullReqCnt" class="req-info__note">
           조회 권한이 있는 항목만 건수가 표시됩니다.
         </p>
       </div>
@@ -498,22 +505,42 @@ const leaveError = ref("");
 //   (인원수에 비례해 커져 부서 간 비교 불가 + 시간차 연차가 순환소수라 소수점이 길게 붙음).
 const leaveUsage = ref(null);
 
-// ── A5. 요청정보 상태 (T3) ────────────────────────────────────
+// ── A5. 요청정보 상태 (T3 / 2026-08-30 대기 유형 전체 확장) ───
 const isReqLoading = ref(false);
 const reqError = ref("");
-// null = 미조회/미제공(권한 거부 포함) → "-" 표시. 숫자 = Attd_10 동일 엔드포인트 목록 length 그대로.
-const correctionCnt = ref(null);
-const overtimeCnt = ref(null);
-const leaveCnt = ref(null);
+// null = 미조회/미제공(권한 거부 포함) → "-" 표시. 숫자 = 각 처리 화면 동일 엔드포인트 목록 length 그대로.
+const correctionCnt = ref(null); // 근태 보정 (Attd_10)
+const overtimeCnt = ref(null); // 초과근무 (Attd_10)
+const leaveCnt = ref(null); // 연차 결재 (Attd_10)
+const leaveChangeCnt = ref(null); // 연차 변경(이동/삭제 확인 대기, Attd_10)
+const scheduleCnt = ref(null); // 스케줄 수정 (Attd_10)
+const defaultSchChangeCnt = ref(null); // 근무타입 변경 (Attd_10)
+const dailyEntryCnt = ref(null); // 일용직 입장 승인 (User_08)
+const selfJoinCnt = ref(null); // 셀프가입 승인 (User_09)
 
 // ── T3 표시 전용 계산 (프레젠테이션 로직) ─────────────────────
 
-// A5 합계 — 조회된 카운트만 합산 (null 은 제외)
-const reqTotalCnt = computed(
-  () =>
-    (correctionCnt.value ?? 0) +
-    (overtimeCnt.value ?? 0) +
-    (leaveCnt.value ?? 0)
+// A5 병합 합산 — 두 값 다 null(전부 미조회/거부)이면 null("-"), 한쪽만 있으면 그 값만 합산.
+const sumCnts = (a, b) => (a === null && b === null ? null : (a ?? 0) + (b ?? 0));
+
+// 연차 = 결재 대기 + 변경(이동/삭제 확인) 대기 — Attd_10 연차 탭 배지와 동일 합산.
+const leaveTotalCnt = computed(() => sumCnts(leaveCnt.value, leaveChangeCnt.value));
+
+// 스케줄·근무타입 = 스케줄 수정 + 근무타입 변경 대기 합산.
+const workChangeCnt = computed(() =>
+  sumCnts(scheduleCnt.value, defaultSchChangeCnt.value)
+);
+
+// A5: 권한 미보유 등으로 "-" 인 카드가 하나라도 있는지 — 안내 문구 노출 판단(표시값 기준)
+const hasNullReqCnt = computed(() =>
+  [
+    correctionCnt.value,
+    overtimeCnt.value,
+    leaveTotalCnt.value,
+    workChangeCnt.value,
+    dailyEntryCnt.value,
+    selfJoinCnt.value,
+  ].some((v) => v === null)
 );
 
 const fmtCnt = (v) => (v === null || v === undefined ? "-" : v);
@@ -723,7 +750,7 @@ watch(
     if (!p || !p.siteCd) return;
     fetchOtTrend(p); // A3
     fetchLeaveUsage(p); // A4
-    fetchReqCounts(); // A5 (상단 조회조건 무관 — 내 결재함 기준)
+    fetchReqCounts(p); // A5 (일용직 입장/셀프가입/연차 변경은 조회 사업장·부서 스코프 사용)
   }
 );
 
@@ -781,15 +808,37 @@ const fetchLeaveUsage = async (p) => {
   }
 };
 
-// A5 요청정보 — Attd_10 fnLoadCounts 와 동일 3 엔드포인트 재사용(건수 일치 보장).
-// 3건 개별 처리(catch) — 실패(403 권한 거부 포함) 시 해당 카운트만 null 유지("-").
-// reqError 는 3건 전부 실패했을 때만 세팅(위젯 전체 에러) — T3 plan §5 확정 4.
-const fetchReqCounts = async () => {
+// A5 요청정보 — 각 처리 화면(Attd_10/User_08/User_09)과 동일 엔드포인트 재사용(건수 일치 보장).
+// 항목 개별 처리(catch) — 실패(403 권한 거부 포함) 시 해당 카운트만 null 유지("-").
+// reqError 는 전부 실패했을 때만 세팅(위젯 전체 에러) — T3 plan §5 확정 4.
+// 2026-08-30 확장: 스케줄 수정/근무타입 변경/연차 변경/일용직 입장/셀프가입 대기 건수 추가.
+//   일용직 입장(siteCd 필수)·셀프가입(비전사 권한은 부서 지정 필요)·연차 변경은 서버 스코프 게이트가
+//   있어 상단 조회조건(p)을 그대로 싣는다 — 각 화면의 조회 파라미터 계약과 동일.
+const fetchReqCounts = async (p) => {
   isReqLoading.value = true;
   reqError.value = "";
   correctionCnt.value = null;
   overtimeCnt.value = null;
   leaveCnt.value = null;
+  leaveChangeCnt.value = null;
+  scheduleCnt.value = null;
+  defaultSchChangeCnt.value = null;
+  dailyEntryCnt.value = null;
+  selfJoinCnt.value = null;
+
+  // 전사 권한 여부 — 연차 변경 카운트의 호출 생략 판정(Attd_10 buildLeaveChangeScopeParams 미러)
+  const authCd = sessionStorage.getItem("gv_authCd");
+  const isMasterOrHr = authCd === "master" || authCd === "hr";
+
+  // /reqinbox/pending 계열 공통 헬퍼 (reqTypeGroup 만 다름)
+  const fetchPending = (reqTypeGroup, targetRef) =>
+    axios
+      .get("/webApi/reqinbox/pending", { params: { reqTypeGroup } })
+      .then((r) => {
+        targetRef.value = (r.data?.pendingList ?? []).length;
+        return true;
+      })
+      .catch(() => false);
 
   const tasks = [
     axios
@@ -799,29 +848,72 @@ const fetchReqCounts = async () => {
         return true;
       })
       .catch(() => false),
-    axios
-      .get("/webApi/reqinbox/pending", {
-        params: { reqTypeGroup: "correction" },
-      })
-      .then((r) => {
-        correctionCnt.value = (r.data?.pendingList ?? []).length;
-        return true;
-      })
-      .catch(() => false),
-    axios
-      .get("/webApi/reqinbox/pending", {
-        params: { reqTypeGroup: "overtime" },
-      })
-      .then((r) => {
-        overtimeCnt.value = (r.data?.pendingList ?? []).length;
-        return true;
-      })
-      .catch(() => false),
+    fetchPending("correction", correctionCnt),
+    fetchPending("overtime", overtimeCnt),
+    fetchPending("schedule", scheduleCnt),
+    fetchPending("defaultSchChange", defaultSchChangeCnt),
   ];
+
+  // 연차 변경(확인 대기 AGREED) — 비전사 권한 + 부서 미지정이면 서버가 400 을 주므로 호출 생략("-").
+  if (p?.siteCd && (isMasterOrHr || p.nodeCd)) {
+    const changeParams = { REQ_STATUS: "AGREED", SITE_CD: p.siteCd };
+    if (p.nodeCd) {
+      changeParams.NODE_CD = p.nodeCd;
+      changeParams.INC_SUB_NODE_YN = p.incSubNodeYn ? "Y" : "N";
+    }
+    tasks.push(
+      axios
+        .get("/webApi/attd13/change-requests", { params: changeParams })
+        .then((r) => {
+          leaveChangeCnt.value =
+            r.data?.totalCnt ?? (r.data?.list ?? []).length;
+          return true;
+        })
+        .catch(() => false)
+    );
+  }
+
+  // 일용직 입장 승인 대기 — User_08 탭1과 동일 EP. siteCd 필수(사업장 인가 가드),
+  //   reqStatus='01'(대기), 요청일 미지정 = 전체 대기 건.
+  if (p?.siteCd) {
+    tasks.push(
+      axios
+        .get("/webApi/user08/entry-request-lists", {
+          params: { siteCd: p.siteCd, reqStatus: "01" },
+        })
+        .then((r) => {
+          dailyEntryCnt.value =
+            r.data?.totalCount ?? (r.data?.entryRequestList ?? []).length;
+          return true;
+        })
+        .catch(() => false)
+    );
+  }
+
+  // 셀프가입 승인 대기 — User_09 와 동일 EP. accountStatus='06'(승인대기).
+  //   비전사 권한은 서버 canManageNode 게이트가 부서 지정을 요구한다 — 실패 시 "-".
+  if (p?.siteCd) {
+    tasks.push(
+      axios
+        .get("/webApi/user09/self-join-lists", {
+          params: {
+            siteCd: p.siteCd,
+            nodeCd: p.nodeCd || "",
+            incSubNodeYn: p.incSubNodeYn ? "Y" : "N",
+            accountStatus: "06",
+          },
+        })
+        .then((r) => {
+          selfJoinCnt.value = (r.data?.selfJoinList ?? []).length;
+          return true;
+        })
+        .catch(() => false)
+    );
+  }
 
   const results = await Promise.all(tasks);
   isReqLoading.value = false;
-  // 3건 전부 실패 시에만 위젯 에러 (일부 실패는 해당 카운트만 "-")
+  // 전부 실패 시에만 위젯 에러 (일부 실패는 해당 카운트만 "-")
   if (results.every((ok) => !ok)) {
     reqError.value = getMessage(MSG.SEARCH_ERROR_DEFAULT);
   }
@@ -1053,33 +1145,13 @@ const fetchReqCounts = async () => {
   color: var(--color-danger, #ef4444);
 }
 
-/* ── A5. 요청정보 (숫자 카드 3분할 + 합계 강조) ──────────────── */
+/* ── A5. 요청정보 (대기 유형별 숫자 카드 — 합계 텍스트 제거 2026-08-30) ── */
 .req-info {
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   min-height: 92px;
-}
-
-.req-info__total {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 0.375rem;
-  padding: 0.5rem 0 0.75rem;
-}
-
-.req-info__total-num {
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--color-primary, #16a34a);
-}
-
-.req-info__total-label {
-  font-size: 0.8125rem;
-  color: var(--color-text-muted, #4b5563);
 }
 
 .req-info__cards {
@@ -1118,6 +1190,8 @@ const fetchReqCounts = async () => {
   line-height: 1.4;
   color: var(--color-text-muted, #4b5563);
   text-align: center;
+  /* 좁은 위젯에서 어절 단위로 줄바꿈(글자 단위 쪼개짐/영역 이탈 방지) */
+  word-break: keep-all;
 }
 
 /* ── A3. 초과근무 6개월 추이 (인라인 SVG 라인차트 + HTML 월 라벨) ──
