@@ -334,7 +334,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .gpsManualConfirmYn(session.gpsManualConfirmYn())
                 .openedAt(session.openedAt())
                 .prepStartAt(session.prepStartAt())
-                .prepAutoStartAt(computePrepAutoStartAt(session.statusCd(), session.prepStartAt()))
+                .prepAutoStartAt(computePrepAutoStartAt(session.statusCd(), session.prepStartAtEpoch()))
                 .startedAt(session.startedAt())
                 .endedAt(session.endedAt())
                 .cancelledAt(session.cancelledAt())
@@ -1874,29 +1874,25 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     }
 
     /**
-     * 자동 교육시작 예정시각 산출(=prepStartAt + 자동시작분). OPENED 이며 prepStartAt 존재 시에만 산출.
-     * prepStartAt 포맷('yyyy-MM-dd HH:mm:ss')을 파싱해 분을 더한 뒤 UTC 명시(Z 접미사)로 반환한다.
+     * 자동 교육시작 예정시각 산출(=PREP_START_AT + 자동시작분, UTC 절대시각 'Z' 접미사).
+     * OPENED 이며 prepStartAtEpoch 존재 시에만 산출. 응답 포맷('yyyy-MM-dd HH:mm:ssZ')은 종전과 동일.
      *
-     * <p>PREP_START_AT 은 DB 서버의 {@code NOW()}(=UTC 벽시계값)로 기록된다(운영 EC2/RDS 시스템
-     * 시각이 UTC). Z 표기 없이 순수 벽시계 문자열만 내려주면 클라이언트(new Date(...))가 이를
-     * 기기 로컬시각(KST)으로 오인해 파싱 — 실제보다 9시간 이른 시각으로 계산돼 생성 직후부터
-     * 카운트다운이 즉시 만료된 것처럼 보이는 결함이 있었다(2026-08-23 실기기 검증에서 발견,
-     * iOS/Android 공통 재현). 재발 방지를 위해 반드시 Z 를 붙여 절대시각임을 명시한다.
+     * <p>★저장 타임존을 코드에서 가정하지 말 것: 2026-08-23엔 "DB=UTC" 전제로 벽시계에 Z 를 붙였는데,
+     * 2026-08-30 DB 세션 KST 전환 후 예정시각이 9시간 미래로 밀렸다(카운트다운 555분 결함).
+     * 매퍼의 {@code UNIX_TIMESTAMP(PREP_START_AT)}(세션 타임존으로 해석된 epoch = 절대시각)를 쓰면
+     * DB 가 어느 타임존이든 항상 올바르다. (웹 Tbm02ServiceImpl 동일 수정 — 미러 유지)
      */
-    private String computePrepAutoStartAt(String statusCd, String prepStartAt) {
-        if (!"OPENED".equals(statusCd) || !StringUtils.hasText(prepStartAt)) {
+    private String computePrepAutoStartAt(String statusCd, Long prepStartAtEpoch) {
+        // KST 전환(2026-08-30) 대응: 벽시계+Z(="DB=UTC 저장" 가정) → epoch 기반으로 교체.
+        // UNIX_TIMESTAMP(PREP_START_AT)는 세션 타임존으로 해석된 절대시각이라 저장 TZ 가정이 불필요
+        // (전환 후 예정시각이 9시간 미래로 밀리던 카운트다운 555분 결함 수정 — 웹 Tbm02ServiceImpl 미러).
+        if (!"OPENED".equals(statusCd) || prepStartAtEpoch == null) {
             return null;
         }
-        try {
-            java.time.format.DateTimeFormatter f =
-                    java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            return java.time.LocalDateTime.parse(prepStartAt, f)
-                    .plusMinutes(prepAutoStartMinutes)
-                    .format(f) + "Z";
-        } catch (Exception e) {
-            log.warn("TBM 자동 교육시작 예정시각 산출 실패 - prepStartAt={}", prepStartAt);
-            return null;
-        }
+        return java.time.Instant.ofEpochSecond(prepStartAtEpoch)
+                .plus(java.time.Duration.ofMinutes(prepAutoStartMinutes))
+                .atOffset(java.time.ZoneOffset.UTC)
+                .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + "Z";
     }
 
     /**

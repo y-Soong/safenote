@@ -70,31 +70,38 @@ function isNotEmpty(value) {
   return !isEmpty(value)
 }
 
-// 2. 오늘 날짜 반환
-function getToday() {
-  const today = new Date()
-  return today.toISOString().split('T')[0]
+// 로컬 달력일 YYYY-MM-DD 포맷 (2026-08-30 결함 수정 공용 헬퍼)
+//   ★toISOString()은 UTC 기준이라 KST 00~09시에 전날 날짜를 반환하던 결함이 있었다.
+//   반드시 로컬 구성요소(getFullYear/getMonth/getDate)로 조립한다(재발 금지 — toISOString 사용 금지).
+function toLocalYmd(d) {
+  const p = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
 }
 
-// 3. 오늘 + 한달 뒤 날짜 반환
+// 2. 오늘 날짜 반환 (로컬 기준 — KST 00~09시 하루 밀림 결함 수정)
+function getToday() {
+  return toLocalYmd(new Date())
+}
+
+// 3. 오늘 + 한달 뒤 날짜 반환 (로컬 기준)
 function getTodayAndNextMonth() {
   const today = new Date()
   const nextMonth = new Date()
   nextMonth.setMonth(nextMonth.getMonth() + 1)
   return {
-    today: today.toISOString().split('T')[0],
-    nextMonth: nextMonth.toISOString().split('T')[0],
+    today: toLocalYmd(today),
+    nextMonth: toLocalYmd(nextMonth),
   }
 }
 
-// 4. 현재 월의 첫날 + 마지막 날
+// 4. 현재 월의 첫날 + 마지막 날 (로컬 기준)
 function getFirstAndLastDayOfThisMonth() {
   const now = new Date()
   const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
   const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0)
   return {
-    firstDay: firstDay.toISOString().split('T')[0],
-    lastDay: lastDay.toISOString().split('T')[0],
+    firstDay: toLocalYmd(firstDay),
+    lastDay: toLocalYmd(lastDay),
   }
 }
 

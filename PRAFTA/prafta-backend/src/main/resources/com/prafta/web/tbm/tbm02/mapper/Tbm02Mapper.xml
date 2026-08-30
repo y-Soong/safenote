@@ -253,6 +253,9 @@
 		, A.CANCEL_REASON		AS cancelReason
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)	AS insertNm
 		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')		AS insertDate
+		/* 준비 타이머 절대시각(epoch 초) - 세션 타임존으로 해석되므로 저장 TZ(UTC/KST) 가정이 불필요.
+		   KST 전환(2026-08-30) 후 벽시계+Z 산출이 9시간 밀리던 결함의 수정 축. record 마지막 필드와 순서 일치. */
+		, UNIX_TIMESTAMP(A.PREP_START_AT)					AS prepStartAtEpoch
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
 		 	ON (

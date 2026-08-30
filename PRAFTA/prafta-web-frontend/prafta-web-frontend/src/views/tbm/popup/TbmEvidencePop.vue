@@ -2,7 +2,7 @@
   <Transition name="fade">
     <div v-show="true" class="modal-overlay prafta-modal-popup">
       <div
-        class="modal-content tev-modal"
+        class="modal-content-normal tev-modal"
         :style="{ top: position.y + 'px', left: position.x + 'px' }"
         ref="modalRef"
       >
@@ -276,61 +276,87 @@ onMounted(fnLoadSites);
 
 <style scoped>
 .tev-modal {
-  width: 760px;
-  max-width: 94vw;
+  width: min(760px, 94vw);
 }
 
 .tev-body {
-  padding: 0.75rem 1rem;
-  max-height: 68vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
 }
 
-/* 조회 조건 행 */
+/* 조회 조건: 필터 바 (연한 패널) */
 .tev-cond {
   display: flex;
   align-items: flex-end;
   gap: 0.75rem;
   flex-wrap: wrap;
+  padding: 0.75rem 0.875rem;
+  background: var(--color-bg, #f9fafb);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
 }
 .tev-cond__item {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
 }
+.tev-cond__item:nth-of-type(3) {
+  flex: 1 1 160px;
+}
 .tev-cond__item label {
   font-size: 0.75rem;
+  font-weight: 600;
   color: var(--color-text-muted, #4b5563);
 }
 .tev-cond__item select {
-  min-width: 120px;
-  padding: 0.3rem 0.5rem;
+  height: 34px;
+  min-width: 140px;
+  width: 100%;
+  padding: 0 0.5rem;
+  background: var(--card-bg, #ffffff);
   border: 1px solid var(--color-border-strong, #d1d5db);
   border-radius: var(--input-radius, 8px);
   font-size: 0.8125rem;
+  color: var(--color-text-strong, #111827);
+}
+.tev-cond__item select:focus {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+.tev-cond > .btn {
+  height: 34px;
+  min-height: 34px;
+  padding: 0 1rem;
 }
 
 .tev-note {
-  margin: 0.5rem 0 0.75rem;
+  margin: 0;
   font-size: 0.6875rem;
   line-height: 1.5;
   color: var(--color-text-muted, #4b5563);
   word-break: keep-all;
+  padding-left: 0.25rem;
 }
 
 .tev-state {
-  min-height: 100px;
+  min-height: 160px;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--color-text-muted, #4b5563);
   font-size: 0.8125rem;
+  border: 1px dashed var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
 }
 
 .tev-summary {
   font-size: 0.8125rem;
   color: var(--color-text, #374151);
-  margin-bottom: 0.375rem;
+  margin-bottom: -0.375rem;
+}
+.tev-summary b {
+  color: var(--color-text-strong, #111827);
 }
 
 .tev-table-wrap {
@@ -387,7 +413,6 @@ onMounted(fnLoadSites);
 }
 
 .tev-progress {
-  margin-top: 0.5rem;
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--color-primary, #16a34a);

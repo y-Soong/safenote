@@ -41,5 +41,6 @@ public record AdminSessionResult(
     , String cancelReason
     , String insertNm
     , String insertDate
+    , Long prepStartAtEpoch // 준비 타이머 절대시각(epoch 초, UNIX_TIMESTAMP - 저장 TZ 가정 불필요). SELECT 마지막 컬럼
 ){
 }

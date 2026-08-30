@@ -2,12 +2,11 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.tbm.tbm04.mapper.Tbm04Mapper">
 
-	<!-- ★시각 표시 규칙(2026-08-30, TBM 종료일시 -9h 결함 수정):
-	     TBM 시각 컬럼(OPENED/STARTED/ENDED_AT, ENTRY/EXIT_AT, INSERT_DATE 등)은 전부 SQL NOW() 로
-	     기록되어 DB 세션 타임존의 벽시계로 저장된다. 운영 RDS 는 세션 TZ=UTC 라 그대로 표시하면
-	     KST 대비 -9시간이다. 따라서 표시/일자필터는 반드시
-	       CONVERT_TZ(col, @@SESSION.time_zone, '+09:00')
-	     로 감싼다. 개발 DB(세션 TZ=KST)에서는 no-op 이므로 환경 중립이다(양 DB 실측 검증됨).
+	<!-- ★시각 표시 규칙(2026-08-30):
+	     TBM 시각 컬럼은 전부 SQL NOW() 로 기록되어 DB 세션 타임존의 벽시계로 저장된다.
+	     표시/일자필터는 CONVERT_TZ(col, @@SESSION.time_zone, '+09:00') 로 감싼다 - 세션이 어떤
+	     타임존이든 KST 벽시계가 나오는 환경 중립식이다(2026-08-30 운영 세션 KST 전환 완료 후에는
+	     no-op 로 동작하나, 세션 TZ 방어층으로 유지한다. 제거 금지).
 	     ※ TIMESTAMPDIFF(두 시각의 차) / ORDER BY(단조성) 는 변환 불필요. -->
 
 	<!-- ============================ W-12 이력 목록 ============================ -->

@@ -421,12 +421,13 @@ onUnmounted(() => {
   stopCountdown();
 });
 
-// prepAutoStartAt(=prepStartAt+15분, 서버가 UTC 명시 'Z' 접미사로 산출) 기준 남은 초 산출(표시 전용).
+// prepAutoStartAt(=prepStartAt+15분) 기준 남은 초 산출(표시 전용).
+// 서버가 epoch(UNIX_TIMESTAMP) 기반으로 "진짜 UTC 절대시각 + 'Z'"를 내려준다(2026-08-30 —
+// 저장 타임존 가정 제거. DB 가 UTC 든 KST 든 항상 올바름). 클라는 절대시각을 그대로 파싱만 한다.
 // OPENED 가 아니거나 값이 없으면 null.
-// ★PREP_START_AT 은 DB 서버 NOW()(=UTC 벽시계값)로 기록된다. 과거엔 prepStartAt(타임존 표기 없는
-//   문자열)을 브라우저 로컬시각(KST)으로 오인 파싱해 실제보다 9시간 이른 시각으로 계산되는 바람에
-//   교육준비 진입 즉시 카운트다운이 00:00 으로 보이는 결함이 있었다(앱에서 2026-08-23 먼저 발견·수정된
-//   동일 결함 — 웹에도 동일하게 적용). prepAutoStartAt 은 Z 가 붙은 절대시각이라 Date 파싱이 안전하다.
+// ★이력: 타임존 표기 없는 벽시계 문자열을 로컬 파싱하던 시절 즉시만료(08-23), DB=UTC 가정으로
+//   벽시계에 Z 를 붙이던 시절 KST 전환 후 555분 밀림(08-30) — 두 사고 모두 "저장 타임존 가정"이
+//   원인. 클라이언트에서 타임존 보정을 재도입하지 말 것(절대시각은 서버 책임).
 const computeRemainSec = () => {
   if (session.statusCd !== "OPENED" || !session.prepAutoStartAt) {
     remainSec.value = null;
