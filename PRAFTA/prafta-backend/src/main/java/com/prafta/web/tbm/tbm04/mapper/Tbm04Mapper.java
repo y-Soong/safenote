@@ -7,11 +7,19 @@ import org.apache.ibatis.annotations.Mapper;
 import com.prafta.web.tbm.tbm04.application.command.CompletionUpdateCommand;
 import com.prafta.web.tbm.tbm04.application.query.AttendanceEventQuery;
 import com.prafta.web.tbm.tbm04.application.query.AttendanceGuardQuery;
+import com.prafta.web.tbm.tbm04.application.query.EvidenceQuery;
 import com.prafta.web.tbm.tbm04.application.query.HistorySessionListQuery;
 import com.prafta.web.tbm.tbm04.application.query.SessionAttendanceQuery;
 import com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery;
 import com.prafta.web.tbm.tbm04.result.AttendanceEventResult;
 import com.prafta.web.tbm.tbm04.result.AttendanceGuardResult;
+import com.prafta.web.tbm.tbm04.result.AttendanceSignInfoResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceAttendeeResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceMtrlResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceRiskResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceSessionDetailResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceSessionResult;
+import com.prafta.web.tbm.tbm04.result.EvidenceWorkerSummaryResult;
 import com.prafta.web.tbm.tbm04.result.HistorySessionListResult;
 import com.prafta.web.tbm.tbm04.result.HistoryStatResult;
 import com.prafta.web.tbm.tbm04.result.SessionAttendanceResult;
@@ -39,6 +47,10 @@ public interface Tbm04Mapper {
 
 	int selectAttendanceEventCount(AttendanceEventQuery query);
 
+	/* ===== W-13 확장: 출결 서명 이미지 ===== */
+	/** 서명 파일 식별 정보(세션이 내 회사 소유일 때만 행 반환 — 클라 파일코드 신뢰 금지). */
+	AttendanceSignInfoResult selectAttendanceSignInfo(@org.apache.ibatis.annotations.Param("gvCmpnyCd") String gvCmpnyCd, @org.apache.ibatis.annotations.Param("attendanceCd") String attendanceCd);
+
 	/* ===== W-14 미이수 처리 ===== */
 	/** 게이트 검증용: 출결 + 소속 세션 메타(스코프/개설자). */
 	AttendanceGuardResult selectAttendanceGuard(AttendanceGuardQuery query);
@@ -57,4 +69,37 @@ public interface Tbm04Mapper {
 
 	/** 사용자별 이수 통계(이수/미이수/평균 참여시간). */
 	UserAttendanceSummaryResult selectUserAttendanceSummary(UserAttendanceQuery query);
+
+	/* ===== TBM 증빙자료 출력(반기, 2026-08-30) ===== */
+	/** 자사 개설 종료 세션(반기·스코프·사업장 필터). */
+	List<EvidenceSessionResult> selectEvidenceOwnSessions(EvidenceQuery query);
+
+	/** 타사 개설 공유 세션 중 자사 근로자 참석분(반기 — 사업장 필터 미적용, 카운트=자사 기준). */
+	List<EvidenceSessionResult> selectEvidenceSharedSessions(EvidenceQuery query);
+
+	/** 근로자별 반기 이수 집계(자사 활성 정규직 전원 + 이수 기록 있는 자사 일용직). */
+	List<EvidenceWorkerSummaryResult> selectEvidenceWorkerSummary(EvidenceQuery query);
+
+	/** 교육일지(건별) 세션 개요 — 인가(자사 개설(스코프) OR 자사 참석 존재) 통과분만 반환. */
+	List<EvidenceSessionDetailResult> selectEvidenceSessionDetails(
+			@org.apache.ibatis.annotations.Param("gvCmpnyCd") String gvCmpnyCd,
+			@org.apache.ibatis.annotations.Param("companyWide") boolean companyWide,
+			@org.apache.ibatis.annotations.Param("scopeSiteCd") String scopeSiteCd,
+			@org.apache.ibatis.annotations.Param("sessionCds") List<String> sessionCds);
+
+	/** 교육일지(건별) 참석자 — 자사 세션=전원(타사 소속 표기)/공유 세션=자사 참석자만(쿼리 술어 강제). */
+	List<EvidenceAttendeeResult> selectEvidenceAttendees(
+			@org.apache.ibatis.annotations.Param("gvCmpnyCd") String gvCmpnyCd,
+			@org.apache.ibatis.annotations.Param("sessionCds") List<String> sessionCds);
+
+	/** 교육일지(건별) 위험성평가 연계 목록. */
+	List<EvidenceRiskResult> selectEvidenceRisks(
+			@org.apache.ibatis.annotations.Param("sessionCds") List<String> sessionCds);
+
+	/** 교육일지(건별) 교육자료 목록. */
+	List<EvidenceMtrlResult> selectEvidenceMtrls(
+			@org.apache.ibatis.annotations.Param("sessionCds") List<String> sessionCds);
+
+	/** 회사명(TB_CMPNY) — 증빙 엑셀 머리말 표기용. 없으면 null. */
+	String selectCmpnyNm(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd);
 }

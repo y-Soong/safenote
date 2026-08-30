@@ -17,15 +17,20 @@ import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.tbm.tbm04.application.command.CompletionUpdateCommand;
 import com.prafta.web.tbm.tbm04.application.param.AttendanceEventParam;
 import com.prafta.web.tbm.tbm04.application.param.CompletionUpdateParam;
+import com.prafta.web.tbm.tbm04.application.param.EvidenceListParam;
 import com.prafta.web.tbm.tbm04.application.param.HistorySessionListParam;
 import com.prafta.web.tbm.tbm04.application.param.SessionAttendanceParam;
 import com.prafta.web.tbm.tbm04.application.param.UserAttendanceParam;
 import com.prafta.web.tbm.tbm04.application.query.AttendanceEventQuery;
 import com.prafta.web.tbm.tbm04.application.query.AttendanceGuardQuery;
+import com.prafta.web.tbm.tbm04.application.query.EvidenceQuery;
 import com.prafta.web.tbm.tbm04.application.query.HistorySessionListQuery;
 import com.prafta.web.tbm.tbm04.application.query.SessionAttendanceQuery;
 import com.prafta.web.tbm.tbm04.application.query.UserAttendanceQuery;
 import com.prafta.web.tbm.tbm04.dto.response.AttendanceEventResponse;
+import com.prafta.web.tbm.tbm04.dto.response.EvidenceSessionDetailResponse;
+import com.prafta.web.tbm.tbm04.dto.response.EvidenceSessionListResponse;
+import com.prafta.web.tbm.tbm04.dto.response.EvidenceWorkerSummaryResponse;
 import com.prafta.web.tbm.tbm04.dto.response.HistorySessionListResponse;
 import com.prafta.web.tbm.tbm04.dto.response.SessionAttendanceResponse;
 import com.prafta.web.tbm.tbm04.dto.response.UserAttendanceResponse;
@@ -59,6 +64,8 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 	private final TbmSessionShareService tbmSessionShareService;
 	/** 사업장 접근 인가(공용 cmm 빈) — 토큰 사업장 등식 대신 User_03 원장(TB_USER_SITE_AUTH) 기반 인가. */
 	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
+	/** W-13 확장 — 출결 서명 이미지 스트림(공용 파일 로더). */
+	private final com.prafta.common.cmm.file.service.FileService fileService;
 
 	/** 미이수 처리 사유 최소 길이(D 문서 §4.1). */
 	private static final int REASON_MIN = 10;
@@ -442,6 +449,53 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		throw new ApiException(TbmErrorCode.TBM_403_020);
 	}
 
+	// ============================ W-13 확장: 출결 서명 이미지 ============================
+
+	/**
+	 * 출결 서명 이미지 스트림(입실/종료). 2026-08-30 — 출결 상세 팝업 '서명' 버튼이 파일코드 텍스트만
+	 * 보여주던 것을 실제 이미지 표시로 교체하기 위한 EP.
+	 *
+	 * <p>인가: 출결 명단(selectSessionAttendances)과 동일 수준 —
+	 * ①권한 미부여 차단 ②세션이 내 회사(개설사) 소유(매퍼 INNER JOIN 강제) ③사업장 스코프 격리.
+	 * 파일 식별자는 서버가 출결 행에서 재조회한다(클라 파일코드 신뢰 금지 — IDOR 방지).
+	 * 타사 참석자의 서명 파일은 참석자 회사 스코프로 저장되어 있어 attendeeCmpnyCd 로 로드한다.
+	 */
+	@Override
+	public com.prafta.common.cmm.file.application.model.FileBytesResult loadAttendanceSignImage(
+			com.prafta.web.tbm.tbm04.application.param.AttendanceSignImageParam param) {
+
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 출결 서명 이미지 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
+		com.prafta.web.tbm.tbm04.result.AttendanceSignInfoResult info =
+				tbm04Mapper.selectAttendanceSignInfo(param.gvCmpnyCd(), param.attendanceCd());
+		if (info == null) {
+			// 출결 없음 또는 타사 세션(개설사 아님) — 존재 비노출 통합 404.
+			throw new ApiException(TbmErrorCode.TBM_404_020);
+		}
+
+		// 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장 세션의 출결만.
+		verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), info.sessionSiteCd());
+
+		String fileMgmtCd = "ENTRY".equals(param.kind())
+				? info.entrySignFileMgmtCd()
+				: info.exitSignFileMgmtCd();
+		if (!StringUtils.hasText(fileMgmtCd)) {
+			throw new ApiException(TbmErrorCode.TBM_404_020);
+		}
+
+		com.prafta.common.cmm.file.application.model.FileBytesResult file = fileService.loadFileBytes(
+				new com.prafta.common.cmm.file.application.query.FileReadQuery(info.attendeeCmpnyCd(), fileMgmtCd));
+		if (file == null) {
+			throw new ApiException(TbmErrorCode.TBM_404_020);
+		}
+
+		log.info("TBM 출결 서명 이미지 스트림 - attendanceCd={}, kind={}", param.attendanceCd(), param.kind());
+		return file;
+	}
+
 	/** 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장(User_03 원장 포함) 리소스만 접근 가능. */
 	private void verifyScope(String cmpnyCd, String userCd, String authCd, String ownSiteCd, String targetSiteCd) {
 		if (AuthRoleUtils.isCompanyWide(authCd)) {
@@ -452,5 +506,107 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 					authCd, ownSiteCd, targetSiteCd);
 			throw new ApiException(TbmErrorCode.TBM_403_021);
 		}
+	}
+
+	// ============================ TBM 증빙자료 출력(반기, 2026-08-30) ============================
+
+	/** 교육일지(건별) 상세 조회 청크 상한 — 화면이 50건씩 나눠 호출한다(단일 응답 비대화 방지). */
+	private static final int EVIDENCE_DETAIL_CHUNK_MAX = 50;
+
+	@Override
+	public EvidenceSessionListResponse selectEvidenceSessions(EvidenceListParam param) {
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 증빙 세션 목록 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
+		EvidenceQuery query = EvidenceQuery.from(param);
+
+		// 자사 개설(사업장 필터 적용) + 공유 세션(자사 참석분 — 사업장 필터 미적용, 권장안) 병합.
+		List<com.prafta.web.tbm.tbm04.result.EvidenceSessionResult> merged = new ArrayList<>();
+		List<com.prafta.web.tbm.tbm04.result.EvidenceSessionResult> own =
+				tbm04Mapper.selectEvidenceOwnSessions(query);
+		List<com.prafta.web.tbm.tbm04.result.EvidenceSessionResult> shared =
+				tbm04Mapper.selectEvidenceSharedSessions(query);
+		if (own != null) merged.addAll(own);
+		if (shared != null) merged.addAll(shared);
+		// 종료일시 오름차순 통합 정렬(각 쿼리는 이미 정렬 — 병합 후 재정렬).
+		merged.sort(java.util.Comparator.comparing(
+				r -> r.endedAt() == null ? "" : r.endedAt()));
+
+		log.info("TBM 증빙 세션 목록 조회 - cmpnyCd={}, 기간={}~{}, own={}, shared={}",
+				param.gvCmpnyCd(), query.fromDate(), query.toDate(),
+				own != null ? own.size() : 0, shared != null ? shared.size() : 0);
+
+		return EvidenceSessionListResponse.builder()
+				.sessionList(merged)
+				.fromDate(query.fromDate())
+				.toDate(query.toDate())
+				.cmpnyNm(tbm04Mapper.selectCmpnyNm(param.gvCmpnyCd()))
+				.build();
+	}
+
+	@Override
+	public EvidenceWorkerSummaryResponse selectEvidenceWorkerSummary(EvidenceListParam param) {
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 증빙 근로자 집계 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
+		EvidenceQuery query = EvidenceQuery.from(param);
+		List<com.prafta.web.tbm.tbm04.result.EvidenceWorkerSummaryResult> list =
+				tbm04Mapper.selectEvidenceWorkerSummary(query);
+
+		log.info("TBM 증빙 근로자 집계 조회 - cmpnyCd={}, 기간={}~{}, rows={}",
+				param.gvCmpnyCd(), query.fromDate(), query.toDate(), list != null ? list.size() : 0);
+
+		return EvidenceWorkerSummaryResponse.builder()
+				.workerList(list != null ? list : Collections.emptyList())
+				.build();
+	}
+
+	@Override
+	public EvidenceSessionDetailResponse selectEvidenceSessionDetails(List<String> sessionCds,
+			String gvCmpnyCd, String gvSiteCd, String gvAuthCd) {
+
+		if (AuthRoleUtils.isAccessDenied(gvAuthCd)) {
+			log.warn("TBM 증빙 교육일지 접근 차단 - authCd={}", gvAuthCd);
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+		if (sessionCds == null || sessionCds.isEmpty()) {
+			throw new ApiException(com.prafta.common.error.common.CommonErrorCode.COMMON_400_001);
+		}
+		if (sessionCds.size() > EVIDENCE_DETAIL_CHUNK_MAX) {
+			throw new ApiException(com.prafta.common.error.common.CommonErrorCode.COMMON_400_002);
+		}
+
+		boolean companyWide = AuthRoleUtils.isCompanyWide(gvAuthCd);
+
+		// 1) 세션 개요 — 인가(자사 개설(스코프) OR 자사 참석 존재)는 쿼리 술어가 강제, 미인가는 조용히 제외.
+		List<com.prafta.web.tbm.tbm04.result.EvidenceSessionDetailResult> sessions =
+				tbm04Mapper.selectEvidenceSessionDetails(gvCmpnyCd, companyWide, gvSiteCd, sessionCds);
+		if (sessions == null || sessions.isEmpty()) {
+			return EvidenceSessionDetailResponse.builder()
+					.sessionList(Collections.emptyList())
+					.attendeeList(Collections.emptyList())
+					.riskList(Collections.emptyList())
+					.mtrlList(Collections.emptyList())
+					.build();
+		}
+
+		// 2) 부속 목록은 인가 통과분 sessionCd 로만 조회(요청 원본 목록 사용 금지 — IDOR 차단).
+		List<String> allowedCds = sessions.stream()
+				.map(com.prafta.web.tbm.tbm04.result.EvidenceSessionDetailResult::sessionCd)
+				.toList();
+
+		log.info("TBM 증빙 교육일지 상세 조회 - cmpnyCd={}, 요청={}건, 인가통과={}건",
+				gvCmpnyCd, sessionCds.size(), allowedCds.size());
+
+		return EvidenceSessionDetailResponse.builder()
+				.sessionList(sessions)
+				.attendeeList(tbm04Mapper.selectEvidenceAttendees(gvCmpnyCd, allowedCds))
+				.riskList(tbm04Mapper.selectEvidenceRisks(allowedCds))
+				.mtrlList(tbm04Mapper.selectEvidenceMtrls(allowedCds))
+				.build();
 	}
 }

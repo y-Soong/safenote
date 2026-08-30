@@ -88,13 +88,23 @@
       </div>
 
       <div class="table-wrapper subtitle-pane">
-        <div class="subtitle">
-          <span class="subtitle-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" width="18" height="18">
-              <path d="M4 4h16v4H4zM4 10h10v10H4z" />
-            </svg>
-          </span>
-          <span class="subtitle-text">TBM 이력 목록</span>
+        <div class="subtitle-row tbm04-subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">TBM 이력 목록</span>
+          </div>
+          <!-- 반기 증빙 엑셀(산안법 정기교육 시간 인정용) — 조건 선택 팝업에서 다운로드 -->
+          <button
+            type="button"
+            class="btn btn-primary btn-sm"
+            @click="fnEvidencePopOpen"
+          >
+            TBM 증빙자료 출력
+          </button>
         </div>
 
         <div
@@ -241,6 +251,7 @@ import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import TbmAttendanceDetail from "./popup/TbmAttendanceDetail.vue";
+import TbmEvidencePop from "./popup/TbmEvidencePop.vue";
 
 // ================ Options ================
 defineOptions({ name: "Tbm_04" });
@@ -460,6 +471,11 @@ const fnGoPage = (target) => {
   if (target < 1 || target > totalPages.value) return;
   page.value = target;
   fnSearch();
+};
+
+// TBM 증빙자료 출력 팝업 — 년도/반기/사업장 선택 + 건별 일지 체크 + 엑셀 생성(클라이언트).
+const fnEvidencePopOpen = () => {
+  openPop(TbmEvidencePop, {});
 };
 
 const fnDetail = (row) => {

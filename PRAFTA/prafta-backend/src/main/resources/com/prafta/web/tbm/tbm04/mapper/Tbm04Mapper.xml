@@ -2,6 +2,14 @@
 <!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
 <mapper namespace="com.prafta.web.tbm.tbm04.mapper.Tbm04Mapper">
 
+	<!-- ★시각 표시 규칙(2026-08-30, TBM 종료일시 -9h 결함 수정):
+	     TBM 시각 컬럼(OPENED/STARTED/ENDED_AT, ENTRY/EXIT_AT, INSERT_DATE 등)은 전부 SQL NOW() 로
+	     기록되어 DB 세션 타임존의 벽시계로 저장된다. 운영 RDS 는 세션 TZ=UTC 라 그대로 표시하면
+	     KST 대비 -9시간이다. 따라서 표시/일자필터는 반드시
+	       CONVERT_TZ(col, @@SESSION.time_zone, '+09:00')
+	     로 감싼다. 개발 DB(세션 TZ=KST)에서는 no-op 이므로 환경 중립이다(양 DB 실측 검증됨).
+	     ※ TIMESTAMPDIFF(두 시각의 차) / ORDER BY(단조성) 는 변환 불필요. -->
+
 	<!-- ============================ W-12 이력 목록 ============================ -->
 	<!-- 기본 대상: STATUS_CD IN ('COMPLETED','CANCELLED'). statusCd 지정 시 해당 상태만. -->
 	<sql id="historyWhere">
@@ -28,12 +36,13 @@
 		  <if test="searchKeyword != null and searchKeyword != ''">
 		    AND A.TITLE LIKE CONCAT('%', #{searchKeyword}, '%')
 		  </if>
-		  /* 기간 필터: 종료일(ENDED_AT) 기준, 미종료(CANCELLED 등)는 등록일 보완 */
+		  /* 기간 필터: 종료일(ENDED_AT) 기준, 미종료(CANCELLED 등)는 등록일 보완.
+		     KST 벽시계 일자로 비교(파일 상단 시각 표시 규칙 — UTC 저장분의 00~09시 KST 하루 밀림 방지) */
 		  <if test="startDate != null and startDate != ''">
-		    AND DATE(IFNULL(A.ENDED_AT, A.INSERT_DATE)) &gt;= #{startDate}
+		    AND DATE(CONVERT_TZ(IFNULL(A.ENDED_AT, A.INSERT_DATE), @@SESSION.time_zone, '+09:00')) &gt;= #{startDate}
 		  </if>
 		  <if test="endDate != null and endDate != ''">
-		    AND DATE(IFNULL(A.ENDED_AT, A.INSERT_DATE)) &lt;= #{endDate}
+		    AND DATE(CONVERT_TZ(IFNULL(A.ENDED_AT, A.INSERT_DATE), @@SESSION.time_zone, '+09:00')) &lt;= #{endDate}
 		  </if>
 	</sql>
 
@@ -48,10 +57,10 @@
 		, SC.SYST_VAL_D_NM	AS statusNm
 		, A.MANAGER_USER_CD	AS managerUserCd
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
-		, DATE_FORMAT(A.OPENED_AT, '%Y-%m-%d %H:%i')	AS openedAt
-		, DATE_FORMAT(A.STARTED_AT, '%Y-%m-%d %H:%i')	AS startedAt
-		, DATE_FORMAT(A.ENDED_AT, '%Y-%m-%d %H:%i')		AS endedAt
-		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')	AS insertDate
+		, DATE_FORMAT(CONVERT_TZ(A.OPENED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS openedAt
+		, DATE_FORMAT(CONVERT_TZ(A.STARTED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(CONVERT_TZ(A.ENDED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS endedAt
+		, DATE_FORMAT(CONVERT_TZ(A.INSERT_DATE, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS insertDate
 		/* 연계 위험성평가 수 */
 		, (
 			SELECT COUNT(1)
@@ -155,9 +164,9 @@
 		, ND.NODE_NM			AS deptNm
 		, DU.MBL_NO_LAST4		AS mblNoLast4
 		, AT.ENTRY_TYPE_CD		AS entryTypeCd
-		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
+		, DATE_FORMAT(CONVERT_TZ(AT.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS entryAt
 		, AT.EXIT_TYPE_CD		AS exitTypeCd
-		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
+		, DATE_FORMAT(CONVERT_TZ(AT.EXIT_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS exitAt
 		, AT.EXIT_FORCED_REASON	AS exitForcedReason
 		, AT.ENTRY_SIGN_FILE_MGMT_CD	AS entrySignFileMgmtCd
 		, AT.EXIT_SIGN_FILE_MGMT_CD		AS exitSignFileMgmtCd
@@ -166,7 +175,7 @@
 		, AT.NOT_COMPLETED_REASON	AS notCompletedReason
 		, AT.STATUS_UPDATED_BY	AS statusUpdatedBy
 		, FNC_CMM_INFO_SRCH(AT.CMPNY_CD, 'USER_NM', AT.STATUS_UPDATED_BY, NULL)	AS statusUpdatedByNm
-		, DATE_FORMAT(AT.STATUS_UPDATED_AT, '%Y-%m-%d %H:%i')	AS statusUpdatedAt
+		, DATE_FORMAT(CONVERT_TZ(AT.STATUS_UPDATED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS statusUpdatedAt
 		/* prafta-051-08: 앱 포그라운드 누적초(051-16 표시용, NULL=미수신/대리입실) */
 		, AT.APP_FOREGROUND_SEC	AS appForegroundSec
 		/* prafta-051-16: 입실 GPS 거리(m). 대리/검색입실은 NULL */
@@ -261,8 +270,8 @@
 		EV.EVENT_NO			AS eventNo
 		, EV.EVENT_TYPE_CD	AS eventTypeCd
 		, ET.SYST_VAL_D_NM	AS eventTypeNm
-		, DATE_FORMAT(EV.EVENT_TIME, '%Y-%m-%d %H:%i:%s')			AS eventTime
-		, DATE_FORMAT(EV.SERVER_RECEIVED_AT, '%Y-%m-%d %H:%i:%s')	AS serverReceivedAt
+		, DATE_FORMAT(CONVERT_TZ(EV.EVENT_TIME, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i:%s')			AS eventTime
+		, DATE_FORMAT(CONVERT_TZ(EV.SERVER_RECEIVED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i:%s')	AS serverReceivedAt
 		, EV.EVENT_DATA		AS eventData
 	FROM TB_TBM_ATTENDANCE_EVENT EV
 		 LEFT OUTER JOIN (
@@ -311,6 +320,28 @@
 	        AND EV.CMPNY_CD = AT.CMPNY_CD
 	        AND S.CMPNY_CD = #{gvCmpnyCd}
 	  )
+	</select>
+
+	<!-- ============================ W-13 확장: 출결 서명 파일 식별 ============================ -->
+	<!-- 서명 이미지 스트림용 서버 재조회(클라 파일코드 신뢰 금지). 세션이 내 회사(개설사) 소유일 때만 행 반환.
+	     참석자 회사(AT.CMPNY_CD)는 타사 참석자 가능 — 서명 파일은 참석자 회사 스코프로 저장되어 있어
+	     파일 로드 회사키로 그대로 쓴다. 세션 사업장(S.SITE_CD)은 스코프 격리(verifyScope) 검증용. -->
+	<select id="selectAttendanceSignInfo" resultType="com.prafta.web.tbm.tbm04.result.AttendanceSignInfoResult">
+	/* Tbm04Mapper.selectAttendanceSignInfo */
+	SELECT
+		AT.ATTENDANCE_CD			AS attendanceCd
+		, AT.CMPNY_CD				AS attendeeCmpnyCd
+		, S.SITE_CD					AS sessionSiteCd
+		, AT.ENTRY_SIGN_FILE_MGMT_CD	AS entrySignFileMgmtCd
+		, AT.EXIT_SIGN_FILE_MGMT_CD		AS exitSignFileMgmtCd
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		AT.SESSION_CD = S.SESSION_CD
+		 	AND S.CMPNY_CD = #{gvCmpnyCd}
+		 	)
+	WHERE AT.ATTENDANCE_CD = #{attendanceCd}
+	  AND AT.DEL_YN = 'N'
 	</select>
 
 	<!-- ============================ W-14 미이수 처리 ============================ -->
@@ -419,10 +450,10 @@
 		    AND AT.COMPLETION_STATUS_CD = #{completionStatusCd}
 		  </if>
 		  <if test="startDate != null and startDate != ''">
-		    AND DATE(IFNULL(S.ENDED_AT, S.INSERT_DATE)) &gt;= #{startDate}
+		    AND DATE(CONVERT_TZ(IFNULL(S.ENDED_AT, S.INSERT_DATE), @@SESSION.time_zone, '+09:00')) &gt;= #{startDate}
 		  </if>
 		  <if test="endDate != null and endDate != ''">
-		    AND DATE(IFNULL(S.ENDED_AT, S.INSERT_DATE)) &lt;= #{endDate}
+		    AND DATE(CONVERT_TZ(IFNULL(S.ENDED_AT, S.INSERT_DATE), @@SESSION.time_zone, '+09:00')) &lt;= #{endDate}
 		  </if>
 	</sql>
 
@@ -434,9 +465,9 @@
 		, S.TITLE			AS sessionTitle
 		, S.SITE_CD			AS siteCd
 		, ST.SITE_NM		AS siteNm
-		, DATE_FORMAT(IFNULL(S.ENDED_AT, S.INSERT_DATE), '%Y-%m-%d')	AS sessionDate
-		, DATE_FORMAT(AT.ENTRY_AT, '%Y-%m-%d %H:%i')	AS entryAt
-		, DATE_FORMAT(AT.EXIT_AT, '%Y-%m-%d %H:%i')		AS exitAt
+		, DATE_FORMAT(CONVERT_TZ(IFNULL(S.ENDED_AT, S.INSERT_DATE), @@SESSION.time_zone, '+09:00'), '%Y-%m-%d')	AS sessionDate
+		, DATE_FORMAT(CONVERT_TZ(AT.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS entryAt
+		, DATE_FORMAT(CONVERT_TZ(AT.EXIT_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS exitAt
 		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
 		, CS.SYST_VAL_D_NM	AS completionStatusNm
 		, (
@@ -508,6 +539,376 @@
 		 		AT.SESSION_CD = S.SESSION_CD
 		 	)
 	<include refid="userAttendanceWhere" />
+	</select>
+
+	<!-- ============================ TBM 증빙자료 출력(반기, 2026-08-30) ============================
+	     법정(산안법 제29조) 정기교육 시간 인정 증빙 엑셀의 데이터 EP 3종.
+	     기간 축 = 세션 종료일(ENDED_AT, KST 벽시계 일자 - 파일 상단 시각 표시 규칙).
+	     시간 축 = 세션 인정시간(EDU_MINUTES, 사용자 확정) - 이수(COMPLETED) 건만 합산. -->
+
+	<!-- 자사 개설 종료 세션(반기·스코프·사업장 필터). W-12 historyWhere 스코프 미러. -->
+	<select id="selectEvidenceOwnSessions" parameterType="com.prafta.web.tbm.tbm04.application.query.EvidenceQuery" resultType="com.prafta.web.tbm.tbm04.result.EvidenceSessionResult">
+	/* Tbm04Mapper.selectEvidenceOwnSessions */
+	SELECT
+		A.SESSION_CD		AS sessionCd
+		, ST.SITE_NM		AS siteNm
+		, NULL				AS hostCmpnyNm
+		, A.TITLE			AS title
+		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, DATE_FORMAT(CONVERT_TZ(A.STARTED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(CONVERT_TZ(A.ENDED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS endedAt
+		, IFNULL(A.EDU_MINUTES, 0)	AS eduMinutes
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_SESSION_RISK R
+			WHERE R.CMPNY_CD = A.CMPNY_CD
+			  AND R.SESSION_CD = A.SESSION_CD
+		  )				AS riskCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			/* PRAFTA-SUBCON-T5: 참석자 회사 조건 없음(타사 참석자 포함) - 세션 소유는 바깥 WHERE 가 보장. */
+			WHERE AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
+		  )				AS attendanceCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.SESSION_CD = A.SESSION_CD
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+		  )				AS completedCount
+		, 'N'				AS sharedYn
+	FROM TB_TBM_SESSION A
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		A.CMPNY_CD = ST.CMPNY_CD
+		 	AND A.SITE_CD = ST.SITE_CD
+		 	)
+	WHERE A.CMPNY_CD = #{gvCmpnyCd}
+	  AND A.DEL_YN = 'N'
+	  AND A.STATUS_CD = 'COMPLETED'
+	  AND DATE(CONVERT_TZ(A.ENDED_AT, @@SESSION.time_zone, '+09:00')) &gt;= #{fromDate}
+	  AND DATE(CONVERT_TZ(A.ENDED_AT, @@SESSION.time_zone, '+09:00')) &lt;= #{toDate}
+	  <if test="!companyWide">
+	    AND A.SITE_CD = #{scopeSiteCd}
+	  </if>
+	  <if test="siteCd != null and siteCd != ''">
+	    AND A.SITE_CD = #{siteCd}
+	  </if>
+	ORDER BY A.ENDED_AT
+	LIMIT 1000
+	</select>
+
+	<!-- 타사 개설 공유 세션 중 자사 근로자 참석분(반기).
+	     스코프 = "자사 참석(입실) 존재" - 지정 해제 후에도 기존 참석은 증빙에 남아야 하므로
+	     share 행 상태 대신 참석 실적으로 판정한다. 사업장 필터 미적용(권장안 - 개설 사업장은 타사 소유).
+	     참여/이수 카운트는 자사 참석자 기준(타사 인원수 비노출 - Tbm02 원칙). -->
+	<select id="selectEvidenceSharedSessions" parameterType="com.prafta.web.tbm.tbm04.application.query.EvidenceQuery" resultType="com.prafta.web.tbm.tbm04.result.EvidenceSessionResult">
+	/* Tbm04Mapper.selectEvidenceSharedSessions */
+	SELECT
+		S.SESSION_CD		AS sessionCd
+		, HST.SITE_NM		AS siteNm
+		, HC.CMPNY_NM		AS hostCmpnyNm
+		, S.TITLE			AS title
+		, FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, DATE_FORMAT(CONVERT_TZ(S.STARTED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS endedAt
+		, IFNULL(S.EDU_MINUTES, 0)	AS eduMinutes
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_SESSION_RISK R
+			WHERE R.CMPNY_CD = S.CMPNY_CD
+			  AND R.SESSION_CD = S.SESSION_CD
+		  )				AS riskCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.SESSION_CD = S.SESSION_CD
+			  AND AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.DEL_YN = 'N'
+			  AND AT.ENTRY_AT IS NOT NULL
+		  )				AS attendanceCount
+		, (
+			SELECT COUNT(1)
+			FROM TB_TBM_ATTENDANCE AT
+			WHERE AT.SESSION_CD = S.SESSION_CD
+			  AND AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.DEL_YN = 'N'
+			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+		  )				AS completedCount
+		, 'Y'				AS sharedYn
+	FROM TB_TBM_SESSION S
+		 LEFT OUTER JOIN TB_SITE HST
+		 	ON (
+		 		S.CMPNY_CD = HST.CMPNY_CD
+		 	AND S.SITE_CD = HST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN TB_CMPNY HC
+		 	ON (
+		 		HC.CMPNY_CD = S.CMPNY_CD
+		 	)
+	WHERE S.CMPNY_CD &lt;&gt; #{gvCmpnyCd}
+	  AND S.DEL_YN = 'N'
+	  AND S.STATUS_CD = 'COMPLETED'
+	  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &gt;= #{fromDate}
+	  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &lt;= #{toDate}
+	  AND EXISTS (
+	        SELECT 1
+	        FROM TB_TBM_ATTENDANCE AT2
+	        WHERE AT2.SESSION_CD = S.SESSION_CD
+	          AND AT2.CMPNY_CD = #{gvCmpnyCd}
+	          AND AT2.DEL_YN = 'N'
+	          AND AT2.ENTRY_AT IS NOT NULL
+	      )
+	ORDER BY S.ENDED_AT
+	LIMIT 1000
+	</select>
+
+	<!-- 근로자별 반기 이수 집계.
+	     모수 = 자사 활성 정규직(EMPLOYMENT_TYPE DAILY 제외 - NULL 보존형) 전원(사업장 필터 적용)
+	          + 반기 중 이수 기록이 있는 자사 일용직(TB_DAILY_USER, 사업장 필터 적용).
+	     이수 시간 = 세션 인정시간(EDU_MINUTES) 합(개설사 무관 - AT.CMPNY_CD 가 자사면 전부). -->
+	<select id="selectEvidenceWorkerSummary" parameterType="com.prafta.web.tbm.tbm04.application.query.EvidenceQuery" resultType="com.prafta.web.tbm.tbm04.result.EvidenceWorkerSummaryResult">
+	/* Tbm04Mapper.selectEvidenceWorkerSummary */
+	SELECT * FROM (
+		SELECT
+			'REGULAR'			AS userTypeCd
+			, U.USER_CD			AS userCd
+			, U.USER_NM			AS userNm
+			, IFNULL(AG.CNT, 0)	AS tbmCount
+			, IFNULL(AG.MINS, 0)	AS tbmMinutes
+		FROM TB_USER U
+			 LEFT OUTER JOIN (
+				SELECT AT.USER_TYPE_CD, AT.USER_CD, COUNT(1) AS CNT, SUM(IFNULL(S.EDU_MINUTES, 0)) AS MINS
+				FROM TB_TBM_ATTENDANCE AT
+					 INNER JOIN TB_TBM_SESSION S
+					 	ON (
+					 		AT.SESSION_CD = S.SESSION_CD
+					 	)
+				WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+				  AND AT.DEL_YN = 'N'
+				  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+				  AND S.DEL_YN = 'N'
+				  AND S.STATUS_CD = 'COMPLETED'
+				  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &gt;= #{fromDate}
+				  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &lt;= #{toDate}
+				GROUP BY AT.USER_TYPE_CD, AT.USER_CD
+			 ) AG
+			 	ON (
+			 		AG.USER_TYPE_CD = 'REGULAR'
+			 	AND AG.USER_CD = U.USER_CD
+			 	)
+		WHERE U.CMPNY_CD = #{gvCmpnyCd}
+		  AND U.USE_YN = 'Y'
+		  AND (U.EMPLOYMENT_TYPE IS NULL OR U.EMPLOYMENT_TYPE &lt;&gt; 'DAILY')
+		  <if test="!companyWide">
+		    AND U.SITE_CD = #{scopeSiteCd}
+		  </if>
+		  <if test="siteCd != null and siteCd != ''">
+		    AND U.SITE_CD = #{siteCd}
+		  </if>
+
+		UNION ALL
+
+		SELECT
+			'DAILY'				AS userTypeCd
+			, D.USER_CD			AS userCd
+			, D.USER_NM			AS userNm
+			, AG2.CNT			AS tbmCount
+			, AG2.MINS			AS tbmMinutes
+		FROM (
+			SELECT AT.USER_CD, COUNT(1) AS CNT, SUM(IFNULL(S.EDU_MINUTES, 0)) AS MINS
+			FROM TB_TBM_ATTENDANCE AT
+				 INNER JOIN TB_TBM_SESSION S
+				 	ON (
+				 		AT.SESSION_CD = S.SESSION_CD
+				 	)
+			WHERE AT.CMPNY_CD = #{gvCmpnyCd}
+			  AND AT.DEL_YN = 'N'
+			  AND AT.USER_TYPE_CD = 'DAILY'
+			  AND AT.COMPLETION_STATUS_CD = 'COMPLETED'
+			  AND S.DEL_YN = 'N'
+			  AND S.STATUS_CD = 'COMPLETED'
+			  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &gt;= #{fromDate}
+			  AND DATE(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00')) &lt;= #{toDate}
+			GROUP BY AT.USER_CD
+		) AG2
+			 INNER JOIN TB_DAILY_USER D
+			 	ON (
+			 		D.CMPNY_CD = #{gvCmpnyCd}
+			 	AND D.USER_CD = AG2.USER_CD
+			 	)
+		<where>
+		  <if test="!companyWide">
+		    AND D.SITE_CD = #{scopeSiteCd}
+		  </if>
+		  <if test="siteCd != null and siteCd != ''">
+		    AND D.SITE_CD = #{siteCd}
+		  </if>
+		</where>
+	) W
+	ORDER BY W.userTypeCd, W.userNm
+	LIMIT 3000
+	</select>
+
+	<!-- 교육일지(건별) 세션 개요 - 인가 필터 내장:
+	     자사 개설(비전사 권한은 자기 사업장) OR 자사 근로자 참석(입실) 존재 세션만 반환(그 외 조용히 제외). -->
+	<select id="selectEvidenceSessionDetails" resultType="com.prafta.web.tbm.tbm04.result.EvidenceSessionDetailResult">
+	/* Tbm04Mapper.selectEvidenceSessionDetails */
+	SELECT
+		S.SESSION_CD		AS sessionCd
+		, S.TITLE			AS title
+		, ST.SITE_NM		AS siteNm
+		, CASE WHEN S.CMPNY_CD = #{gvCmpnyCd} THEN NULL ELSE HC.CMPNY_NM END	AS hostCmpnyNm
+		, DATE_FORMAT(CONVERT_TZ(S.STARTED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS startedAt
+		, DATE_FORMAT(CONVERT_TZ(S.ENDED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')		AS endedAt
+		, IFNULL(S.EDU_MINUTES, 0)	AS eduMinutes
+		, FNC_CMM_INFO_SRCH(S.CMPNY_CD, 'USER_NM', S.MANAGER_USER_CD, NULL)	AS managerUserNm
+		, S.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
+		, S.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
+		, S.CONTENT_BODY	AS contentBody
+		, CASE WHEN S.CMPNY_CD = #{gvCmpnyCd} THEN 'Y' ELSE 'N' END	AS ownerYn
+	FROM TB_TBM_SESSION S
+		 LEFT OUTER JOIN TB_SITE ST
+		 	ON (
+		 		S.CMPNY_CD = ST.CMPNY_CD
+		 	AND S.SITE_CD = ST.SITE_CD
+		 	)
+		 LEFT OUTER JOIN TB_CMPNY HC
+		 	ON (
+		 		HC.CMPNY_CD = S.CMPNY_CD
+		 	)
+	WHERE S.SESSION_CD IN
+	  <foreach collection="sessionCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+	  AND S.DEL_YN = 'N'
+	  AND (
+	        ( S.CMPNY_CD = #{gvCmpnyCd}
+	          <if test="!companyWide">
+	            AND S.SITE_CD = #{scopeSiteCd}
+	          </if>
+	        )
+	     OR EXISTS (
+	          SELECT 1
+	          FROM TB_TBM_ATTENDANCE AT
+	          WHERE AT.SESSION_CD = S.SESSION_CD
+	            AND AT.CMPNY_CD = #{gvCmpnyCd}
+	            AND AT.DEL_YN = 'N'
+	            AND AT.ENTRY_AT IS NOT NULL
+	        )
+	      )
+	ORDER BY S.ENDED_AT
+	</select>
+
+	<!-- 교육일지(건별) 참석자 - 자사 세션=전원(타사 소속 회사명 표기) / 타사 세션=자사 참석자만.
+	     ⚠ 인가 전제: 서비스가 selectEvidenceSessionDetails 통과분의 sessionCd 만 넘긴다. -->
+	<select id="selectEvidenceAttendees" resultType="com.prafta.web.tbm.tbm04.result.EvidenceAttendeeResult">
+	/* Tbm04Mapper.selectEvidenceAttendees */
+	SELECT
+		AT.SESSION_CD		AS sessionCd
+		, CASE
+			WHEN AT.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM
+			ELSE DU.USER_NM
+		  END				AS userNm
+		, AT.USER_TYPE_CD	AS userTypeCd
+		, C.CMPNY_NM		AS cmpnyNm
+		, DATE_FORMAT(CONVERT_TZ(AT.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS entryAt
+		, DATE_FORMAT(CONVERT_TZ(AT.EXIT_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS exitAt
+		, AT.COMPLETION_STATUS_CD	AS completionStatusCd
+		, CASE
+			WHEN AT.ENTRY_SIGN_FILE_MGMT_CD IS NOT NULL OR AT.EXIT_SIGN_FILE_MGMT_CD IS NOT NULL THEN 'Y'
+			ELSE 'N'
+		  END				AS signedYn
+	FROM TB_TBM_ATTENDANCE AT
+		 INNER JOIN TB_TBM_SESSION S
+		 	ON (
+		 		S.SESSION_CD = AT.SESSION_CD
+		 	)
+		 LEFT OUTER JOIN TB_USER RU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'REGULAR'
+		 	AND AT.CMPNY_CD = RU.CMPNY_CD
+		 	AND AT.USER_CD = RU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_DAILY_USER DU
+		 	ON (
+		 		AT.USER_TYPE_CD = 'DAILY'
+		 	AND AT.CMPNY_CD = DU.CMPNY_CD
+		 	AND AT.USER_CD = DU.USER_CD
+		 	)
+		 LEFT OUTER JOIN TB_CMPNY C
+		 	ON (
+		 		C.CMPNY_CD = AT.CMPNY_CD
+		 	)
+	WHERE AT.SESSION_CD IN
+	  <foreach collection="sessionCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+	  AND AT.DEL_YN = 'N'
+	  AND AT.ENTRY_AT IS NOT NULL
+	  AND (S.CMPNY_CD = #{gvCmpnyCd} OR AT.CMPNY_CD = #{gvCmpnyCd})
+	ORDER BY AT.SESSION_CD, AT.ENTRY_AT, AT.ATTENDANCE_CD
+	</select>
+
+	<!-- 교육일지(건별) 위험성평가 연계 - AppAdminTbmMapper.selectSessionRisks 조인 미러(요약 2컬럼). -->
+	<select id="selectEvidenceRisks" resultType="com.prafta.web.tbm.tbm04.result.EvidenceRiskResult">
+	/* Tbm04Mapper.selectEvidenceRisks */
+	SELECT
+		SR.SESSION_CD		AS sessionCd
+		, C.BAIM_VAL_D_NM	AS processNm
+		, CASE
+			WHEN RA.HAZARD_CD = 'self' THEN RA.ASSESSMENT_DESC
+			ELSE E.HAZARD_NM
+		  END				AS hazardNm
+	FROM TB_TBM_SESSION_RISK SR
+		 INNER JOIN TB_RISK_ASSESSMENT RA
+		 	ON (
+		 		SR.CMPNY_CD = RA.CMPNY_CD
+		 	AND SR.SITE_CD = RA.SITE_CD
+		 	AND SR.PROCESS_CD = RA.PROCESS_CD
+		 	AND SR.ASSESSMENT_CD = RA.ASSESSMENT_CD
+		 	)
+		 LEFT OUTER JOIN TB_BAIM_VAL_D C
+		 	ON (
+		 		C.CMPNY_CD = RA.CMPNY_CD
+		 	AND C.BAIM_VAL_CD = 'COM002'
+		 	AND C.BAIM_VAL_D_CD = RA.PROCESS_CD
+		 	AND C.USE_YN = 'Y'
+		 	)
+		 LEFT OUTER JOIN TB_RISK_SITE_HAZARD E
+		 	ON (
+		 		RA.CMPNY_CD = E.CMPNY_CD
+		 	AND RA.RISK_TYPE_CD = E.RISK_TYPE_CD
+		 	AND RA.HAZARD_CD = E.HAZARD_CD
+		 	)
+	WHERE SR.SESSION_CD IN
+	  <foreach collection="sessionCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+	ORDER BY SR.SESSION_CD, SR.DISPLAY_ORDER
+	</select>
+
+	<!-- 회사명 - 증빙 엑셀 머리말 표기용(웹 세션에 회사명 미보유). -->
+	<select id="selectCmpnyNm" resultType="string">
+	/* Tbm04Mapper.selectCmpnyNm */
+	SELECT C.CMPNY_NM
+	FROM TB_CMPNY C
+	WHERE C.CMPNY_CD = #{cmpnyCd}
+	LIMIT 1
+	</select>
+
+	<!-- 교육일지(건별) 교육자료 목록. -->
+	<select id="selectEvidenceMtrls" resultType="com.prafta.web.tbm.tbm04.result.EvidenceMtrlResult">
+	/* Tbm04Mapper.selectEvidenceMtrls */
+	SELECT
+		SC.SESSION_CD		AS sessionCd
+		, M.TITLE			AS mtrlTitle
+	FROM TB_TBM_SESSION_CONTENT SC
+		 INNER JOIN TB_TBM_EDU_MTRL M
+		 	ON (
+		 		M.CMPNY_CD = SC.CMPNY_CD
+		 	AND M.MTRL_CD = SC.MTRL_CD
+		 	)
+	WHERE SC.SESSION_CD IN
+	  <foreach collection="sessionCds" item="cd" open="(" separator="," close=")">#{cd}</foreach>
+	ORDER BY SC.SESSION_CD, SC.DISPLAY_ORDER
 	</select>
 
 </mapper>
