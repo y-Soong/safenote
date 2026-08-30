@@ -1,8 +1,6 @@
 package com.prafta.common.cmm.dailylogin.service.impl;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -76,8 +74,6 @@ public class DailyLoginServiceImpl implements DailyLoginService {
     private static final String ENTRY_REQ_TYPE_JOIN = "01";
     private static final String ENTRY_REQ_TYPE_REENTRY = "02";
 
-    private static final DateTimeFormatter LOCK_DTIME = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-
     /*
      * 잠금 카운트가 차단 예외(RuntimeException)와 함께 롤백되지 않도록 메서드 레벨 @Transactional 을
      * 부여하지 않는다(정규 LoginServiceImpl 미러). 각 UPDATE 는 auto-commit 되어 실패 카운트가 영속된다.
@@ -100,14 +96,14 @@ public class DailyLoginServiceImpl implements DailyLoginService {
         }
         DailyUserResult userResult = userResults.get(0);
 
-        // 2) 비밀번호 인증 실패 잠금 만료일시 체크(정규 미러).
+        // 2) 비밀번호 인증 실패 잠금 잔여시간 체크(정규 미러) — DB 서버 시계 기준(세션 타임존 무관).
+        //    PWD_LOCK_EXPIRE_DTIME 은 DB NOW() 로 기록되므로 Java 시계와 비교하면 UTC 세션 운영에서
+        //    항상 "만료"로 오판되어 잠금이 무력화된다. 잔여분 판정을 DB 로 위임한다.
         if ("Y".equals(userResult.pwdLockYn())) {
-            String unlockDtimeStr = userResult.pwdLockExpireDtime();
-            if (unlockDtimeStr != null && !unlockDtimeStr.isBlank()) {
-                LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, LOCK_DTIME);
-                if (LocalDateTime.now().isBefore(unlockDtime)) {
-                    throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_002);
-                }
+            Integer remain = dailyLoginMapper.selectDailyPwdLockRemainMinutes(
+                    userResult.cmpnyCd(), userResult.userCd());
+            if (remain != null && remain > 0) {
+                throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_002);
             }
         }
 
@@ -206,14 +202,12 @@ public class DailyLoginServiceImpl implements DailyLoginService {
         }
         DailyUserResult r = rows.get(0);
 
-        // 잠금 만료일시 체크(활성경로 미러) — 잠금 중이면 명시 안내(002).
+        // 잠금 잔여시간 체크(활성경로 미러) — 잠금 중이면 명시 안내(002).
+        //   잔여 판정은 DB 서버 시계 기준(세션 타임존 무관) — 활성경로와 동일 사유.
         if ("Y".equals(r.pwdLockYn())) {
-            String unlockDtimeStr = r.pwdLockExpireDtime();
-            if (unlockDtimeStr != null && !unlockDtimeStr.isBlank()) {
-                LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, LOCK_DTIME);
-                if (LocalDateTime.now().isBefore(unlockDtime)) {
-                    throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_002);
-                }
+            Integer remain = dailyLoginMapper.selectDailyPwdLockRemainMinutes(r.cmpnyCd(), r.userCd());
+            if (remain != null && remain > 0) {
+                throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_002);
             }
         }
         // 만료된 잠금 정리(만료 시각이 지난 행에만 적용).

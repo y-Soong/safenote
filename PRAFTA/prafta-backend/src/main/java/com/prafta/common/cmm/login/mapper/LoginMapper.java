@@ -32,7 +32,18 @@ public interface LoginMapper {
 	void updateUserPwdReset(UserPwdUnlockCommand command);
 
 	void updateUserPwdFail(UserPwdFailCommand command);
-	
+
+	/**
+	 * 비밀번호 잠금 잔여분 조회 — DB 서버 시계 기준(세션 타임존 무관).
+	 *
+	 * <p>PWD_LOCK_EXPIRE_DTIME 은 DATE_ADD(NOW(), ...) 로 DB 서버 시계로 기록되므로,
+	 * Java 시계(LocalDateTime.now())와 비교하면 세션 타임존이 UTC 인 운영에서 항상 "만료"로
+	 * 오판되어 잠금이 무력화된다. 잔여 판정을 DB 로 옮겨 서버 시계끼리만 비교한다.
+	 *
+	 * @return 잔여 분(올림). 잠금 아님/만료면 null
+	 */
+	Integer selectPwdLockRemainMinutes(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd);
+
 	int lockUserRow(UserRowLockQuery userRowLockQuery);
 	
 	void revokeActiveToken(ActiveTokenCommand dto);

@@ -1,9 +1,6 @@
 package com.prafta.common.cmm.login.service.impl;
 
 import java.security.SecureRandom;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -127,18 +124,14 @@ public class LoginServiceImpl implements LoginService{
 			throw new ApiException(LoginErrorCode.LOGIN_400_001);
 	    }
 		
-		// 비밀번호 인증 실패 잠금 만료일시 체크
-		if(userResult.pwdLockYn().equals("Y")) {
-			String unlockDtimeStr = userResult.pwdLockExpireDtime();
-			
-			if (unlockDtimeStr != null) {
-		        LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-		        
-		        if (LocalDateTime.now().isBefore(unlockDtime)) {
-		            long remainMinutes = ChronoUnit.MINUTES.between(LocalDateTime.now(), unlockDtime);
-		            throw ApiException.appendf(LoginErrorCode.LOGIN_400_003, "\n잠금 해제까지 %d분 남았습니다.", remainMinutes);
-		        }
-		    }
+		// 비밀번호 인증 실패 잠금 잔여시간 체크 — DB 서버 시계 기준(세션 타임존 무관).
+		//   PWD_LOCK_EXPIRE_DTIME 은 DB NOW() 로 기록되므로 Java 시계와 비교하면 UTC 세션 운영에서
+		//   항상 "만료"로 오판되어 잠금이 무력화된다. 잔여분 판정을 DB 로 위임한다.
+		if ("Y".equals(userResult.pwdLockYn())) {
+			Integer remain = loginMapper.selectPwdLockRemainMinutes(userResult.cmpnyCd(), userResult.userCd());
+			if (remain != null && remain > 0) {
+				throw ApiException.appendf(LoginErrorCode.LOGIN_400_003, "\n잠금 해제까지 %d분 남았습니다.", remain.longValue());
+			}
 		}
 		
 		// 잠금 해제 시각이 지났남, 계정 상태 업데이트
@@ -254,13 +247,11 @@ public class LoginServiceImpl implements LoginService{
 		}
 
 		// 잠금 중이면 비밀번호 검증 없이 통합 메시지(대입 시도 차단).
+		//   잔여 판정은 DB 서버 시계 기준(세션 타임존 무관) — 정규 경로와 동일 사유.
 		if ("Y".equals(inactive.pwdLockYn())) {
-			String unlockDtimeStr = inactive.pwdLockExpireDtime();
-			if (unlockDtimeStr != null) {
-				LocalDateTime unlockDtime = LocalDateTime.parse(unlockDtimeStr, DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-				if (LocalDateTime.now().isBefore(unlockDtime)) {
-					return;
-				}
+			Integer remain = loginMapper.selectPwdLockRemainMinutes(inactive.cmpnyCd(), inactive.userCd());
+			if (remain != null && remain > 0) {
+				return;
 			}
 		}
 

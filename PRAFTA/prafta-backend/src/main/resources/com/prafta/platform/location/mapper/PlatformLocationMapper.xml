@@ -141,7 +141,10 @@
     /* PlatformLocationMapper.selectPlatformSmsVerified */
     SELECT
         S.SMS_ID                                            AS smsId
-        , DATE_FORMAT(S.UPDATE_DATE, '%Y-%m-%d %H:%i:%s')   AS verifiedAt
+        <!-- verifiedAt 은 화면 표시뿐 아니라 insertLocationAccessLog 의 SMS_VERIFIED_AT 으로 영구 적재된다.
+             UPDATE_DATE 는 DB 세션 시계(NOW()) 기록이므로 세션 TZ 를 KST 로 환산해 내린다
+             (CONVERT_TZ 세션기준 - UTC 세션이면 +9h 보정, KST 세션 전환 후에는 no-op 로 안전). -->
+        , DATE_FORMAT(CONVERT_TZ(S.UPDATE_DATE, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i:%s')   AS verifiedAt
         , TIMESTAMPDIFF(SECOND, NOW(), DATE_ADD(S.UPDATE_DATE, INTERVAL 10 MINUTE)) AS remainSec
     FROM TB_SMS_AUTH_CODE S
     INNER JOIN TB_USER U
@@ -208,7 +211,9 @@
     SELECT
         'TBM'             AS srcType
         , A.USER_CD       AS userCd
-        , DATE_FORMAT(A.ENTRY_AT, '%H%i%s') AS measureTime
+        <!-- ENTRY_AT 은 DB NOW() 기록(세션 TZ 벽시계) - KST 로 환산해 표시(UTC 세션 +9h 보정, KST 세션 no-op).
+             ATTD 분기의 API_CALL_TIME 은 Java 가 KST 문자열로 기록한 varchar 라 변환 대상이 아니다(변환 시 이중 밀림). -->
+        , DATE_FORMAT(CONVERT_TZ(A.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%H%i%s') AS measureTime
         , NULL            AS gpsInfoType
         , A.ENTRY_GPS_LAT_ENC AS latEnc
         , A.ENTRY_GPS_LON_ENC AS lonEnc
@@ -225,7 +230,8 @@
       AND S.SITE_CD  = #{siteCd}
       AND A.DEL_YN   = 'N'
       AND (A.ENTRY_GPS_LAT IS NOT NULL OR A.ENTRY_GPS_LAT_ENC IS NOT NULL)
-      AND DATE_FORMAT(A.ENTRY_AT, '%Y%m%d') = #{date}
+      <!-- 일자 필터도 KST 기준으로 판정(measureTime 과 동일 사유 - 자정 전후 건의 일자 밀림 방지). -->
+      AND DATE_FORMAT(CONVERT_TZ(A.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%Y%m%d') = #{date}
     ORDER BY measureTime ASC
     LIMIT 1001
     </select>

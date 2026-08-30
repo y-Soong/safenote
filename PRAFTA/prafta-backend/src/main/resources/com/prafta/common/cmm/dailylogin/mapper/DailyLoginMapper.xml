@@ -75,6 +75,20 @@
       </if>
     </select>
 
+    <!-- 비밀번호 잠금 잔여분 조회(서버 시계 기준 - 세션 TZ 무관, 정규 selectPwdLockRemainMinutes 미러).
+         PWD_LOCK_EXPIRE_DTIME 은 DATE_ADD(NOW(), ...) 로 DB 서버 시계로 기록되므로
+         잔여 판정도 같은 서버 시계(NOW())와 비교한다. 잠금 아님/만료면 null. -->
+    <select id="selectDailyPwdLockRemainMinutes" resultType="java.lang.Integer">
+    /* DailyLoginMapper.selectDailyPwdLockRemainMinutes */
+    SELECT CEIL(TIMESTAMPDIFF(SECOND, NOW(), PWD_LOCK_EXPIRE_DTIME) / 60)
+    FROM TB_DAILY_USER
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND USER_CD = #{userCd}
+      AND PWD_LOCK_YN = 'Y'
+      AND PWD_LOCK_EXPIRE_DTIME IS NOT NULL
+      AND PWD_LOCK_EXPIRE_DTIME &gt; NOW()
+    </select>
+
     <!-- 잠금 만료 해제(정규 미러, 단 조건 보강).
          실제 잠금이 걸려 있고 만료 시각이 지난 경우에만 리셋한다.
          그래야 미잠금 구간에서 PWD_FAIL_CNT 가 누적되어 임계에서 정상 잠금된다. -->
