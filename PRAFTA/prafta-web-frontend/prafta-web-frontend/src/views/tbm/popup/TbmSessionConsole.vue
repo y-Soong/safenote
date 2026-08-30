@@ -365,6 +365,7 @@ const session = reactive({
   openedAt: "",
   prepStartAt: "",
   prepAutoStartAt: "",
+  prepRemainSec: null, // 서버 산출 남은 초(OPENED 한정). 카운트다운 기준값 — PC 시계 비의존.
   cancelReason: "",
   insertDate: "",
 });
@@ -421,27 +422,61 @@ onUnmounted(() => {
   stopCountdown();
 });
 
-// prepAutoStartAt(=prepStartAt+15분) 기준 남은 초 산출(표시 전용).
-// 서버가 epoch(UNIX_TIMESTAMP) 기반으로 "진짜 UTC 절대시각 + 'Z'"를 내려준다(2026-08-30 —
-// 저장 타임존 가정 제거. DB 가 UTC 든 KST 든 항상 올바름). 클라는 절대시각을 그대로 파싱만 한다.
-// OPENED 가 아니거나 값이 없으면 null.
-// ★이력: 타임존 표기 없는 벽시계 문자열을 로컬 파싱하던 시절 즉시만료(08-23), DB=UTC 가정으로
-//   벽시계에 Z 를 붙이던 시절 KST 전환 후 555분 밀림(08-30) — 두 사고 모두 "저장 타임존 가정"이
-//   원인. 클라이언트에서 타임존 보정을 재도입하지 말 것(절대시각은 서버 책임).
+// 화면 진입 후 흐른 시간 측정용 단조 시계(monotonic). PC 시계 변경/NTP 보정에 영향받지 않는다.
+// performance.now() 미지원 환경만 Date.now() 로 폴백.
+const monotonicNow = () =>
+  typeof performance !== "undefined" && typeof performance.now === "function"
+    ? performance.now()
+    : Date.now();
+
+// 카운트다운 기준값(서버 산출 남은 초)과 그 시점의 단조 시계 anchor.
+let remainBaseSec = null;
+let remainAnchorMs = 0;
+
+// 카운트다운 기준값 세팅(표시 전용). 이후 tick 은 여기서 경과분만 빼서 표시한다.
+const setRemainBase = (sec) => {
+  remainBaseSec = Math.max(0, Math.floor(sec));
+  remainAnchorMs = monotonicNow();
+  remainSec.value = remainBaseSec;
+  // 남은 시간이 다시 생기면(연장/재조회) 자동 재조회 가드 해제
+  if (remainSec.value > 0) autoStartRefetched = false;
+};
+
+// 자동 교육시작까지 남은 초 산출(표시 전용). 서버가 계산해 내려준 prepRemainSec 를 그대로 기준값으로
+// 삼는다(0 클램프 완료된 값). OPENED 가 아니거나 값이 없으면 null.
+// ★PC 시계에 의존하지 않는다: 종전에는 서버가 준 절대시각에서 이 PC 의 Date.now() 를 뺐는데,
+//   PC 시계가 서버보다 느리면 상한(15:00)을 넘는 값(예: 15:02)이 표시되고 앱(폰)과 숫자가 어긋났다
+//   (08-30 실측: PC 약 1.3초 느림, 폰은 그 이상). 이제 서버 남은 초에서 경과분만 감산한다.
+// ★과거 사고 이력: 08-23 즉시만료(타임존 표기 없는 벽시계를 로컬 파싱) / 08-30 555분 밀림
+//   ("DB=UTC" 가정으로 벽시계에 Z 부착) / 이번 15:02(기기 시계 의존). 클라이언트에서 타임존 보정이나
+//   절대시각 재계산을 다시 도입하지 말 것(남은 초 산출은 서버 책임).
 const computeRemainSec = () => {
-  if (session.statusCd !== "OPENED" || !session.prepAutoStartAt) {
+  if (session.statusCd !== "OPENED") {
+    remainBaseSec = null;
+    remainSec.value = null;
+    return;
+  }
+  if (
+    typeof session.prepRemainSec === "number" &&
+    Number.isFinite(session.prepRemainSec)
+  ) {
+    setRemainBase(session.prepRemainSec);
+    return;
+  }
+  // [폴백 경로] prepRemainSec 미수신(구버전 서버 응답 등) 시에만 사용 —
+  // 절대시각 - PC 시계 방식이라 기기 시계 오차가 그대로 표시된다.
+  if (!session.prepAutoStartAt) {
+    remainBaseSec = null;
     remainSec.value = null;
     return;
   }
   const target = new Date(session.prepAutoStartAt.replace(" ", "T")).getTime();
   if (Number.isNaN(target)) {
+    remainBaseSec = null;
     remainSec.value = null;
     return;
   }
-  const remainMs = target - Date.now();
-  remainSec.value = Math.max(0, Math.floor(remainMs / 1000));
-  // 남은 시간이 다시 생기면(연장/재조회) 자동 재조회 가드 해제
-  if (remainSec.value > 0) autoStartRefetched = false;
+  setRemainBase((target - Date.now()) / 1000);
 };
 
 const fnSearch = async () => {
@@ -472,10 +507,12 @@ const fnSearch = async () => {
       session.openedAt = s.openedAt || "";
       session.prepStartAt = s.prepStartAt || "";
       session.prepAutoStartAt = s.prepAutoStartAt || "";
+      session.prepRemainSec =
+        typeof s.prepRemainSec === "number" ? s.prepRemainSec : null;
       session.cancelReason = s.cancelReason || "";
       session.insertDate = s.insertDate || "";
 
-      // 교육준비 단계면 prepStartAt 기준으로 남은 초 재산출
+      // 교육준비 단계면 서버 산출 남은 초(prepRemainSec)로 카운트다운 기준값 재설정
       computeRemainSec();
 
       // 연동 회사 지정 현황(PRAFTA-SUBCON-T5)
@@ -563,14 +600,18 @@ const fnCaptureGps = () => {
 
 // 카운트다운(표시 전용). 실제 자동전이는 서버 스케줄러(prafta.tbm.autostart.enabled=true).
 // T6-09: 0 도달 시 1회 자동 재조회 → 서버가 IN_PROGRESS 로 전이했으면 상태/콘솔이 갱신된다.
+// 매 tick 은 "서버 기준값 - 단조 시계 경과초"로 재산출한다(1초마다 -1 누적 방식 아님 → 탭 비활성화·
+// 타이머 지연으로 인한 누적 오차 없음, PC 절대 시계 비의존).
 const startCountdown = () => {
   stopCountdown();
   timerId = setInterval(() => {
-    if (remainSec.value === null) return;
-    if (remainSec.value > 0) {
-      remainSec.value -= 1;
+    if (remainBaseSec === null) {
+      remainSec.value = null;
       return;
     }
+    const elapsedSec = Math.floor((monotonicNow() - remainAnchorMs) / 1000);
+    remainSec.value = Math.max(0, remainBaseSec - elapsedSec);
+    if (remainSec.value > 0) return;
     // remainSec === 0: 교육준비 상태에서 1회만 재조회(자동전이 반영 확인)
     if (session.statusCd === "OPENED" && !autoStartRefetched) {
       autoStartRefetched = true;
@@ -646,7 +687,8 @@ const fnExtend = async () => {
     );
 
     if (response.status === 200) {
-      remainSec.value = PREP_TIMER_SEC;
+      // 낙관적 표시(직후 fnSearch 의 서버 산출값으로 즉시 대체된다)
+      setRemainBase(PREP_TIMER_SEC);
       await proxy.$alert("교육준비 시간이 15분 연장되었습니다.");
       await fnSearch();
     }

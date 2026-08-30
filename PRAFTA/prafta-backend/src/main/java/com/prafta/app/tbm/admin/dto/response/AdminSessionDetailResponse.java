@@ -46,6 +46,7 @@ public class AdminSessionDetailResponse {
         private String openedAt;
         private String prepStartAt;       // 교육준비 타이머 기준시각(OPENED, 초 단위)
         private String prepAutoStartAt;   // 자동 교육시작 예정시각(=prepStartAt + 자동시작분, 서버 산출)
+        private Integer prepRemainSec;    // 자동 교육시작까지 남은 초(서버 산출, OPENED 한정 / 0 클램프 — 기기 시계 비의존 카운트다운용)
         private String startedAt;
         private String endedAt;
         private String cancelledAt;

@@ -226,6 +226,8 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.openedAt(session.openedAt())
 				.prepStartAt(session.prepStartAt())
 				.prepAutoStartAt(computePrepAutoStartAt(session.statusCd(), session.prepStartAtEpoch()))
+				// 카운트다운은 기기 시계에 의존하지 않는다 — 서버가 산출한 남은 초를 FE 가 그대로 쓴다.
+				.prepRemainSec(computePrepRemainSec(session.statusCd(), session.prepStartAtEpoch()))
 				.startedAt(session.startedAt())
 				.endedAt(session.endedAt())
 				.cancelledAt(session.cancelledAt())
@@ -1355,6 +1357,29 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 				.plus(java.time.Duration.ofMinutes(prepAutoStartMinutes))
 				.atOffset(java.time.ZoneOffset.UTC)
 				.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")) + "Z";
+	}
+
+	/**
+	 * 자동 교육시작까지 <b>남은 초</b> 산출(표시 전용). OPENED 이며 prepStartAtEpoch 존재 시에만 산출.
+	 * 그 외 상태/미개설은 null. 음수면 0 으로 클램프한다(상한은 자동시작분 = 최대 15분).
+	 *
+	 * <p>★도입 배경(2026-08-30, 카운트다운 15:02 표시 결함): 클라이언트가 절대시각(prepAutoStartAt)에서
+	 * <b>자기 기기 시계</b>(Date.now())를 빼는 방식이라, 기기 시계가 서버보다 느리면 상한(15:00)을 넘는
+	 * 값이 뜨고 폰/PC 간 숫자도 어긋났다(실측: PC 약 1.3초, 폰은 그 이상 느림). 서버가 남은 초를 직접
+	 * 계산해 내려주면 기기 절대 시계 의존이 사라진다(클라는 수신값에서 경과분만 감산).
+	 *
+	 * <p>★epoch 끼리의 뺄셈이므로 타임존 가정이 개입하지 않는다. CONVERT_TZ·벽시계 문자열을 다시
+	 * 끌어들이지 말 것(08-23 즉시만료 / 08-30 555분 밀림 = 두 사고 모두 저장 타임존 가정이 원인).
+	 * 자동 전이 판정은 서버 스케줄러/지연평가가 관장하며 본 값은 표시 전용이다.
+	 * (앱 AppAdminTbmServiceImpl 동일 구현 — 웹/앱 미러 유지)
+	 */
+	private Integer computePrepRemainSec(String statusCd, Long prepStartAtEpoch) {
+		if (!"OPENED".equals(statusCd) || prepStartAtEpoch == null) {
+			return null;
+		}
+		long deadline = prepStartAtEpoch + (long) prepAutoStartMinutes * 60L;
+		long remain = deadline - java.time.Instant.now().getEpochSecond();
+		return (int) Math.max(0L, remain);
 	}
 
 	/**

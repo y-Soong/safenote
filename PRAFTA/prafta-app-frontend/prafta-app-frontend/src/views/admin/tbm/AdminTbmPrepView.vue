@@ -6,7 +6,7 @@
   - 구성: 입실비번 카드(entry-only) / 15분 자동 교육시작 카운트다운(+수동연장/지금시작)
           / 입실 근로자 리스트(거리·위치 + 이탈자 내보내기, D-3) / 추가 입실(정규직 대리·일용직 QR, D-4).
   - 백엔드:
-      GET  /appApi/admin/tbm/sessions/{sessionCd}                         (상세 — prepStartAt/prepAutoStartAt/entryPwd)
+      GET  /appApi/admin/tbm/sessions/{sessionCd}                         (상세 — prepStartAt/prepAutoStartAt/prepRemainSec/entryPwd)
       GET  /appApi/admin/tbm/sessions/{sessionCd}/attendees?phase=PREP     (입실자+거리/위치, E12)
       POST .../{sessionCd}/extend-prep                                     (수동연장, E3)
       POST .../{sessionCd}/start                                          (지금 교육시작, E4)
@@ -212,7 +212,7 @@ const scanning = ref(false)
 const session = ref(null) // 상세(서버 SessionDetailItem + prepStartAt/prepAutoStartAt)
 const attendees = ref([]) // [{ attendanceCd, userNm, userTypeCd, deptNm, entryAt, distanceM, ... }]
 
-// 카운트다운 표시(서버 prepAutoStartAt 기준 — 클라는 표시만)
+// 카운트다운 표시(서버 산출 남은 초 prepRemainSec 기준 — 클라는 표시만, 기기 시계 비의존)
 const countdownText = ref('') // 'mm:ss' 또는 ''
 let countdownTimer = null
 
@@ -224,7 +224,7 @@ const directEntrySubmitting = ref(false)
 // 세션 상세 로드(E8). statusCd 검증 후 OPENED 가 아니면 상태별 분기 라우팅:
 //   DRAFT→back / IN_PROGRESS→/AdminTbmLive replace / COMPLETED→/AdminTbmCompleted replace.
 //   서버가 지연평가(D-1)로 자동전이했을 수 있으므로 응답 statusCd 로 라우팅 판단.
-//   prepAutoStartAt(=prepStartAt+15분) 으로 카운트다운 시작.
+//   응답의 prepRemainSec(서버 산출 남은 초)으로 카운트다운 시작·재시작(연장 후 재조회 포함).
 const loadDetail = async () => {
   if (!sessionCd.value) {
     loadError.value = true
@@ -299,27 +299,60 @@ const onRefresh = () => {
   loadAttendees()
 }
 
-// 카운트다운: prepAutoStartAt 도달 시 자동전이 감지 위해 상세 재조회.
+// 화면 진입 후 흐른 시간 측정용 단조 시계(monotonic). 기기 시계 변경/NTP 보정에 영향받지 않는다.
+// performance.now() 미지원 환경(구형 웹뷰)만 Date.now() 로 폴백.
+const monotonicNow = () =>
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now()
+
+// 카운트다운: 서버가 산출한 "남은 초"(prepRemainSec)를 기준값으로 잡고, 경과시간만큼 빼서 표시한다.
+// 도달(0) 시 자동전이 감지 위해 상세 재조회.
 // (표시·만료감지만 — 실제 전이는 서버 지연평가. 클라는 비즈로직 금지.)
+//
+// ★기기 시계에 의존하지 않는다: 종전에는 서버가 준 절대시각에서 이 기기의 Date.now() 를 뺐는데,
+//   기기 시계가 서버보다 느리면 상한(15:00)을 넘는 값(예: 15:02)이 표시되고 폰·PC 숫자가 서로
+//   어긋났다(08-30 실측: PC 약 1.3초, 폰은 그 이상 느림). 이제 서버가 0 으로 클램프한 남은 초를
+//   내려주고 클라는 거기서 경과분만 감산하므로 15:00 을 넘길 수 없다.
+// ★과거 사고 이력: 08-23 즉시만료(타임존 표기 없는 벽시계를 로컬 파싱) / 08-30 555분 밀림
+//   ("DB=UTC" 가정으로 벽시계에 Z 부착) / 이번 15:02(기기 시계 의존). 클라에서 타임존 보정이나
+//   절대시각 재계산을 다시 도입하지 말 것.
 const startCountdown = () => {
   stopCountdown()
-  const tick = () => {
+
+  // 기준값: 서버 산출 남은 초. 숫자가 아니면(구버전 서버 응답 등) 종전 절대시각 방식으로 폴백.
+  let baseRemainSec = null
+  const serverRemain = session.value?.prepRemainSec
+  if (typeof serverRemain === 'number' && Number.isFinite(serverRemain)) {
+    baseRemainSec = Math.max(0, Math.floor(serverRemain))
+  } else {
+    // [폴백 경로] prepRemainSec 미수신 시에만 사용 — 기기 시계 의존(상한 초과 표시 가능).
     const target = session.value?.prepAutoStartAt
-    if (!target) {
-      countdownText.value = ''
-      return
+    const targetMs = target ? new Date(String(target).replace(' ', 'T')).getTime() : NaN
+    if (Number.isFinite(targetMs)) {
+      baseRemainSec = Math.max(0, Math.floor((targetMs - Date.now()) / 1000))
     }
-    const remainMs = new Date(target.replace(' ', 'T')).getTime() - Date.now()
-    if (remainMs <= 0) {
+  }
+
+  if (baseRemainSec === null) {
+    countdownText.value = ''
+    return
+  }
+
+  const anchorMs = monotonicNow()
+  const tick = () => {
+    const elapsedSec = Math.floor((monotonicNow() - anchorMs) / 1000)
+    const remainSec = baseRemainSec - elapsedSec
+    if (remainSec <= 0) {
       countdownText.value = ''
       stopCountdown()
-      // 만료 → 서버 자동전이 반영 위해 상세 재조회(라우팅은 loadDetail 의 statusCd 분기)
+      // 만료 → 서버 자동전이 반영 위해 상세 재조회(라우팅은 loadDetail 의 statusCd 분기).
+      // 재조회 성공 시 loadDetail 이 startCountdown 을 다시 불러 기준값·anchor 가 갱신된다.
       loadDetail()
       return
     }
-    const totalSec = Math.floor(remainMs / 1000)
-    const mm = String(Math.floor(totalSec / 60)).padStart(2, '0')
-    const ss = String(totalSec % 60).padStart(2, '0')
+    const mm = String(Math.floor(remainSec / 60)).padStart(2, '0')
+    const ss = String(remainSec % 60).padStart(2, '0')
     countdownText.value = `${mm}:${ss}`
   }
   tick()
