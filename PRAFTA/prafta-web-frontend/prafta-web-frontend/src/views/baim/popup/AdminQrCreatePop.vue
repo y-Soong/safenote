@@ -173,6 +173,30 @@ const fnSave = async () => {
 
   isSaving.value = true;
   try {
+    // 휴대폰 중복 사전확인(baim05-qr-phone-precheck).
+    //   ACTIVE: 활성 계정 존재 → 발급 불가 안내(서버도 BAIM_400_003 으로 이중 차단).
+    //   REACTIVATABLE: 비활성 계정 존재 → 발급 시 그 계정이 재활성(재사용)되므로 관리자 confirm 후 진행.
+    //   휴대폰 평문의 접근로그 잔존 방지를 위해 POST 바디로 전송(GET 쿼리스트링 금지 — security Medium #3).
+    const checkRes = await axios.post("/webApi/baim05/check-daily-user-phone", {
+      siteCd: props.siteCd,
+      mblNo,
+    });
+    const duplicateType = checkRes.data?.duplicateType;
+    if (duplicateType === "ACTIVE") {
+      await proxy.$alert(
+        "동일한 휴대폰번호를 사용 중인 계정이 이미 존재합니다.\n휴대폰번호를 확인해 주세요."
+      );
+      return;
+    }
+    if (duplicateType === "REACTIVATABLE") {
+      const maskedNm = checkRes.data?.maskedUserNm || "";
+      const ok = await proxy.$confirm(
+        `이 번호로 사용되던 비활성 계정${maskedNm ? `(${maskedNm})` : ""}이 있습니다.\n` +
+          "발급 시 해당 계정이 재활성되어 재사용됩니다. 계속하시겠습니까?"
+      );
+      if (!ok) return;
+    }
+
     const response = await axios.post("/webApi/baim05/insert-daily-qr-user", {
       siteCd: props.siteCd,
       userNm: userNm.value,

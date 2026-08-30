@@ -56,6 +56,14 @@ public class DailyReentryProcessor {
     private final DailyLoginMapper dailyLoginMapper;
     // 입장 승인제(D6) — 승인요청 소진('02'→'05')을 같은 트랜잭션에서 수행.
     private final DailyEntryService dailyEntryService;
+    // baim05-slot-default-sch — 점유 시 슬롯 기본 근무타입 → TB_USER.DEFAULT_SCH_CD 복사(로그인 게이트 setDefaultSch 미러).
+    private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+    private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+    private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
+
+    // 자동생성 트리거 운영 게이트(LoginServiceImpl/배치와 동일 프로퍼티, 코드 기본값 true 통일)
+    @org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:true}")
+    private boolean defaultSchGenEnabled;
 
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -162,8 +170,57 @@ public class DailyReentryProcessor {
             throw new ApiException(DailyLoginErrorCode.DAILYLOGIN_400_001);
         }
 
+        // 8) baim05-slot-default-sch — 슬롯 기본 근무타입 → TB_USER.DEFAULT_SCH_CD 복사.
+        //    NODE_CD 매칭(§1)과 동일 규칙: 슬롯 미지정(NULL)이면 no-op(복귀자 기존 값/본인 선택 폴백),
+        //    지정돼 있으면 관리자 지정값이 우선(덮어씀). 저장은 로그인 게이트(setDefaultSch) 미러 —
+        //    updateUserDefaultSch(설정시점 포함) + 즉시 자동생성(applyDefaultSchChange, 실패 격리).
+        //    ★자동생성은 REQUIRES_NEW(별도 커밋)라, 이후 단계 롤백 시 계획만 남는 정합 깨짐을 피하기 위해
+        //      모든 롤백 유발 단계(승인 소진/활성 재조회) 통과 후 마지막에 수행한다.
+        applySlotDefaultSchToUser(cmpnyCd, siteCd, slotNo, userCd);
+
         // PII(휴대폰) 평문 로그 금지 — 식별 키만 남긴다.
         log.info("일용직 로그인 승인 재활성 완료 — userCd={}, slotNo={}, reqId={}", userCd, slotNo, approvedReqId);
         return active;
+    }
+
+    /**
+     * 슬롯 기본 근무타입 → 점유 사용자 TB_USER.DEFAULT_SCH_CD 복사(baim05-slot-default-sch).
+     *
+     * <p>Baim05ServiceImpl.applySlotDefaultSchToUser(QR 발급 경로)와 동일 규칙:
+     * 슬롯 미지정이면 no-op / 사용자 현재값과 동일하면 생략(멱등) / 복사 시점 화이트리스트
+     * 재검증 실패 시 생략(fail-open — 로그인 자체를 막지 않음) / 자동생성 실패는 격리.
+     * 자가 로그인 경로이므로 설정 조작자(operatorNo)는 본인 USER_CD.
+     */
+    private void applySlotDefaultSchToUser(String cmpnyCd, String siteCd, String slotNo, String userCd) {
+        String slotSchCd = dailyJoinMapper.selectSlotDefaultSchCd(cmpnyCd, siteCd, slotNo);
+        if (slotSchCd == null || slotSchCd.isBlank()) {
+            return;
+        }
+
+        // 사용자 현재값과 동일하면 갱신/재생성 생략(재입장 반복 시 불필요한 계획 재생성 방지)
+        com.prafta.common.cmm.sch.vo.DefaultSchUserVO current = defaultSchGenMapper.selectDefaultSchUser(cmpnyCd, userCd);
+        if (current != null && slotSchCd.equals(current.defaultSchCd())) {
+            return;
+        }
+
+        // 복사 시점 화이트리스트 재검증(근무타입 비활성화 등 이후 변경 대비). 실패 시 복사 생략(fail-open).
+        if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, slotSchCd)) {
+            log.warn("슬롯 기본 근무타입 복사 생략(사업장 활성 근무타입 아님) - siteCd={}, slotNo={}, schCd={}",
+                    siteCd, slotNo, slotSchCd);
+            return;
+        }
+
+        defaultSchGenMapper.updateUserDefaultSch(cmpnyCd, userCd, slotSchCd, userCd);
+
+        // 즉시 자동생성 — 운영 게이트 on 일 때만. 실패는 격리(재입장 트랜잭션을 롤백시키지 않음).
+        if (defaultSchGenEnabled) {
+            try {
+                defaultSchGenService.applyDefaultSchChange(cmpnyCd, siteCd, userCd, slotSchCd);
+            } catch (Exception e) {
+                log.error("슬롯 기본 근무타입 복사 — 자동생성 실패(설정은 저장됨) — userCd={}, schCd={}", userCd, slotSchCd, e);
+            }
+        }
+
+        log.info("슬롯 기본 근무타입 복사 완료 - siteCd={}, slotNo={}, userCd={}, schCd={}", siteCd, slotNo, userCd, slotSchCd);
     }
 }

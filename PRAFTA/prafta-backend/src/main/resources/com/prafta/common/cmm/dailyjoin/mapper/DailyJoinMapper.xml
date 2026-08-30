@@ -577,4 +577,17 @@
       AND EMPLOYMENT_TYPE = 'DAILY'
     </update>
 
+    <!-- ============================================================
+         baim05-slot-default-sch: 점유 시 슬롯 기본 근무타입 → TB_USER.DEFAULT_SCH_CD 복사(조회부).
+         승인 후 첫 로그인 점유(DailyReentryProcessor)에서 사용. 미존재/미지정이면 null.
+         ============================================================ -->
+    <select id="selectSlotDefaultSchCd" resultType="string">
+    /* DailyJoinMapper.selectSlotDefaultSchCd */
+    SELECT DEFAULT_SCH_CD
+    FROM TB_DAILY_USER_SLOT
+    WHERE CMPNY_CD = #{cmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND SLOT_NO = #{slotNo}
+    </select>
+
 </mapper>

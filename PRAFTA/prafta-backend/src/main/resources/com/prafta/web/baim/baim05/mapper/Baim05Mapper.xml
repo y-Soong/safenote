@@ -75,6 +75,9 @@
 	    <!-- PRAFTA-daily-user-dept: 슬롯 지정 소속부서(현재값) -->
 	    <arg name="nodeCd"      	column="nodeCd"        	javaType="java.lang.String"/>
 	    <arg name="nodeNm"      	column="nodeNm"        	javaType="java.lang.String"/>
+
+	    <!-- baim05-slot-default-sch: 슬롯 기본 근무타입(현재값, 점유 시 TB_USER.DEFAULT_SCH_CD 로 복사) -->
+	    <arg name="defaultSchCd"	column="defaultSchCd"  	javaType="java.lang.String"/>
 	  </constructor>
 	</resultMap>
 
@@ -101,6 +104,7 @@
 	    , A.SLOT_STATUS_NM												AS slotStatusNm
 	    , A.NODE_CD														AS nodeCd
 	    , A.NODE_NM														AS nodeNm
+	    , A.DEFAULT_SCH_CD												AS defaultSchCd
     FROM (
 		SELECT 
 			A.CMPNY_CD
@@ -141,6 +145,7 @@
 				WHEN A.NODE_CD IS NULL OR A.NODE_CD = '' THEN ''
 				ELSE FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'NODE', A.SITE_CD, A.NODE_CD)
 			  END															AS NODE_NM
+		    , A.DEFAULT_SCH_CD
 		FROM TB_DAILY_USER_SLOT A
 			 LEFT OUTER JOIN TB_DAILY_USER B
 				ON (
@@ -220,7 +225,9 @@
 	</select>
 
 	<!-- 활성 계정 수 축소 가드: 점유 슬롯(CURR_USER_CD 존재) 중 SLOT_NO 가 새 한도 이상(끌 대상)인 슬롯 수.
-	     >0 이면 점유자가 고아가 되므로 축소를 차단한다(BAIM_400_008). -->
+	     >0 이면 점유자가 고아가 되므로 축소를 차단한다(BAIM_400_008).
+	     ★ 미점유 슬롯의 CURR_USER_CD 는 NULL 외에 ''(빈문자열)로도 존재한다(레거시 saveDailyUserSlot 적재값).
+	       '' 를 점유로 오판하면 미점유 슬롯 때문에 축소가 오차단되므로 반드시 제외한다(dailyjoin 빈슬롯 판정과 동일 기준). -->
 	<select id="selectOccupiedSlotCntOverLimit" resultType="int">
 	/* Baim05Mapper.selectOccupiedSlotCntOverLimit */
 	SELECT COUNT(1)
@@ -228,6 +235,7 @@
 	WHERE CMPNY_CD = #{cmpnyCd}
 	  AND SITE_CD = #{siteCd}
 	  AND CURR_USER_CD IS NOT NULL
+	  AND CURR_USER_CD != ''
 	  AND CAST(SLOT_NO AS UNSIGNED) &gt;= #{dayLimitCnt}
 	</select>
 
@@ -255,7 +263,7 @@
    		, #{slotType}
    		, 'N'
 		, #{useYn}
-		, ''
+		, NULL		<!-- 미점유 = NULL. ''(빈문자열) 적재 금지 - 축소 가드가 점유로 오판하던 결함의 근원 -->
 		, #{slotStatus}
 		, #{nodeCd}		<!-- 신규 슬롯 기본 소속부서(사업장 최상단 노드). 기존 슬롯은 아래 ON DUPLICATE 에서 미변경. -->
 		, #{gvUserCd}
@@ -839,4 +847,53 @@
 	  AND USER_CD = #{userCd}
 	  AND EMPLOYMENT_TYPE = 'DAILY'
 	</update>
+
+	<!-- ============================================================
+	     baim05-slot-default-sch: 슬롯 기본 근무타입(DEFAULT_SCH_CD) 지정/해제.
+	     소속부서(updateSlotNode) 패턴 미러 - 점유중 슬롯도 지정 허용(메타 설정),
+	     점유 시(QR 발급/직접가입 승인 후 첫 로그인) TB_USER.DEFAULT_SCH_CD 로 복사된다.
+	     ============================================================ -->
+
+	<!-- 슬롯 기본 근무타입 UPDATE. schCd 가 null 이면 해제(근로자 본인 선택 폴백). -->
+	<update id="updateSlotDefaultSch" parameterType="com.prafta.web.baim.baim05.application.command.SetSlotSchCommand">
+	/* Baim05Mapper.updateSlotDefaultSch */
+	UPDATE TB_DAILY_USER_SLOT
+	SET DEFAULT_SCH_CD = #{schCd}
+		, UPDATE_NO = #{gvUserCd}
+		, UPDATE_DATE = NOW()
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</update>
+
+	<!-- 점유한 슬롯의 기본 근무타입 조회. 미존재/미지정이면 null. -->
+	<select id="selectSlotDefaultSchCd" resultType="string">
+	/* Baim05Mapper.selectSlotDefaultSchCd */
+	SELECT DEFAULT_SCH_CD
+	FROM TB_DAILY_USER_SLOT
+	WHERE CMPNY_CD = #{cmpnyCd}
+	  AND SITE_CD = #{siteCd}
+	  AND SLOT_NO = #{slotNo}
+	</select>
+
+	<!-- ============================================================
+	     baim05-qr-phone-precheck: 관리자 QR 발급 전 휴대폰 중복 사전확인.
+	     재활성 대상(같은 회사 + 같은 휴대폰의 비활성 일용직 최신 1건)의 마스킹 이름을 반환.
+	     발급 시 이 계정이 재사용(재활성)되므로 관리자 confirm 안내용. 없으면 결과 없음(null).
+	     PII: 이름은 슬롯 이력 조회와 동일 규칙으로 마스킹(평문 금지).
+	     ============================================================ -->
+	<select id="selectReactivatableDailyUserNmMasked" resultType="string">
+	/* Baim05Mapper.selectReactivatableDailyUserNmMasked */
+	SELECT CASE
+		WHEN CHAR_LENGTH(USER_NM) &lt;= 1 THEN USER_NM
+		WHEN CHAR_LENGTH(USER_NM) = 2 THEN CONCAT(LEFT(USER_NM, 1), '*')
+		ELSE CONCAT(LEFT(USER_NM, 2), REPEAT('*', CHAR_LENGTH(USER_NM) - 2))
+	  END
+	FROM TB_DAILY_USER
+	WHERE CMPNY_CD    = #{cmpnyCd}
+	  AND MBL_NO_HMAC = #{mblNoHmac}
+	  AND USE_YN      = 'N'
+	ORDER BY INSERT_DATE DESC
+	LIMIT 1
+	</select>
 </mapper>

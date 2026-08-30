@@ -14,6 +14,7 @@ import com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.LinkPoliciesCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotFixedCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotNodeCommand;
+import com.prafta.web.baim.baim05.application.command.SetSlotSchCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotTypeCommand;
 import com.prafta.web.baim.baim05.application.query.DailyUserLinkPoliciesQuery;
 import com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery;
@@ -141,4 +142,17 @@ public interface Baim05Mapper {
 
 	/** 슬롯 지정부서를 점유 일용직(EMPLOYMENT_TYPE='DAILY')의 TB_USER.NODE_CD 로 무조건 세팅. */
 	void updateTbUserNodeCdFromSlot(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd, @Param("nodeCd") String nodeCd, @Param("gvUserCd") String gvUserCd);
+
+	// ===== baim05-slot-default-sch: 슬롯 기본 근무타입(DEFAULT_SCH_CD) 지정/해제 =====
+
+	/** 슬롯 기본 근무타입 UPDATE. schCd 가 null 이면 해제(근로자 본인 선택 폴백). 점유중 슬롯도 대상. */
+	void updateSlotDefaultSch(SetSlotSchCommand command);
+
+	/** 점유한 슬롯의 기본 근무타입(DEFAULT_SCH_CD) 조회. 미존재/미지정이면 null. */
+	String selectSlotDefaultSchCd(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("slotNo") String slotNo);
+
+	// ===== baim05-qr-phone-precheck: 관리자 QR 발급 전 휴대폰 중복 사전확인 =====
+
+	/** 재활성 대상(같은 회사+휴대폰 비활성 일용직 최신 1건)의 마스킹 이름. 없으면 null. */
+	String selectReactivatableDailyUserNmMasked(@Param("cmpnyCd") String cmpnyCd, @Param("mblNoHmac") String mblNoHmac);
 }

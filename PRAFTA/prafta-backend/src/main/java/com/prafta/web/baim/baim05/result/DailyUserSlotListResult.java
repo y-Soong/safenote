@@ -18,6 +18,7 @@ public record DailyUserSlotListResult(
 	, String slotStatusNm
 	, String nodeCd
 	, String nodeNm
+	, String defaultSchCd	// 슬롯 기본 근무타입(점유 시 TB_USER.DEFAULT_SCH_CD 로 복사). null=근로자 본인 선택
 ){
 
 }

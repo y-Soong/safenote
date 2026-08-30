@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.common.security.JwtUtil;
+import com.prafta.web.baim.baim05.application.param.CheckDailyUserPhoneParam;
 import com.prafta.web.baim.baim05.application.param.ClearDailyUserSlotsParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserLinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
@@ -19,8 +20,10 @@ import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotNodeParam;
+import com.prafta.web.baim.baim05.application.param.SetSlotSchParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotTypeParam;
 import com.prafta.web.baim.baim05.application.param.SlotHisParam;
+import com.prafta.web.baim.baim05.dto.request.CheckDailyUserPhoneRequest;
 import com.prafta.web.baim.baim05.dto.request.ClearDailyUserSlotsRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserLinkPoliciesRequest;
 import com.prafta.web.baim.baim05.dto.request.DailyUserSlotListRequest;
@@ -28,7 +31,9 @@ import com.prafta.web.baim.baim05.dto.request.InsertDailyQrUserRequest;
 import com.prafta.web.baim.baim05.dto.request.LinkPoliciesRequest;
 import com.prafta.web.baim.baim05.dto.request.SetSlotFixedRequest;
 import com.prafta.web.baim.baim05.dto.request.SetSlotNodeRequest;
+import com.prafta.web.baim.baim05.dto.request.SetSlotSchRequest;
 import com.prafta.web.baim.baim05.dto.request.SetSlotTypeRequest;
+import com.prafta.web.baim.baim05.dto.response.CheckDailyUserPhoneResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
@@ -120,6 +125,33 @@ public class Baim05Controller {
 		baim05Service.setDailyUserSlotNode(SetSlotNodeParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
 
 		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	// baim05-slot-default-sch: 슬롯 기본 근무타입(DEFAULT_SCH_CD) 지정/해제(단일/일괄)
+	@PostMapping("/set-daily-user-slot-sch")
+	public ResponseEntity<?> setDailyUserSlotSch(
+			@RequestBody SetSlotSchRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		baim05Service.setDailyUserSlotSch(SetSlotSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).build();
+	}
+
+	// baim05-qr-phone-precheck: 관리자 QR 발급 전 휴대폰 중복 사전확인.
+	//   [security Medium #3] 휴대폰 평문의 접근로그/히스토리 잔존을 막기 위해 GET 쿼리스트링이 아닌 POST 바디로 받는다.
+	@PostMapping("/check-daily-user-phone")
+	public ResponseEntity<?> checkDailyUserPhone(
+			@RequestBody CheckDailyUserPhoneRequest request,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		CheckDailyUserPhoneResponse response = baim05Service.checkDailyUserPhone(
+				CheckDailyUserPhoneParam.from(
+						request == null ? null : request.getSiteCd(),
+						request == null ? null : request.getMblNo(),
+						jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK).body(response);
 	}
 
 	@GetMapping("/daily-user-slot-his")

@@ -340,6 +340,7 @@
                   @update:width="onResize"
                 />
                 <th style="width: 160px">소속부서</th>
+                <th class="editableCell" style="width: 160px">기본근무타입</th>
                 <th style="width: 130px">구분</th>
                 <th style="width: 100px">상태</th>
                 <th style="width: 90px">QRCODE</th>
@@ -354,8 +355,8 @@
                 v-if="!DailyUserSlotList || DailyUserSlotList.length === 0"
               >
                 <tr>
-                  <!-- 컬럼 수 = ThSortable 4 + th 10 = 14 (본문 td 14개와 일치) -->
-                  <td colspan="14" class="edu-grid-empty">
+                  <!-- 컬럼 수 = ThSortable 4 + th 11 = 15 (본문 td 15개와 일치) -->
+                  <td colspan="15" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -402,6 +403,26 @@
                         />
                       </button>
                     </div>
+                  </td>
+                  <td>
+                    <!-- 슬롯 기본근무타입: 점유 시(QR 발급/직접가입 승인 후 첫 로그인) 근로자의
+                         기본 근무타입으로 복사된다. 미지정=근로자 본인이 로그인 시 직접 선택(종전 동작). -->
+                    <BaseSelect
+                      v-model="dailyUserSlot.defaultSchCd"
+                      :readonly="dailyUserSlot.useYn === 'N'"
+                      name="defaultSchCd"
+                    >
+                      <option value="">미지정</option>
+                      <option
+                        v-for="opt in filteredSchTypeOptions"
+                        :key="opt.schCd"
+                        :value="opt.schCd"
+                      >
+                        {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                          fnFmtSchTime(opt.fstSchEndTime)
+                        }})
+                      </option>
+                    </BaseSelect>
                   </td>
                   <td>
                     <BaseSelect
@@ -538,6 +559,7 @@
 import {
   ref,
   watch,
+  computed,
   defineProps,
   onMounted,
   getCurrentInstance,
@@ -588,6 +610,9 @@ const { colWidths, onResize } = useColumnResize({
 });
 const systCodeArr = ref({});
 const SiteSearchPopOpen = ref(false);
+
+// 슬롯 기본근무타입 select 옵션(조회 사업장의 활성 근무타입, /user01/sch-type-options 재사용)
+const schTypeOptions = ref([]);
 
 // 조회조건 변수
 const siteCd = ref("");
@@ -702,6 +727,50 @@ const fnSlotQrCodePopOpen = (slot) => {
   });
 };
 const formatMblNo = (val) => proxy.$util.formatPhoneNumber(val) ?? "";
+
+// ── 슬롯 기본근무타입(DEFAULT_SCH_CD) ──────────────────────────────
+// 'HHmm' → 'HH:mm' 라벨 포맷(UserInfoPop 미러).
+const fnFmtSchTime = (t) => {
+  if (!t || t.length < 4) return t || "";
+  return `${t.substring(0, 2)}:${t.substring(2, 4)}`;
+};
+
+// 기본 근무타입 반영 시점은 항상 명일(오늘+1, applyDefaultSchChange 규칙) — 적용일이
+//   명일보다 미래인 근무타입은 노출하지 않는다. 최종 판정은 서버(isValidDefaultSch).
+const tomorrowYmd = (() => {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}${m}${day}`;
+})();
+const filteredSchTypeOptions = computed(() =>
+  schTypeOptions.value.filter(
+    (o) => !o.earliestApplyDate || o.earliestApplyDate <= tomorrowYmd
+  )
+);
+
+// 조회 사업장의 활성 근무타입 옵션 조회. 회사 스코프는 서버가 토큰에서 강제.
+const fnLoadSchTypeOptions = async (targetSiteCd) => {
+  if (!targetSiteCd) {
+    schTypeOptions.value = [];
+    return;
+  }
+  try {
+    const response = await axios.get("/webApi/user01/sch-type-options", {
+      params: { siteCd: targetSiteCd },
+    });
+    schTypeOptions.value = response.data ?? [];
+  } catch (err) {
+    schTypeOptions.value = [];
+    const msg = resolveApiErrorMessage(
+      err,
+      "근무타입 목록 조회 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  }
+};
 const fnGenerateAdminQr = () => {
   // T1-07: 계정 등록 OFF 면 발급 차단 안내(서버에서도 BAIM_400_004 로 강제 차단). 버튼 비활성과 이중 가드.
   if (!dailyUserJoinYn.value) {
@@ -762,11 +831,11 @@ const fnSavePolicy = async () => {
   }
 };
 
-// 통합 저장: 체크된 슬롯 행의 소속부서(nodeCd)/구분(slotType) 변경을 저장한다.
+// 통합 저장: 체크된 슬롯 행의 소속부서(nodeCd)/구분(slotType)/기본근무타입(defaultSchCd) 변경을 저장한다.
 //   - 체크된 행이 없으면 안내 후 중단.
 //   - 구분 저장은 점유중(slotStatus='02') 행을 제외(점유중 행은 변경 불가, 서버도 fail-closed).
-//   - 소속부서 저장은 체크된 행 전체(빈값=부서 해제 포함).
-//   두 API의 권한·점유 검증은 백엔드가 그대로 수행한다(프론트는 호출만 통합).
+//   - 소속부서/기본근무타입 저장은 체크된 행 전체(빈값=해제 포함, 점유중 행도 허용).
+//   각 API의 권한·점유 검증은 백엔드가 그대로 수행한다(프론트는 호출만 통합).
 const fnSave = async () => {
   const checked = collectCheckedSlots();
   if (checked.length === 0) {
@@ -820,6 +889,25 @@ const fnSave = async () => {
         "부서 저장 중 오류가 발생했습니다."
       );
       failedLabels.push(`부서 저장 실패: ${msg}`);
+    }
+  }
+
+  // 3) 기본근무타입 저장(체크된 행 전체, 빈값=해제. 점유중 행도 허용 — 다음 점유부터 반영)
+  if (checked.length > 0) {
+    try {
+      await axios.post("/webApi/baim05/set-daily-user-slot-sch", {
+        slots: checked.map((r) => ({
+          siteCd: r.siteCd,
+          slotNo: r.slotNo,
+          schCd: r.defaultSchCd ?? "",
+        })),
+      });
+    } catch (err) {
+      const msg = resolveApiErrorMessage(
+        err,
+        "기본근무타입 저장 중 오류가 발생했습니다."
+      );
+      failedLabels.push(`기본근무타입 저장 실패: ${msg}`);
     }
   }
 
@@ -1015,7 +1103,7 @@ useFieldWatcher(
   (item) => {
     item.chk = true;
   },
-  ["chk", "_origSlotType", "_origNodeCd"]
+  ["chk", "_origSlotType", "_origNodeCd", "_origDefaultSchCd"]
 );
 
 // ================ Life Cycle Functions ================
@@ -1072,6 +1160,9 @@ const fnSearch = async () => {
   //   (기존엔 watch(siteCd) 로만 갱신돼 사업장 미변경 조회 시 카드가 갱신되지 않던 결함 수정)
   await fnGetDailyUserLinkPolicies();
 
+  // 기본근무타입 select 옵션도 조회 사업장 기준으로 함께 최신화.
+  await fnLoadSchTypeOptions(siteCd.value);
+
   DailyUserSlotList.value = [];
 
   try {
@@ -1087,10 +1178,13 @@ const fnSearch = async () => {
 
     if (response.status === 200) {
       DailyUserSlotList.value = response.data?.dailyUserSlotList || [];
-      // 구분(slotType)/소속부서(nodeCd) 변경 감지를 위해 행마다 원본값 스냅샷 저장(dirty 판정 기준).
+      // 구분(slotType)/소속부서(nodeCd)/기본근무타입(defaultSchCd) 변경 감지를 위해 행마다 원본값 스냅샷 저장(dirty 판정 기준).
       DailyUserSlotList.value.forEach((item) => {
+        // select 의 '미지정' 옵션(value="") 매칭을 위해 null 은 빈문자로 정규화
+        item.defaultSchCd = item.defaultSchCd ?? "";
         item._origSlotType = item.slotType;
         item._origNodeCd = item.nodeCd ?? "";
+        item._origDefaultSchCd = item.defaultSchCd;
       });
       // // dayLimitCnt 기본값 설정
       // DailyUserSlotList.value.forEach((item) => {

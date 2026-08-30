@@ -142,4 +142,9 @@ public interface DailyJoinMapper {
 
     /** 슬롯 지정부서를 점유 일용직(EMPLOYMENT_TYPE='DAILY')의 TB_USER.NODE_CD 로 무조건 세팅. */
     void updateTbUserNodeCdFromSlot(@Param("cmpnyCd") String cmpnyCd, @Param("userCd") String userCd, @Param("nodeCd") String nodeCd);
+
+    // ===== baim05-slot-default-sch: 점유 시 슬롯 기본 근무타입 → TB_USER.DEFAULT_SCH_CD 복사 =====
+
+    /** 점유한 슬롯의 기본 근무타입(DEFAULT_SCH_CD) 조회. 미존재/미지정이면 null. */
+    String selectSlotDefaultSchCd(@Param("cmpnyCd") String cmpnyCd, @Param("siteCd") String siteCd, @Param("slotNo") String slotNo);
 }

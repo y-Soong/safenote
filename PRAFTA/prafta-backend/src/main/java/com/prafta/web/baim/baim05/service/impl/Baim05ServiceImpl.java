@@ -24,7 +24,9 @@ import com.prafta.web.baim.baim05.application.command.InsertSlotHisCommand;
 import com.prafta.web.baim.baim05.application.command.LinkPoliciesCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotFixedCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotNodeCommand;
+import com.prafta.web.baim.baim05.application.command.SetSlotSchCommand;
 import com.prafta.web.baim.baim05.application.command.SetSlotTypeCommand;
+import com.prafta.web.baim.baim05.application.param.CheckDailyUserPhoneParam;
 import com.prafta.web.baim.baim05.application.param.ClearDailyUserSlotsParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserLinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.DailyUserSlotListParam;
@@ -32,12 +34,14 @@ import com.prafta.web.baim.baim05.application.param.InsertDailyQrUserParam;
 import com.prafta.web.baim.baim05.application.param.LinkPoliciesParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotFixedParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotNodeParam;
+import com.prafta.web.baim.baim05.application.param.SetSlotSchParam;
 import com.prafta.web.baim.baim05.application.param.SetSlotTypeParam;
 import com.prafta.web.baim.baim05.application.param.SlotHisParam;
 import com.prafta.web.baim.baim05.application.query.DailyUserLinkPoliciesQuery;
 import com.prafta.web.baim.baim05.application.query.DailyUserSlotListQuery;
 import com.prafta.web.baim.baim05.application.query.SlotHisQuery;
 import com.prafta.web.baim.baim05.application.query.UserSlotCountQuery;
+import com.prafta.web.baim.baim05.dto.response.CheckDailyUserPhoneResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserLinkPoliciesResponse;
 import com.prafta.web.baim.baim05.dto.response.DailyUserSlotListResponse;
 import com.prafta.web.baim.baim05.dto.response.InsertDailyQrUserResponse;
@@ -61,6 +65,14 @@ public class Baim05ServiceImpl implements Baim05Service{
 	private final AesGcmCrypto aesGcmCrypto;
 	private final PasswordHasher passwordHasher;
 	private final JwtUtil jwtUtil;
+	// baim05-slot-default-sch: 슬롯 기본 근무타입 화이트리스트 검증 + 점유 시 즉시 자동생성(로그인 게이트 setDefaultSch 미러)
+	private final com.prafta.common.cmm.sch.service.DefaultSchOptionService defaultSchOptionService;
+	private final com.prafta.common.cmm.sch.service.DefaultSchGenService defaultSchGenService;
+	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
+
+	// 자동생성 트리거 운영 게이트(LoginServiceImpl/배치와 동일 프로퍼티, 코드 기본값 true 통일)
+	@org.springframework.beans.factory.annotation.Value("${prafta.default-sch.gen.enabled:true}")
+	private boolean defaultSchGenEnabled;
 
 	private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
@@ -277,6 +289,13 @@ public class Baim05ServiceImpl implements Baim05Service{
 			, param.gvUserCd()				// INSERT_NO = 발급한 관리자
 		));
 
+		// baim05-slot-default-sch: 점유 슬롯의 기본 근무타입 → 점유 일용직 TB_USER.DEFAULT_SCH_CD 복사.
+		//   미지정(NULL)이면 종전 동작 유지(근로자 본인이 로그인 게이트에서 선택). 지정돼 있으면
+		//   관리자 지정값이 우선(재활성 계정의 기존 값도 덮어씀).
+		//   ★자동생성은 REQUIRES_NEW(별도 커밋)라, 이후 단계 롤백 시 계획만 남는 정합 깨짐을 피하기 위해
+		//     발급 트랜잭션의 마지막 단계에서 수행한다.
+		applySlotDefaultSchToUser(param.gvCmpnyCd(), param.siteCd(), param.slotNo(), finalUserCd, param.gvUserCd());
+
 		return InsertDailyQrUserResponse.builder().dailyUserQrInfoResult(new DailyUserQrInfoResult(param.gvCmpnyCd(), param.siteCd(), finalUserCd)).build();
 	}
 
@@ -440,6 +459,130 @@ public class Baim05ServiceImpl implements Baim05Service{
 
 			baim05Mapper.updateSlotNode(command);
 		}
+	}
+
+	/**
+	 * 슬롯 기본 근무타입(DEFAULT_SCH_CD) 지정/해제(단일/일괄). baim05-slot-default-sch.
+	 *
+	 * <p>소속부서(setDailyUserSlotNode) 패턴 미러 — 점유중 슬롯도 지정을 허용한다(슬롯에 근무타입을
+	 * 미리 배정하는 메타 설정이므로). 단, 현재 점유자에게는 소급 적용하지 않고 다음 점유(QR 발급/
+	 * 직접가입 승인 후 첫 로그인) 시점에 TB_USER.DEFAULT_SCH_CD 로 복사된다.
+	 * schCd 가 빈값이면 해제(NULL, 근로자 본인 선택 폴백), 값이 있으면 그 슬롯 사업장의 활성
+	 * 근무타입인지 서버가 재검증한다(isValidDefaultSch — cross-site 변조 차단, BAIM_400_009).
+	 */
+	@Override
+	@Transactional
+	public void setDailyUserSlotSch(SetSlotSchParam param) {
+		log.info("일용직 슬롯 기본 근무타입 지정 진입 - cmpnyCd={}, slotCnt={}", param.gvCmpnyCd(), param.slots().size());
+
+		for (SetSlotSchParam.SlotItem slot : param.slots()) {
+			// 사업장 접근 권한 검증(cross-site/cross-company IDOR 차단)
+			assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
+
+			// 슬롯 쓰기 EP 역할 게이트(master/hr 또는 해당 사업장 노드 관리자만 허용). 슬롯 단위 사업장 기준.
+			assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), slot.siteCd());
+
+			// 근무타입 지정(schCd != null)인 경우, 그 슬롯 사업장의 활성 근무타입인지 서버 재검증(화이트리스트).
+			if (slot.schCd() != null
+				&& !defaultSchOptionService.isValidDefaultSch(param.gvCmpnyCd(), slot.siteCd(), slot.schCd())) {
+				log.warn("일용직 슬롯 기본 근무타입 지정 차단(사업장 활성 근무타입 아님) - siteCd={}, slotNo={}, schCd={}",
+						slot.siteCd(), slot.slotNo(), slot.schCd());
+				throw new ApiException(BaimErrorCode.BAIM_400_009);
+			}
+
+			SetSlotSchCommand command = new SetSlotSchCommand(
+				param.gvCmpnyCd()
+				, slot.siteCd()
+				, slot.slotNo()
+				, slot.schCd()		// null 이면 해제
+				, param.gvUserCd()
+			);
+
+			baim05Mapper.updateSlotDefaultSch(command);
+		}
+	}
+
+	/**
+	 * 관리자 QR 발급 전 휴대폰 중복 사전확인. baim05-qr-phone-precheck.
+	 *
+	 * <p>발급 경로(insertDailyQrUser)와 동일한 정규화/HMAC 로 판정한다:
+	 * <ul>
+	 *   <li>ACTIVE — 활성 계정(TB_DAILY_USER 또는 통합 TB_USER) 존재. 발급 시 BAIM_400_003 차단 대상.</li>
+	 *   <li>REACTIVATABLE — 비활성 일용직 존재. 발급 시 그 계정이 재활성(재사용)됨 — 관리자 confirm 안내용.
+	 *       마스킹 이름만 함께 반환(평문 PII 금지).</li>
+	 *   <li>NONE — 중복 없음.</li>
+	 * </ul>
+	 * 계정 존재 여부를 노출하므로 쓰기 경로와 동일한 역할 게이트(assertSlotWriteRole)를 적용한다.
+	 */
+	@Override
+	public CheckDailyUserPhoneResponse checkDailyUserPhone(CheckDailyUserPhoneParam param) {
+		// 사업장 접근 권한 + 슬롯 운영 역할 게이트(계정 존재 여부 enumeration 방지)
+		assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+		assertSlotWriteRole(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+
+		String phoneNorm = Normalizers.normalizePhone(param.mblNo());
+		if (phoneNorm == null) {
+			throw new ApiException(com.prafta.common.error.common.CommonErrorCode.COMMON_400_001);
+		}
+		String phoneHmac = hmacSigner.hmacSha256Base64Url(phoneNorm);
+
+		// 활성 중복(발급 시 BAIM_400_003 차단 대상과 동일 판정)
+		if (baim05Mapper.selectDailyUserDuplicateCnt(param.gvCmpnyCd(), phoneHmac) > 0
+			|| baim05Mapper.selectTbUserMblHmacDupleCnt(param.gvCmpnyCd(), phoneHmac) > 0) {
+			return CheckDailyUserPhoneResponse.builder().duplicateType("ACTIVE").build();
+		}
+
+		// 재활성 대상(비활성 일용직 최신 1건) — 발급 시 이 계정이 재사용된다.
+		String maskedNm = baim05Mapper.selectReactivatableDailyUserNmMasked(param.gvCmpnyCd(), phoneHmac);
+		if (maskedNm != null) {
+			return CheckDailyUserPhoneResponse.builder()
+					.duplicateType("REACTIVATABLE")
+					.maskedUserNm(maskedNm)
+					.build();
+		}
+
+		return CheckDailyUserPhoneResponse.builder().duplicateType("NONE").build();
+	}
+
+	/**
+	 * 슬롯 기본 근무타입 → 점유 사용자 TB_USER.DEFAULT_SCH_CD 복사(baim05-slot-default-sch).
+	 *
+	 * <p>로그인 게이트(LoginServiceImpl.setDefaultSch) 저장 규칙 미러:
+	 * updateUserDefaultSch(설정시점 포함) + 즉시 자동생성(applyDefaultSchChange, 실패 격리).
+	 * 슬롯 미지정(NULL)이면 no-op(근로자 본인 선택 폴백). 사용자의 기존 값과 동일하면 재생성 생략(멱등).
+	 * 복사 시점 화이트리스트 재검증에 실패하면 복사를 건너뛴다(fail-open — 발급/로그인 자체는 막지 않음).
+	 */
+	private void applySlotDefaultSchToUser(String cmpnyCd, String siteCd, String slotNo, String userCd, String operatorCd) {
+		String slotSchCd = baim05Mapper.selectSlotDefaultSchCd(cmpnyCd, siteCd, slotNo);
+		if (slotSchCd == null || slotSchCd.isBlank()) {
+			return;
+		}
+
+		// 사용자 현재값과 동일하면 갱신/재생성 생략(재발급 반복 시 불필요한 계획 재생성 방지)
+		com.prafta.common.cmm.sch.vo.DefaultSchUserVO current = defaultSchGenMapper.selectDefaultSchUser(cmpnyCd, userCd);
+		if (current != null && slotSchCd.equals(current.defaultSchCd())) {
+			return;
+		}
+
+		// 복사 시점 화이트리스트 재검증(근무타입 비활성화 등 이후 변경 대비). 실패 시 복사 생략(fail-open).
+		if (!defaultSchOptionService.isValidDefaultSch(cmpnyCd, siteCd, slotSchCd)) {
+			log.warn("슬롯 기본 근무타입 복사 생략(사업장 활성 근무타입 아님) - siteCd={}, slotNo={}, schCd={}",
+					siteCd, slotNo, slotSchCd);
+			return;
+		}
+
+		defaultSchGenMapper.updateUserDefaultSch(cmpnyCd, userCd, slotSchCd, operatorCd);
+
+		// 즉시 자동생성 — 운영 게이트 on 일 때만. 실패는 격리(발급 트랜잭션을 롤백시키지 않음).
+		if (defaultSchGenEnabled) {
+			try {
+				defaultSchGenService.applyDefaultSchChange(cmpnyCd, siteCd, userCd, slotSchCd);
+			} catch (Exception e) {
+				log.error("슬롯 기본 근무타입 복사 — 자동생성 실패(설정은 저장됨) — userCd={}, schCd={}", userCd, slotSchCd, e);
+			}
+		}
+
+		log.info("슬롯 기본 근무타입 복사 완료 - siteCd={}, slotNo={}, userCd={}, schCd={}", siteCd, slotNo, userCd, slotSchCd);
 	}
 
 	/**
