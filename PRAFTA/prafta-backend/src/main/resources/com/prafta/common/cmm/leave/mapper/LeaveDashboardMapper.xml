@@ -423,6 +423,10 @@
             , LU.LEAVE_MINUTES            AS leaveMinutes
             , CASE WHEN DATE_FORMAT(D.D, '%Y%m%d') <![CDATA[ <= ]]> #{todayYmd} THEN 'USED'
                    ELSE 'SCHEDULED' END   AS status
+            <!-- 증빙 파일(연차 신청 증빙 필수화 2026-08-29): 증빙은 분할차감 첫 charge 행에만 저장되는데,
+                 본 쿼리의 대표행 선택(MIN LEAVE_ID)이 정확히 그 행이라 추가 조인 없이 그대로 읽는다.
+                 (VO 는 @Getter/@Setter 클래스 = 이름 기반 매핑이라 컬럼 위치 무관) -->
+            , LU.EVIDENCE_FILE_ID         AS evidenceFileId
 
         FROM TB_USER_LEAVE_USE LU
 
@@ -451,6 +455,24 @@
                                    AND X.DEL_YN       = 'N' ) )
 
         ORDER BY D.D, LU.START_TIME, LU.LEAVE_ID
+    </select>
+
+    <!-- ============ 사용 이력 증빙 파일 열람 스코프 검증 ============
+      연차 신청 증빙 필수화(2026-08-29): Attd_09 상세(MASTER/HR)에서 증빙을 열람할 때,
+      해당 파일이 "이 회사·이 직원의 연차 사용 건에 실제로 첨부된 FILE_TYPE=008 파일"인지 검증한다
+      (임의 fileMgmtCd 대입으로 타 직원/타 유형 보호 파일에 접근하는 것을 차단 — 4중 검증 관례). -->
+    <select id="countUsageEvidenceFile" resultType="int">
+    /* LeaveDashboardMapper.countUsageEvidenceFile */
+    SELECT COUNT(*)
+      FROM TB_USER_LEAVE_USE U
+      JOIN TB_FILE_INFO F
+        ON F.CMPNY_CD     = U.CMPNY_CD
+       AND F.FILE_MGMT_CD = U.EVIDENCE_FILE_ID
+       AND F.FILE_TYPE    = '008'
+     WHERE U.CMPNY_CD         = #{cmpnyCd}
+       AND U.USER_CD          = #{userCd}
+       AND U.EVIDENCE_FILE_ID = #{fileMgmtCd}
+       AND U.DEL_YN           = 'N'
     </select>
 
     <!-- ============ 신청형 휴가(LEAVE_TYPE='01') 타입별 잔여 현황 ============

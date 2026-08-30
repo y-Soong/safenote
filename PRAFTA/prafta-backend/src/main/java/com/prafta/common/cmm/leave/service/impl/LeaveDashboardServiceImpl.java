@@ -21,6 +21,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.prafta.common.cmm.leave.command.CoverGrantCommand;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
+import com.prafta.common.cmm.file.application.query.FileReadQuery;
+import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDashboardService;
@@ -166,6 +169,8 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
     private static final int COVER_GRANT_LOCK_TIMEOUT_SEC = 5;
 
     private final LeaveDashboardMapper leaveDashboardMapper;
+    /** 사용 이력 증빙 파일 인증 스트림 서빙용(공용 cmm 빈) — 연차 신청 증빙 필수화 2026-08-29. */
+    private final FileService fileService;
     private final LeavePolicyService leavePolicyService;
     private final LeaveGrantEngineService leaveGrantEngineService;
     private final ObjectMapper objectMapper;
@@ -429,6 +434,33 @@ public class LeaveDashboardServiceImpl implements LeaveDashboardService {
                 cmpnyCd, userCd, year, history.size());
 
         return history;
+    }
+
+    @Override
+    public FileBytesResult getUsageEvidenceFile(String cmpnyCd, String authCd, String userCd, String fileMgmtCd) {
+        requireCmpnyCd(cmpnyCd);
+        // 권한 가드 (정책서 §8.5.7): 사용 이력 조회와 동일 — MASTER/HR. 결재선 밖 인사 관리자의
+        // 증빙 확인 경로(무결재 자동확정 건 포함 — 2026-08-30 사용자 확정).
+        ensureManager(cmpnyCd, authCd, "연차 사용 이력 증빙 열람");
+        if (userCd == null || userCd.isBlank() || fileMgmtCd == null || fileMgmtCd.isBlank()) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        // 스코프 검증: 해당 파일이 "이 회사·이 직원의 연차 사용 건에 실제로 첨부된 FILE_TYPE=008 파일"인지
+        // (존재/타입/회사/대상 직원 — 임의 fileMgmtCd 대입으로 타 직원·타 유형 보호 파일 접근 차단).
+        // 스코프 밖은 존재 여부를 노출하지 않는 일반 404로 통일.
+        if (leaveDashboardMapper.countUsageEvidenceFile(cmpnyCd, userCd, fileMgmtCd) <= 0) {
+            log.warn("연차 사용 이력 증빙 - 스코프 밖 열람 시도 차단. cmpnyCd={}, userCd={}, fileMgmtCd={}",
+                    cmpnyCd, userCd, fileMgmtCd);
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+
+        FileBytesResult file = fileService.loadFileBytes(new FileReadQuery(cmpnyCd, fileMgmtCd));
+        if (file == null) {
+            // DB 행/디스크 파일 부재 — 동일하게 일반 404.
+            throw new ApiException(AttdErrorCode.ATTD_404_020);
+        }
+        return file;
     }
 
     /**

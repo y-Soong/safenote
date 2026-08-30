@@ -266,10 +266,11 @@
           <div class="ldp-table-wrap">
             <table class="ldp-table">
               <colgroup>
+                <col style="width: 18%" />
+                <col style="width: 30%" />
+                <col style="width: 16%" />
+                <col style="width: 16%" />
                 <col style="width: 20%" />
-                <col style="width: 36%" />
-                <col style="width: 22%" />
-                <col style="width: 22%" />
               </colgroup>
               <thead>
                 <tr>
@@ -277,6 +278,7 @@
                   <th>연차 종류</th>
                   <th class="is-right">일수</th>
                   <th class="is-center">상태</th>
+                  <th class="is-center">증빙</th>
                 </tr>
               </thead>
               <tbody>
@@ -294,11 +296,33 @@
                       {{ h.status === "USED" ? "사용" : "사용예정" }}
                     </span>
                   </td>
+                  <td class="is-center">
+                    <!-- 증빙 첨부 건만 노출. 보기=이미지 오버레이/PDF 새 탭(그 외 저장 폴백), 저장=다운로드 -->
+                    <template v-if="h.evidenceFileId">
+                      <button
+                        type="button"
+                        class="ldp-evid-btn"
+                        :disabled="evidenceBusy"
+                        @click="fnViewEvidence(h)"
+                      >
+                        보기
+                      </button>
+                      <button
+                        type="button"
+                        class="ldp-evid-btn"
+                        :disabled="evidenceBusy"
+                        @click="fnDownloadEvidence(h)"
+                      >
+                        저장
+                      </button>
+                    </template>
+                    <span v-else class="ldp-recall-na">-</span>
+                  </td>
                 </tr>
 
                 <!-- empty -->
                 <tr v-if="usageHistory.length === 0">
-                  <td colspan="4" class="ldp-table-empty">
+                  <td colspan="5" class="ldp-table-empty">
                     {{ usageYear }}년 사용 이력이 없습니다.
                   </td>
                 </tr>
@@ -331,6 +355,15 @@
           </div>
         </div>
 
+        <!-- 증빙 이미지 뷰어 오버레이 (클릭 시 닫기 — Attd_10 패턴) -->
+        <div
+          v-if="evidenceViewerSrc"
+          class="ldp-evid-viewer"
+          @click="fnCloseEvidenceViewer"
+        >
+          <img :src="evidenceViewerSrc" alt="증빙 자료 원본" />
+        </div>
+
         <!-- ============ 푸터 ============ -->
         <div class="modal-footer">
           <button class="btn btn-second" type="button" @click="fnClose">
@@ -344,10 +377,20 @@
 
 <script setup>
 // ================ Imports ================
-import { ref, computed, watch, onMounted, getCurrentInstance } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  onMounted,
+  onUnmounted,
+  getCurrentInstance,
+} from "vue";
 import { useModal } from "@/utils/useModal";
 import axios from "@/api/axios";
-import { resolveApiErrorMessage } from "@/utils/apiError";
+import {
+  resolveApiErrorMessage,
+  resolveBlobApiErrorMessage,
+} from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
 // 2026-08-09 규약: 일수 표기는 일 단위 단독(formatLeaveDaysOnly) — E4 분모 환산 제거.
 import { formatLeaveDaysOnly, formatLeaveMinutes } from "@/utils/leaveFormat";
@@ -415,6 +458,10 @@ const usageYearOptions = Array.from({ length: 7 }, (_, i) =>
 const usagePage = ref(1);
 const usagePageSize = ref(10);
 
+// 증빙 파일 뷰어/다운로드 상태 (연차 신청 증빙 필수화 2026-08-29)
+const evidenceBusy = ref(false); // 로드 중 버튼 연타 방지
+const evidenceViewerSrc = ref(""); // 이미지 오버레이 objectURL ('' = 닫힘)
+
 const isLoading = ref(false);
 
 // ================ Computed ================
@@ -455,6 +502,11 @@ onMounted(() => {
 // 조회 연도 변경 시 사용 이력 재조회 (BaseSelect v-model 갱신 이후 시점 보장을 위해 watch 사용)
 watch(usageYear, () => {
   fnLoadUsageHistory();
+});
+
+// 팝업 종료 시 증빙 오버레이 objectURL 누수 방지
+onUnmounted(() => {
+  if (evidenceViewerSrc.value) URL.revokeObjectURL(evidenceViewerSrc.value);
 });
 
 // ================ API Functions ================
@@ -561,6 +613,100 @@ const fnGoPage = (target) => {
 const fnGoUsagePage = (target) => {
   if (target < 1 || target > totalUsagePages.value) return;
   usagePage.value = target;
+};
+
+// ── 증빙 파일 보기/저장 (연차 신청 증빙 필수화 2026-08-29) ──────────
+// 서버 화이트리스트상 올 수 있는 형식: 이미지/PDF/텍스트/동영상/음성.
+// 보기 = 이미지는 오버레이, PDF는 새 탭(브라우저 내장 뷰어), 그 외는 저장 폴백.
+const fnLoadEvidenceBlob = async (fileMgmtCd) => {
+  const targetUserCd = user.value.userCd ?? props.userCd;
+  const response = await axios.get(
+    `/webApi/attd09/leave-dashboard/${encodeURIComponent(targetUserCd)}/evidence-file/${encodeURIComponent(fileMgmtCd)}`,
+    { responseType: "blob" }
+  );
+  return response.data;
+};
+
+// blob MIME → 저장 파일 확장자 (미지 형식은 bin 폴백 — 서버 화이트리스트상 발생 희박)
+const fnEvidenceExt = (mime) => {
+  const map = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/gif": "gif",
+    "image/bmp": "bmp",
+    "image/webp": "webp",
+    "image/tiff": "tif",
+    "application/pdf": "pdf",
+    "text/plain": "txt",
+    "text/csv": "csv",
+  };
+  if (map[mime]) return map[mime];
+  const sub = String(mime || "").split("/")[1];
+  return sub || "bin";
+};
+
+const fnDownloadBlob = (blob, fileMgmtCd) => {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `증빙_${user.value.userNm || props.userCd}_${fileMgmtCd}.${fnEvidenceExt(blob.type)}`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // click 처리 이후 해제(즉시 revoke 하면 일부 브라우저에서 다운로드가 끊김)
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+
+const fnViewEvidence = async (h) => {
+  if (evidenceBusy.value) return;
+  evidenceBusy.value = true;
+  try {
+    const blob = await fnLoadEvidenceBlob(h.evidenceFileId);
+    if (blob.type.startsWith("image/")) {
+      // 이전 오버레이 URL 정리 후 교체
+      if (evidenceViewerSrc.value) URL.revokeObjectURL(evidenceViewerSrc.value);
+      evidenceViewerSrc.value = URL.createObjectURL(blob);
+    } else if (blob.type === "application/pdf") {
+      // 새 탭에서 브라우저 내장 PDF 뷰어로 열기 (탭이 로드된 뒤 해제)
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } else {
+      // 미리보기 미지원 형식(동영상/음성/텍스트 등) — 저장으로 폴백
+      fnDownloadBlob(blob, h.evidenceFileId);
+    }
+  } catch (err) {
+    // responseType:blob 요청의 에러 본문은 blob 으로 오므로 blob 전용 해석기 사용(운영 실장애 교훈)
+    const msg = await resolveBlobApiErrorMessage(
+      err,
+      "증빙 자료를 불러오는 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  } finally {
+    evidenceBusy.value = false;
+  }
+};
+
+const fnDownloadEvidence = async (h) => {
+  if (evidenceBusy.value) return;
+  evidenceBusy.value = true;
+  try {
+    const blob = await fnLoadEvidenceBlob(h.evidenceFileId);
+    fnDownloadBlob(blob, h.evidenceFileId);
+  } catch (err) {
+    const msg = await resolveBlobApiErrorMessage(
+      err,
+      "증빙 자료를 내려받는 중 오류가 발생했습니다."
+    );
+    await proxy.$alert(msg);
+  } finally {
+    evidenceBusy.value = false;
+  }
+};
+
+const fnCloseEvidenceViewer = () => {
+  if (evidenceViewerSrc.value) URL.revokeObjectURL(evidenceViewerSrc.value);
+  evidenceViewerSrc.value = "";
 };
 
 // ================ Methods/Functions ================
@@ -981,6 +1127,50 @@ const fnMinutes = (v) => formatLeaveMinutes(v);
 .ldp-recall-na {
   color: var(--color-text-muted);
   font-size: 0.75rem;
+}
+
+/* ===== 사용 이력 증빙 보기/저장 버튼 (연차 신청 증빙 필수화 2026-08-29) ===== */
+.ldp-evid-btn {
+  font-size: 0.6875rem;
+  padding: 0.1875rem 0.5rem;
+  border-radius: var(--btn-radius);
+  border: 1px solid var(--color-border-strong);
+  color: var(--color-text);
+  background: var(--color-surface);
+  cursor: pointer;
+  font-family: "Pretendard", sans-serif;
+}
+
+.ldp-evid-btn + .ldp-evid-btn {
+  margin-left: 0.25rem;
+}
+
+.ldp-evid-btn:hover {
+  background: var(--color-bg);
+}
+
+.ldp-evid-btn:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+/* 증빙 이미지 뷰어 오버레이 — 클릭 시 닫기 (Attd_10 패턴) */
+.ldp-evid-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+}
+
+.ldp-evid-viewer img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
 /* ===== 부여 이력 페이저 ===== */

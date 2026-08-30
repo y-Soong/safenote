@@ -122,6 +122,28 @@ public class Attd09Controller {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
+    /**
+     * 사용 이력 증빙 파일 열람 (연차 신청 증빙 필수화 2026-08-29).
+     *
+     * <p>MASTER/HR + "이 직원의 연차 사용 건에 첨부된 FILE_TYPE=008 파일" 스코프 검증(서비스 계층).
+     * 공개 정적 URL 금지, 인증 스트림 서빙(SEC-1 — 근로계약서와 동일 원칙, no-store).
+     */
+    @GetMapping("/leave-dashboard/{userCd}/evidence-file/{fileMgmtCd}")
+    public ResponseEntity<byte[]> getUsageEvidenceFile(
+            @PathVariable("userCd") String userCd,
+            @PathVariable("fileMgmtCd") String fileMgmtCd,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        com.prafta.common.cmm.file.application.model.FileBytesResult file =
+                attd09Service.getUsageEvidenceFile(
+                        LeaveDetailParam.from(userCd, jwtUtil.getAllClaimsAsMap(authorization)), fileMgmtCd);
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(org.springframework.http.MediaType.parseMediaType(file.contentType()))
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                .body(file.data());
+    }
+
     /** 수동 부여 가능 휴가 종류 조회. */
     @GetMapping("/leave-grant/manual-types")
     public ResponseEntity<?> getManualTypes(

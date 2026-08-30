@@ -1,5 +1,6 @@
 package com.prafta.common.cmm.leave.service;
 
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.cmm.leave.command.CoverGrantCommand;
 import com.prafta.common.cmm.leave.command.ManualGrantCommand;
 import com.prafta.common.cmm.leave.vo.CoverGrantResultVO;
@@ -68,6 +69,20 @@ public interface LeaveDashboardService {
      * @param year    조회 연도 (YYYY, 4자리)
      */
     List<LeaveUsageHistoryRowVO> getUsageHistory(String cmpnyCd, String authCd, String userCd, String year);
+
+    /**
+     * 사용 이력 증빙 파일 열람 (연차 신청 증빙 필수화 2026-08-29). 스코프 밖이면 ApiException.
+     *
+     * <p>Attd_09 상세와 동일한 MASTER/HR 게이트({@code ensureManager}) + "해당 파일이 이 회사·이 직원의
+     * 연차 사용 건에 실제로 첨부된 FILE_TYPE=008 파일"인지 검증 후 인증 스트림으로만 서빙한다
+     * (결재선 밖 인사 관리자의 증빙 확인 경로 — 2026-08-30 사용자 확정. 무결재 자동확정 건 포함).
+     *
+     * @param cmpnyCd    회사 코드 (JWT)
+     * @param authCd     수행자 권한 코드 (JWT) — MASTER/HR 진입부 강제 (§8.5.7)
+     * @param userCd     대상 직원 코드
+     * @param fileMgmtCd 증빙 파일 코드
+     */
+    FileBytesResult getUsageEvidenceFile(String cmpnyCd, String authCd, String userCd, String fileMgmtCd);
 
     /**
      * 수동 부여 가능 휴가 종류 옵션.

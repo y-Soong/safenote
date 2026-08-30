@@ -105,6 +105,18 @@ public interface LeaveDashboardMapper {
                                                      @Param("todayYmd") String todayYmd);
 
     /**
+     * 사용 이력 증빙 파일 열람 스코프 검증 (연차 신청 증빙 필수화 2026-08-29).
+     *
+     * <p>해당 파일이 "이 회사·이 직원의 연차 사용 건에 실제로 첨부된 FILE_TYPE=008 파일"인지 확인한다
+     * (존재/타입/회사/대상 직원 — 임의 fileMgmtCd 대입으로 타 직원·타 유형 보호 파일 접근 차단).
+     *
+     * @return 1 이상이면 유효(열람 허용), 0이면 스코프 밖
+     */
+    int countUsageEvidenceFile(@Param("cmpnyCd") String cmpnyCd,
+                               @Param("userCd") String userCd,
+                               @Param("fileMgmtCd") String fileMgmtCd);
+
+    /**
      * 신청형 휴가(사용자 신청 LEAVE_TYPE='01') 타입별 잔여 현황 조회 (연차 대시보드 상세 — 신청형 휴가 섹션).
      *
      * <p>대상 타입: {@code tb_leave_type_mgmt} WHERE CMPNY_CD AND LEAVE_TYPE='01' AND USE_YN='Y'.

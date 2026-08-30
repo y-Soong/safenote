@@ -45,6 +45,11 @@ public interface Attd09Service {
     /** 직원별 연도별 연차 사용 이력 조회(일자 전개, dateYmd 오름차순). */
     UsageHistoryResponse getUsageHistory(UsageHistoryParam param);
 
+    /** 사용 이력 증빙 파일 열람(MASTER/HR, 인증 스트림 — 연차 신청 증빙 필수화 2026-08-29).
+     *  대상 식별(cmpnyCd/authCd/userCd)이 상세 조회와 동일해 {@link LeaveDetailParam}을 재사용한다. */
+    com.prafta.common.cmm.file.application.model.FileBytesResult getUsageEvidenceFile(
+            LeaveDetailParam param, String fileMgmtCd);
+
     /** 수동 부여 가능 휴가 종류 조회. */
     ManualTypesResponse getManualTypes(ManualTypesParam param);
 

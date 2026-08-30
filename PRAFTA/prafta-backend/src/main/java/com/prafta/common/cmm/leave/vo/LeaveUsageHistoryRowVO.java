@@ -46,4 +46,7 @@ public class LeaveUsageHistoryRowVO {
 
     /** 상태 ('USED'=사용 / 'SCHEDULED'=사용예정) — dateYmd vs 오늘 기준 매퍼 산출 */
     private String status;
+
+    /** 증빙 파일 ID (TB_USER_LEAVE_USE.EVIDENCE_FILE_ID, 미첨부 NULL) — 연차 신청 증빙 필수화 2026-08-29 */
+    private String evidenceFileId;
 }

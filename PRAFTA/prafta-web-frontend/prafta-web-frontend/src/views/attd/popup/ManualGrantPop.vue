@@ -111,7 +111,7 @@
                 사용 가능일<span class="mg-required">*</span>
               </label>
               <div class="mg-date-wrap">
-                <CalendarSrch v-model="form.availFromDate" class="mg-input" />
+                <CalendarSrch v-model="form.availFromDate" class="mg-date" />
                 <svg
                   class="mg-date-icon"
                   viewBox="0 0 24 24"
@@ -528,21 +528,26 @@ const fnTodayYyyymmdd = () => {
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
 }
 
-/* 네이티브 date input → CalendarSrch 교체. 내부 input 셀렉터로 사이즈 유지 */
-.mg-input :deep(.calendar-input) {
+/* 네이티브 date input → CalendarSrch 교체.
+   래퍼(.calendar-search)는 폭만 차지하고, 필드 외형(테두리/높이/배경)은
+   내부 input(.calendar-input) 한 겹에만 적용한다 — 래퍼에 mg-input 을 얹으면
+   테두리가 이중으로 그려져 컴포넌트가 영역과 따로 노는 것처럼 보인다. */
+.mg-date {
+  width: 100%;
+}
+.mg-date :deep(.calendar-input) {
   width: 100%;
   height: 2.125rem;
   border: 1px solid var(--color-border);
   border-radius: var(--input-radius);
-  padding: 0 0.625rem;
+  padding: 0 1.875rem 0 0.625rem;
   font-size: 0.8125rem;
   background: var(--color-surface);
   color: var(--color-text-strong);
   font-family: "Pretendard", sans-serif;
-  padding-right: 1.875rem;
   cursor: pointer;
 }
-.mg-input :deep(.calendar-input):focus {
+.mg-date :deep(.calendar-input):focus {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
@@ -550,7 +555,7 @@ const fnTodayYyyymmdd = () => {
 
 /* CalendarSrch 내부 placeholder(이모지)는 OS별 렌더 크기가 들쭉날쭉해
    넓은 필드에서 너무 작게 보임 → 숨기고 우측에 고정 크기 아이콘을 별도 배치 */
-.mg-input :deep(.calendar-input)::placeholder {
+.mg-date :deep(.calendar-input)::placeholder {
   color: transparent;
 }
 

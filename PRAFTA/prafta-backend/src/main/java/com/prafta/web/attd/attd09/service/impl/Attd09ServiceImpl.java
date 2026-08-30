@@ -125,6 +125,13 @@ public class Attd09ServiceImpl implements Attd09Service {
     }
 
     @Override
+    public com.prafta.common.cmm.file.application.model.FileBytesResult getUsageEvidenceFile(
+            LeaveDetailParam param, String fileMgmtCd) {
+        return leaveDashboardService.getUsageEvidenceFile(
+                param.gvCmpnyCd(), param.gvAuthCd(), param.userCd(), fileMgmtCd);
+    }
+
+    @Override
     public ManualTypesResponse getManualTypes(ManualTypesParam param) {
         return ManualTypesResponse.builder()
                 .types(leaveDashboardService.getManualGrantTypes(param.gvCmpnyCd(), param.gvAuthCd()))
