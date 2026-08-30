@@ -30,8 +30,9 @@ CREATE TABLE IF NOT EXISTS tz_migration_marker (
   PRIMARY KEY (STEP)
 ) COMMENT='DB 타임존 KST 전환 마이그레이션 실행 마커';
 
--- ★★ 실행 전 반드시 실제 값으로 교체 (예: '2026-07-17 06:00:00' - RDS 생성/이관 시각의 UTC 벽시계)
-SET @CUTOVER_UTC = '{{REPLACE_ME_CUTOVER_UTC}}';
+-- ★★ 확정값 기입 완료(2026-08-30): RDS prafta-db 생성 시각 = 2026-07-18 11:14 KST = 02:14 UTC
+--    (콘솔 실측 — 이 시각 이후 벽시계 행만 운영 라이브(UTC 기록)이므로 +9h 보정 대상)
+SET @CUTOVER_UTC = '2026-07-18 02:14:00';
 
 -- 가드 1: 플레이스홀더 미교체 차단 - 미교체 상태면 다중행 서브쿼리 오류(1242)로 즉시 정지된다.
 --         (Workbench 기본 동작 = 오류 시 스크립트 중단. "계속 실행" 옵션을 켜지 말 것)
