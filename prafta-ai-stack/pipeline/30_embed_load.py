@@ -44,7 +44,10 @@ PG = dict(
     user=os.environ.get("PG_USER", "prafta"),
     password=os.environ.get("PG_PW", "prafta1234"),
 )
-EMBED_BATCH = 16       # TEI 1회 요청당 문장 수
+EMBED_BATCH = 8        # TEI 1회 요청당 문장 수 — ★2026-08-27: TEI 백엔드 로그에 "Backend does not
+#   support a batch size > 8"(max_batch_requests=8 강제)가 찍혀 있는 걸 뒤늦게 발견. 16으로 보내면
+#   서버가 내부적으로 쪼개 처리하며 큐가 계속 밀려 요청마다 점점 느려지다(43s→118s) 결국
+#   클라이언트 타임아웃으로 매번 커밋 직전에 실패 — 15144147 적재 중 밤새 진행 0인 원인이었음.
 DB_BATCH = 200         # DB 1회 UPSERT 행 수
 
 
@@ -52,7 +55,7 @@ def embed(texts, retries=3):
     body = json.dumps({"inputs": texts}).encode("utf-8")
     for attempt in range(1, retries + 1):
         try:
-            r = requests.post(TEI_URL, data=body, headers={"Content-Type": "application/json"}, timeout=120)
+            r = requests.post(TEI_URL, data=body, headers={"Content-Type": "application/json"}, timeout=180)
             r.raise_for_status()
             return r.json()
         except Exception as e:                       # noqa: BLE001

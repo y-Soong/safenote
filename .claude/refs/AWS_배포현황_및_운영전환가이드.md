@@ -43,12 +43,13 @@ ssh -i C:\Users\dudjs\.ssh\prafta-key.pem ec2-user@3.38.237.103 "sudo journalctl
 
 # ── AI 서버 (prafta-ai = i-0920b060dee420594) ──
 # 상태 확인 (지금 바로 가능)
-python -m awscli ec2 describe-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2 --query "Reservations[0].Instances[0].State.Name" --output text
+aws ec2 describe-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2 --query "Reservations[0].Instances[0].State.Name" --output text
 # 켜기 (실행 후 1~2분 대기하면 자동 준비. ※IAM 정책 추가 필요 — 아래 주석 참조)
-python -m awscli ec2 start-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2
+aws ec2 start-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2
 # 끄기 (중지=Stop. 종료 Terminate 아님!)
-python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2
+aws ec2 stop-instances --instance-ids i-0920b060dee420594 --region ap-northeast-2
 ```
+> ★2026-08-26 갱신: `python -m awscli` 표기를 `aws`(AWS CLI v2, `C:\Program Files\Amazon\AWSCLIV2\aws.exe`)로 전면 교체. 로컬 Anaconda(Python 3.7) 환경의 `pyOpenSSL`↔`cryptography` 버전 충돌로 `python -m awscli` 실행이 import 단계에서 죽는 사고 발생(AWS 요청 자체가 안 나감 — EC2 상태와 무관한 로컬 문제). AWS CLI v2 는 자체 번들 Python 이라 이 충돌이 없다.
 
 > ※ AI 켜기/끄기 CLI 는 `prafta-deploy` 에 인라인 정책 추가 후 동작 (미추가 시 콘솔에서 prafta-ai 시작/중지 — 기존 방식):
 > ```json
@@ -295,7 +296,7 @@ python -m awscli ec2 stop-instances --instance-ids i-0920b060dee420594 --region 
 6. **nginx 기본 server 블록**: AL2023 nginx.conf 내장 기본 블록이 프록시 가로챔 → 제거 필요
 7. **무료 플랜 인스턴스 제한**: t3.medium/large 선택 불가 → m7i-flex.large 등 flex 계열만 가능
 8. **S3 버킷명**: 정적 호스팅 연결하려면 **버킷명=도메인명(prafta.com)** + 글로벌 네임스페이스 필수
-9. **AWS CLI 설치**: 관리자 권한 없으면 MSI 실패 → `pip install --user awscli` + `python -m awscli`로 우회
+9. **AWS CLI 설치**: 관리자 권한 없으면 MSI 실패 → `pip install --user awscli` + `python -m awscli`로 우회 (★2026-08-26: 이후 AWS CLI v2 정식 설치됨(`aws.exe`) — 이 우회는 더 이상 불필요, `aws` 명령 직접 사용)
 10. **(★CloudFront) ACM 인증서는 반드시 us-east-1**: CloudFront 글로벌이라 서울 ACM 인증서는 드롭다운에 안 뜬다. WAF Web ACL도 "CloudFront(글로벌)" 스코프=us-east-1에서 생성
 11. **(★CloudFront) CORS/AllViewer 함정**: API 배포 오리진 요청 정책이 `AllViewer`가 아니면 preflight 의 `Access-Control-Request-Headers`가 오리진에 전달 안 됨 → 브라우저 로그인 차단. **curl은 preflight 강제 안 해서 통과하므로 오진 주의**. 응답 헤더 정책은 "없음" 유지(백엔드가 CORS 직접 처리)
 12. **(★CloudFront) S3 웹 오리진**: 웹 배포는 S3를 "Other/커스텀 오리진 + 웹사이트 엔드포인트(HTTP only)"로 연결. SPA 딥링크는 오류 페이지 404/403 → /index.html + 200. **API 배포엔 오류 페이지 절대 넣지 말 것**
@@ -380,9 +381,9 @@ cd C:\PRAFTA\PRAFTA\prafta-web-frontend\prafta-web-frontend
 npm run build
 # ★dist/index.html 의 </head> 앞에 런타임 설정 수동 주입 필수(빠뜨리면 API 주소 없는 웹이 올라감):
 #   <script>window.__APP_CONFIG__ = { API_BASE: "https://api.prafta.com", CONTEXT: "/prafta" };</script>
-python -m awscli s3 sync dist s3://prafta.com/ --delete --cache-control "public,max-age=31536000,immutable" --exclude "index.html"
-python -m awscli s3 cp dist\index.html s3://prafta.com/index.html --cache-control "no-cache,no-store,must-revalidate" --content-type "text/html; charset=utf-8"
-python -m awscli cloudfront create-invalidation --distribution-id E37OL8Q9Q1FSLZ --paths "/*"
+aws s3 sync dist s3://prafta.com/ --delete --cache-control "public,max-age=31536000,immutable" --exclude "index.html"
+aws s3 cp dist\index.html s3://prafta.com/index.html --cache-control "no-cache,no-store,must-revalidate" --content-type "text/html; charset=utf-8"
+aws cloudfront create-invalidation --distribution-id E37OL8Q9Q1FSLZ --paths "/*"
 ```
 
 ### A-3. 수동 롤백 (서버에서)

@@ -78,22 +78,36 @@ def truncate_address(addr):
     return " ".join(toks[:2])
 
 
+def _fuzzy_literal(s):
+    """문자 사이 공백 유무 차이를 허용하는 리터럴 매칭 패턴 — 양방향(필드값에만 공백이 있는
+    경우도, 본문에만 공백이 있는 경우도) 다 잡도록 **입력값 자체의 공백을 먼저 제거**한 뒤
+    글자 사이마다 선택적 공백(\\s*)을 끼워 넣는다.
+    (예1: 필드값 '스미세이케미칼' vs 본문 '스미세이 케미칼' — 본문에 공백 추가된 경우.
+     예2: 필드값 '서울과학기술 대학교' vs 본문 '서울과학기술대학교' — 반대로 필드값에 공백이
+     있고 본문엔 없는 경우. 첫 버전은 예1만 처리해 예2를 662건 표본에서 6건 놓쳤다(2026-08-26
+     15069200 실측). 양쪽 다 despace 후 매칭해야 방향에 안 걸린다.)"""
+    despaced = re.sub(r"\s+", "", s or "")
+    return r"\s*".join(re.escape(ch) for ch in despaced)
+
+
 def mask_body(text, addr_values=None, other_values=None):
     """본문 마스킹(필드유형 구분):
     - addr_values: 본문에 등장하면 시군구까지로 절단(지역 보존, 상세 제거)
     - other_values: 조직명 등 식별값 → '○○' 치환
     - 이후 업체명(㈜..)·성명(이름+씨) 종합 마스킹
+    known-value 치환(addr_values/other_values)은 공백 유무 차이를 허용하는 퍼지 매칭을 쓴다
+    (완전일치만 쓰면 필드값과 본문 서술의 사소한 띄어쓰기 차이로 실명이 새어나간다 — 실측 확인됨).
     """
     if not text:
         return text
     for a in addr_values or []:
         a = (a or "").strip()
-        if len(a) >= 4 and a in text:
-            text = text.replace(a, truncate_address(a))
+        if len(a) >= 4:
+            text = re.sub(_fuzzy_literal(a), lambda m, _a=a: truncate_address(_a), text)
     for o in other_values or []:
         o = (o or "").strip()
-        if len(o) >= 2 and o in text:
-            text = text.replace(o, "○○")
+        if len(o) >= 2:
+            text = re.sub(_fuzzy_literal(o), "○○", text)
     text = truncate_addr_in_text(text)   # 본문 상세주소 → 시군구
     text = mask_company(text)
     text = mask_person(text)

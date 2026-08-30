@@ -24,6 +24,14 @@ import os
 import re
 import sys
 
+# Windows 콘솔 cp949 크래시 방어(★반복된 함정): em dash(—) 등 일부 유니코드 문자를 print 하면
+# UnicodeEncodeError 로 스크립트 전체가 죽는다(20_collect_disaster_attach.py 에서 실제로 겪음).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 PIPE = os.path.dirname(HERE)
 ROOT = os.path.dirname(PIPE)
@@ -185,11 +193,265 @@ def read_pdf(src):
     return out
 
 
+# 15121008 첨부 PDF는 여러 해에 걸쳐 수집된 자료라 템플릿이 하나가 아니다(2026-08-26 748건 표본
+# 실측으로 발견). 페이지 크기로 템플릿을 감지해 서로 다른 파서를 태운다.
+#   Template A: 소형 "OPS" 카드(~252x356pt, 최근 2026년 케이스). 발생원인/예방대책 좌우 2단.
+#   Template B: A4 세로(~595x841pt, 과거 케이스 다수). 단일 컬럼 서술형. 헤더 표기가 문서마다
+#     다르다(발생원인/재해발생원인/재해발생 원인 등) — 정확 일치 대신 공백제거+부분일치로 매칭.
+#   미지원(스킵, content 없음 처리): A4 가로(~841x595pt, 2단인데 폭이 넓어 A방식 크롭 무의미) ·
+#     고해상도 스캔 이미지(~2352x3969pt, 텍스트 레이어 없음 — OCR 필요, 범위 밖).
+_TEMPLATE_A_MAX_WIDTH = 400
+_TEMPLATE_B_WIDTH_RANGE = (560, 620)
+
+_DISASTER_ATTACH_SPLIT_X = 133   # Template A 좌(발생원인)/우(예방대책) 컬럼 경계(254pt 폭 페이지 기준)
+# Template A 하단 고정 문구("※본 OPS는 동종재해예방을 목적으로...")가 페이지 폭 전체에 걸쳐 있어
+# 좌/우 크롭 경계에서 문장이 반으로 잘린다 — 어느 쪽 크롭에 걸리든 식별 가능한 부분 문자열로 그 줄부터 제거.
+# ⚠️ "동종재해예방대책"(Template B 의 실제 예방대책 헤더 표기 중 하나)과 겹치지 않도록 뒤에 "을"을 붙여 한정.
+_DISASTER_ATTACH_FOOTER_MARKERS = ("동종재해예방을", "재해발생상황과다를수도있음")
+
+_CAUSE_HEADER_RE = re.compile(r"발생원인")
+_MEASURE_HEADER_RE = re.compile(r"예방대책")
+
+
+def _despace(s):
+    return re.sub(r"\s+", "", s or "")
+
+
+def _find_header_line(lines, pattern, max_header_len=20):
+    """짧은 줄(헤더로 추정, 공백 제거 후 20자 이내) 중 패턴이 부분일치하는 첫 줄의 인덱스.
+    본문 서술 문장 속에 우연히 같은 문구가 섞여 있어도(문장은 대개 훨씬 길다) 오매칭 방지."""
+    for i, ln in enumerate(lines):
+        compact = _despace(ln)
+        if compact and len(compact) <= max_header_len and pattern.search(compact):
+            return i
+    return None
+
+
+def _strip_footer(text):
+    lines = text.split("\n")
+    for i, ln in enumerate(lines):
+        if any(m in ln for m in _DISASTER_ATTACH_FOOTER_MARKERS):
+            return "\n".join(lines[:i]).strip()
+    return text
+
+
+def _crop_text(page, x0, x1):
+    import warnings
+    warnings.filterwarnings("ignore")
+    return (page.crop((x0, 0, x1, page.height)).extract_text() or "").strip()
+
+
+def _after_header(text, header):
+    """헤더 단어(발생원인/예방대책) 다음 줄부터만 취한다(그 앞은 재해개요 등 다른 섹션)."""
+    lines = text.split("\n")
+    idx = next((i for i, ln in enumerate(lines) if header in ln), None)
+    if idx is None:
+        return ""   # 헤더를 못 찾으면(레이아웃 이례) 빈 문자열 → 이 레코드는 content 없음 처리
+    return "\n".join(lines[idx + 1:]).strip()
+
+
+def _read_disaster_attach_template_a(page):
+    """소형 OPS 카드(2026년 최근 케이스): x좌표 크롭으로 좌(발생원인)/우(예방대책) 분리."""
+    w = page.width
+    left = _crop_text(page, 0, _DISASTER_ATTACH_SPLIT_X)
+    right = _crop_text(page, _DISASTER_ATTACH_SPLIT_X, w)
+    cause = _strip_footer(_after_header(left, "발생원인")).strip()
+    measure = _strip_footer(_after_header(right, "예방대책")).strip()
+    return cause, measure
+
+
+def _read_disaster_attach_template_b(pdf):
+    """구형 A4 세로 단일컬럼 서술형 보고서: 전 페이지(최대 3p) 텍스트를 이어붙여 헤더 줄로
+    구간 분리. 가로형(2단)은 여기로 오면 좌우 컬럼이 섞여 깨지므로 호출측에서 세로형만 넘긴다."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    all_lines = []
+    for page in pdf.pages[:3]:
+        all_lines.extend((page.extract_text() or "").split("\n"))
+    cause_idx = _find_header_line(all_lines, _CAUSE_HEADER_RE)
+    measure_idx = _find_header_line(all_lines, _MEASURE_HEADER_RE)
+    if cause_idx is None or measure_idx is None or measure_idx <= cause_idx:
+        return "", ""
+    cause = "\n".join(all_lines[cause_idx + 1: measure_idx]).strip()
+    measure = "\n".join(all_lines[measure_idx + 1:]).strip()
+    return cause, measure
+
+
+def read_disaster_attach_pdf(src):
+    """15121008 전용 리더: 15121001 boardno 연계로 수집된 KOSHA 첨부 PDF(재해개요/발생원인/
+    예방대책 구성, 템플릿 여러 종 — 위 dispatch 주석 참조)를 파싱한다.
+    수집 매니페스트는 20_collect_disaster_attach.py 가 미리 만들어 둔다(PDF 실물도 함께 받아둠).
+    레코드 1건 = 첨부 PDF 1건(대다수 boardno당 1개, 일부 다건)."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    import pdfplumber
+
+    sid = str(src["source_id"]).strip()
+    manifest_path = os.path.join(RAW_DIR, f"{sid}_kosha_disaster_attach.jsonl")
+    if not os.path.exists(manifest_path):
+        raise FileNotFoundError(f"수집 매니페스트 없음: {manifest_path} "
+                                 f"(20_collect_disaster_attach.py 먼저 실행)")
+    manifest_items = []
+    with open(manifest_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                manifest_items.append(json.loads(line))
+
+    out = []
+    skipped_template = 0
+    for it in manifest_items:
+        local_path = it.get("local_path")
+        if not local_path or not os.path.exists(local_path):
+            continue
+        try:
+            with pdfplumber.open(local_path) as pdf:
+                page = pdf.pages[0]
+                w, h = page.width, page.height
+                if w < _TEMPLATE_A_MAX_WIDTH:
+                    cause_text, measure_text = _read_disaster_attach_template_a(page)
+                elif _TEMPLATE_B_WIDTH_RANGE[0] <= w <= _TEMPLATE_B_WIDTH_RANGE[1] and h > w:
+                    cause_text, measure_text = _read_disaster_attach_template_b(pdf)
+                else:
+                    cause_text, measure_text = "", ""    # 미지원 템플릿(가로형/스캔 등) — 스킵
+                    skipped_template += 1
+        except Exception as e:                      # noqa: BLE001 (건 단위 실패는 스킵, 전체는 계속)
+            print(f"  [경고] PDF 파싱 실패 {local_path}: {e}")
+            continue
+
+        out.append({
+            "boardno": it.get("boardno"),
+            "filenm": it.get("filenm"),
+            "business": it.get("business"),
+            "cause_text": cause_text,
+            "measure_text": measure_text,
+        })
+    if skipped_template:
+        print(f"  [안내] 미지원 템플릿(가로형/스캔 이미지 등) {skipped_template}건 — content 없음 처리(제외)")
+    return out
+
+
+# 15144147(KOSHA GUIDE) 섹션 헤더 패턴 — "4.1 흙막이 지보공..." / "1. 목적" 형태.
+#   TOC 페이지도 같은 번호로 시작하지만 점선 리더(····)+쪽번호가 붙어 있어 그걸로 구분한다.
+_KG_SUB_HEADER_RE = re.compile(r"^(\d{1,2}\.\d{1,2}(?:\.\d{1,2})?)\.?\s*[가-힣A-Za-z]")
+_KG_TOP_HEADER_RE = re.compile(r"^(\d{1,2})\.\s*[가-힣A-Za-z]")
+_KG_TOC_LEADER_RE = re.compile(r"[·.]{3,}")   # TOC 점선 리더 — 있으면 목차 줄로 간주해 헤더 후보에서 제외
+_KG_MIN_BODY_LEN = 30                          # 이보다 짧은 섹션은(상위헤더 바로 하위헤더로 이어지는 등) 제외
+
+# ★2026-08-27 사용자 확정: AI EC2 TEI 가 CPU 전용이라 1,039건(23,369청크) 전체 임베딩에 약 19시간
+#   소요 — 오늘은 범위를 좁혀 건설(C)·화학공정+건설기술지원규정(D, D-C 하위계열 포함)·기계(M) 만
+#   적재한다(측정분석 A계열 등 172~600여 건은 후속 세션으로 미룸). 전량 필요해지면 이 set 을
+#   비우거나 확장하면 된다(코드 나머지는 무변경 — 리더 자체는 여전히 전체를 지원).
+_KG_ALLOWED_PREFIXES = {"C", "D", "D-C", "M"}
+
+
+def _kg_running_header_re(tech_gdln_no):
+    """페이지마다 반복되는 러닝헤더("KOSHA GUIDE" / "D – C – 1 - 2025" / 쪽번호만 있는 줄)를
+    본문에서 제거하기 위한 패턴. 표기 편차(대시 종류·공백)를 흡수하려고 문서번호는 despace 후
+    글자 사이 선택적 공백/구두점으로 재구성한다."""
+    core = re.sub(r"[\s\-–—]+", "", tech_gdln_no or "")
+    if not core:
+        return None
+    pattern = r"[\s\-–—]*".join(re.escape(ch) for ch in core)
+    return re.compile(pattern)
+
+
+def read_koshaguide_pdf(src):
+    """15144147 전용 리더: KOSHA GUIDE PDF(목차 기반 번호 섹션 구조, 1./2./4.1/5.2 등)를
+    섹션 단위로 청킹한다. 문서가 12~200p로 길어 통짜 1청크가 아니라 섹션별로 쪼갠다.
+    수집 매니페스트는 21_collect_koshaguide_pdf.py 가 미리 만들어 둔다(PDF 실물 포함)."""
+    import warnings
+    warnings.filterwarnings("ignore")
+    import fitz
+
+    sid = str(src["source_id"]).strip()
+    manifest_path = os.path.join(RAW_DIR, f"{sid}_koshaguide_pdfs.jsonl")
+    if not os.path.exists(manifest_path):
+        raise FileNotFoundError(f"수집 매니페스트 없음: {manifest_path} "
+                                 f"(21_collect_koshaguide_pdf.py 먼저 실행)")
+    manifest_items = []
+    with open(manifest_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                manifest_items.append(json.loads(line))
+
+    out = []
+    no_sections = 0
+    skipped_scope = 0
+    for it in manifest_items:
+        local_path = it.get("local_path")
+        if not local_path or not os.path.exists(local_path):
+            continue
+        no = it.get("techGdlnNo", "")
+        prefix = no.rsplit("-", 2)[0] if "-" in no else no
+        if _KG_ALLOWED_PREFIXES and prefix not in _KG_ALLOWED_PREFIXES:
+            skipped_scope += 1
+            continue
+        running_re = _kg_running_header_re(no)
+        try:
+            doc = fitz.open(local_path)
+            lines = []
+            for page in doc:
+                for ln in page.get_text().split("\n"):
+                    s = ln.strip()
+                    if not s:
+                        continue
+                    if running_re and running_re.search(s) and len(s) < 40:
+                        continue                        # 러닝헤더/문서코드 줄 제거
+                    if s.isdigit() and len(s) <= 3:
+                        continue                        # 단독 쪽번호 줄 제거
+                    lines.append(s)
+            doc.close()
+        except Exception as e:                          # noqa: BLE001
+            print(f"  [경고] PDF 파싱 실패 {local_path}: {e}")
+            continue
+
+        headers = []                                    # (제목, 줄인덱스)
+        for i, ln in enumerate(lines):
+            if _KG_TOC_LEADER_RE.search(ln):
+                continue                                 # 목차 줄(점선 리더) 제외
+            m = _KG_SUB_HEADER_RE.match(ln) or _KG_TOP_HEADER_RE.match(ln)
+            if m:
+                headers.append((ln, i))
+
+        if not headers:
+            no_sections += 1
+            continue
+
+        for idx, (title, line_idx) in enumerate(headers):
+            end_idx = headers[idx + 1][1] if idx + 1 < len(headers) else len(lines)
+            body = "\n".join(lines[line_idx + 1: end_idx]).strip()
+            if len(body) < _KG_MIN_BODY_LEN:
+                continue                                 # 하위헤더로 바로 이어지는 상위헤더 등은 스킵
+            out.append({
+                "techGdlnNo": no,
+                "techGdlnNo_prefix": no.rsplit("-", 2)[0] if "-" in no else no,  # "D-C-1-2025"→"D-C" 등 계열
+                "techGdlnNm": it.get("techGdlnNm"),
+                "techGdlnOfancYmd": it.get("techGdlnOfancYmd"),
+                "section_title": title,
+                "section_no": title.split()[0].rstrip("."),
+                "section_text": body,
+            })
+    if no_sections:
+        print(f"  [안내] 섹션 헤더 미검출(레이아웃 이례) {no_sections}건 — content 없음 처리(제외)")
+    if skipped_scope:
+        print(f"  [안내] 이번 라운드 범위 제외({sorted(_KG_ALLOWED_PREFIXES)} 계열만) {skipped_scope}건")
+    return out
+
+
 def read_records(src):
+    sid = str(src.get("source_id", "")).strip()
+    # 15121008: registry상 feed_type=API 이지만 실제로는 15121001 boardno 연계 + PDF 첨부라
+    #   범용 API 리더(read_api, collect_api.py 스냅샷 전제)와 다른 전용 리더를 먼저 태운다.
+    if sid == "15121008":
+        return read_disaster_attach_pdf(src)
+    # 15144147: registry상 feed_type=API 이지만 목록 API는 메타데이터만 주고 실제 본문은 PDF다.
+    if sid == "15144147":
+        return read_koshaguide_pdf(src)
     feed = str(src.get("feed_type", "")).strip().upper()
     if feed == "API":
         return read_api(src)
-    sid = str(src.get("source_id", "")).strip()
     ext = os.path.splitext(os.path.basename(str(src.get("file", "")).strip()))[1].lower()
     if feed == "FILE" and ext == ".csv":
         return read_csv_file(src)
@@ -240,7 +502,11 @@ def transform(src, rec):
         if is_addr_field(f):
             meta[f] = _mask.truncate_address(v)
         else:
-            meta[f] = _mask.mask_person(_mask.mask_company(str(v))) if v else v
+            # ★2026-08-26: mask_company/mask_person 패턴매칭에 맡기지 않는다 — 15069200 실측에서
+            # 건설업 접미사가 아닌 화학/제조업 회사명(케미칼/켐텍/LED/브랜드명 등)이 패턴에 안 걸려
+            # 실명이 그대로 남는 사고 발견. mask_fields 에 오른 시점에 이미 "식별값"임이 확정이므로
+            # 패턴으로 재확인(추측)하지 않고 무조건 치환한다(하드가드#2: 애매하면 제거).
+            meta[f] = "○○" if v else v
 
     locator = "|".join(str(rec.get(f, "")).strip() for f in locator_fields)
     return {
