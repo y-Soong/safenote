@@ -30,9 +30,11 @@ import com.prafta.app.tbm.admin.application.command.AdminEduMaterialCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialItemCommand;
 import com.prafta.app.tbm.admin.application.command.AdminForceExitCommand;
 import com.prafta.app.tbm.admin.application.command.AdminManagerEnterCommand;
+import com.prafta.app.tbm.admin.application.command.AdminManagerSignCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCancelCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionContentCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionEndCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionPrepareCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionRiskCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand;
@@ -50,6 +52,7 @@ import com.prafta.app.tbm.admin.application.param.AdminEligibleRegularParam;
 import com.prafta.app.tbm.admin.application.param.AdminForceExitParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
 import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerSignParam;
 import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
@@ -81,6 +84,7 @@ import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerSignResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminRiskOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminSessionContentsResponse;
@@ -178,6 +182,15 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private static final String ITEM_TYPE_PDF = "04";
     /** TB_FILE_INFO.FILE_TYPE — '003' TBM 교육자료(web Tbm01 정합, 디렉토리 그룹). */
     private static final String FILE_TYPE_TBM_MTRL = "003";
+
+    // ===== tbm04-manager-sign 주관자 서명(참석자 exit 서명 c-003 규칙 동형) =====
+    /** TB_FILE_INFO.FILE_TYPE — '003' TBM 서명(출결 서명과 동일 체계). */
+    private static final String FILE_TYPE_TBM_SIGN = "003";
+    /** 서명 파일 허용 contentType 화이트리스트(PNG/JPEG). */
+    private static final String SIGN_CONTENT_TYPE_PNG = "image/png";
+    private static final String SIGN_CONTENT_TYPE_JPEG = "image/jpeg";
+    /** 서명 파일 크기 상한(5MB). */
+    private static final long SIGN_FILE_MAX_BYTES = 5L * 1024 * 1024;
     /** 업로드 파일 크기 상한(50MB — 동영상/PDF 허용). */
     private static final long MTRL_FILE_MAX_BYTES = 50L * 1024 * 1024;
     /** 업로드 허용 확장자(이미지/동영상/PDF). FileServiceImpl 화이트리스트와 별개의 도메인 한정 검증. */
@@ -341,6 +354,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .cancelReason(session.cancelReason())
                 .insertNm(session.insertNm())
                 .insertDate(session.insertDate())
+                // tbm04-manager-sign: 이력 상세 사후서명 노출 판단·표시용(파일코드는 미노출).
+                .managerSignYn(session.managerSignYn())
+                .managerSignedAt(session.managerSignedAt())
                 .build();
 
         List<AdminSessionDetailResponse.SessionRiskItem> riskItems = new ArrayList<>();
@@ -825,7 +841,7 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
 
     @Override
     @Transactional
-    public AdminLiveTransitionResponse endSession(AdminLiveTransitionParam param) {
+    public AdminLiveTransitionResponse endSession(AdminManagerSignParam param) {
         ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
 
         if (!StringUtils.hasText(param.sessionCd())) {
@@ -836,11 +852,30 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
         verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
         verifyManager(guard, param.gvUserCd());   // T1: 개설자만
 
+        // 상태 사전 가드: 진행 중이 아니면 파일 저장 전에 거부(반복 호출 시 고아 물리 파일 적재 방지).
+        // 경합 최종 방어는 아래 UPDATE WHERE(STATUS_CD='IN_PROGRESS') 가드가 담당.
+        if (!"IN_PROGRESS".equals(guard.statusCd())) {
+            throw new ApiException(TbmErrorCode.TBM_409_051);
+        }
+
+        // tbm04-manager-sign: 주관자 서명 필수(스킵 불가 — 서버 강제). null/empty/검증 실패 → TBM_400_070.
+        MultipartFile signFile = param.signFile();
+        if (signFile == null || signFile.isEmpty()) {
+            throw new ApiException(TbmErrorCode.TBM_400_070);
+        }
+        validateManagerSignFile(signFile);
+
+        // 서명 파일 저장(FILE_TYPE 003). siteCd 는 세션 사업장(개설자=자사이므로 타사 혼입 없음).
+        // 전이 충돌(0건→409) 시 트랜잭션 롤백으로 TB_FILE_INFO 행은 함께 롤백되지만, 디스크 물리 파일은
+        // 남을 수 있다 — 참석자 exit 경로와 동일한 기존 수용 사항(별도 보상 로직 없음).
+        String managerSignFileMgmtCd = saveManagerSignFile(
+                param.gvCmpnyCd(), param.gvUserCd(), guard.siteCd(), signFile);
+
         // prafta-051 E5: 종료비번(EXIT_PWD)을 이 전이에서 최초 발급(개설/준비 시 동시발급 제거).
         String exitPwd = NumericPwdGenerator.generate(PWD_LENGTH);
 
-        int updated = appAdminTbmMapper.endSession(AdminSessionSinglePwdCommand.of(
-                param.sessionCd(), exitPwd, param.gvCmpnyCd(), param.gvUserCd()));
+        int updated = appAdminTbmMapper.endSession(AdminSessionEndCommand.of(
+                param.sessionCd(), exitPwd, managerSignFileMgmtCd, param.gvCmpnyCd(), param.gvUserCd()));
         if (updated == 0) {
             // 가드(STATUS_CD='IN_PROGRESS') 0건 = 진행 중이 아님(전이 충돌).
             log.warn("TBM 교육 종료 상태 전이 충돌 - sessionCd={}, status={}", param.sessionCd(), guard.statusCd());
@@ -871,6 +906,127 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 // [정합성 수정] 자동이수 폐지 → 항상 0(응답 계약 호환 위해 필드 유지).
                 .autoCompletedCount(0)
                 .build();
+    }
+
+    // ============================ tbm04-manager-sign 사후서명 ============================
+
+    /**
+     * 종료(COMPLETED) 세션 사후 주관자 서명 등록.
+     * <p>대상 = 서명 필수 편입 이전에 종료되어 MANAGER_SIGN_FILE_MGMT_CD 가 NULL 인 과거 세션.
+     * 가드: 개설자 본인(verifyManager) + COMPLETED(TBM_409_071) + 서명 미존재(TBM_409_070 — 재서명 불가).
+     */
+    @Override
+    @Transactional
+    public AdminManagerSignResponse signCompletedSession(AdminManagerSignParam param) {
+        ScopeContext scope = resolveScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvSiteCd(), param.gvAuthCd());
+
+        if (!StringUtils.hasText(param.sessionCd())) {
+            throw new ApiException(CommonErrorCode.COMMON_400_001);
+        }
+
+        AdminSessionGuardResult guard = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+        verifyScope(scope, guard.siteCd(), guard.managerNodeCd(), param.gvCmpnyCd(), param.gvUserCd());
+        verifyManager(guard, param.gvUserCd());   // 개설자 본인만(TBM_403_012 재사용)
+
+        // 상태 가드: 종료된 세션에서만 사후서명 가능.
+        if (!"COMPLETED".equals(guard.statusCd())) {
+            throw new ApiException(TbmErrorCode.TBM_409_071);
+        }
+        // 중복 가드: 이미 서명 존재 시 재서명 불가(확정).
+        if (StringUtils.hasText(guard.managerSignFileMgmtCd())) {
+            throw new ApiException(TbmErrorCode.TBM_409_070);
+        }
+
+        // 서명 파일 필수 + 검증(endSession 과 동일 규칙).
+        MultipartFile signFile = param.signFile();
+        if (signFile == null || signFile.isEmpty()) {
+            throw new ApiException(TbmErrorCode.TBM_400_070);
+        }
+        validateManagerSignFile(signFile);
+
+        String managerSignFileMgmtCd = saveManagerSignFile(
+                param.gvCmpnyCd(), param.gvUserCd(), guard.siteCd(), signFile);
+
+        int updated = appAdminTbmMapper.updateManagerSign(AdminManagerSignCommand.of(
+                param.sessionCd(), managerSignFileMgmtCd, param.gvCmpnyCd(), param.gvUserCd()));
+        if (updated == 0) {
+            // 경합: 가드 선판정 이후 상태/서명이 바뀐 경우 — 재조회로 사유 분기(파일 메타는 롤백).
+            AdminSessionGuardResult recheck = loadGuard(param.gvCmpnyCd(), param.sessionCd());
+            if (StringUtils.hasText(recheck.managerSignFileMgmtCd())) {
+                throw new ApiException(TbmErrorCode.TBM_409_070);
+            }
+            throw new ApiException(TbmErrorCode.TBM_409_071);
+        }
+
+        // 표시용 서명시각은 매퍼 재조회 값(DB NOW() 기록 — Java 시각 기록 금지).
+        AdminSessionResult session = appAdminTbmMapper.selectSessionDetail(
+                AdminSessionDetailQuery.of(param.sessionCd(), param.gvCmpnyCd()));
+
+        log.info("앱 관리자 TBM 사후 주관자 서명 등록 완료 - sessionCd={}", param.sessionCd());
+
+        return AdminManagerSignResponse.builder()
+                .sessionCd(param.sessionCd())
+                .managerSignedAt(session != null ? session.managerSignedAt() : null)
+                .build();
+    }
+
+    /**
+     * 주관자 서명 파일 서버측 검증 — AppTbm01ServiceImpl.validateSignatureFile(c-003) 동형 복제.
+     * <p>contentType 화이트리스트(PNG/JPEG) + 크기 상한(5MB) + 매직바이트 확인. 위반 시 TBM_400_070.
+     * <p>tbm01 의 private 메서드라 공용 추출 대신 동형 복제(추출 시 tbm01 exit 회귀 위험 회피 — plan §3 재량).
+     */
+    private void validateManagerSignFile(MultipartFile file) {
+
+        // 1) 크기 상한.
+        if (file.getSize() > SIGN_FILE_MAX_BYTES) {
+            log.info("[tbm-admin] 주관자 서명 파일 크기 초과: size={}", file.getSize());
+            throw new ApiException(TbmErrorCode.TBM_400_070);
+        }
+
+        // 2) contentType 화이트리스트(PNG/JPEG 만 허용).
+        String contentType = file.getContentType();
+        boolean allowedType = SIGN_CONTENT_TYPE_PNG.equals(contentType)
+                || SIGN_CONTENT_TYPE_JPEG.equals(contentType);
+        if (!allowedType) {
+            log.info("[tbm-admin] 주관자 서명 파일 타입 불허: contentType={}", contentType);
+            throw new ApiException(TbmErrorCode.TBM_400_070);
+        }
+
+        // 3) 매직바이트 확인(확장자 위장 차단). PNG: 89 50 4E 47, JPEG: FF D8.
+        try {
+            byte[] head = new byte[4];
+            int read;
+            try (java.io.InputStream in = file.getInputStream()) {
+                read = in.read(head);
+            }
+            boolean isPng = read >= 4
+                    && (head[0] & 0xFF) == 0x89 && (head[1] & 0xFF) == 0x50
+                    && (head[2] & 0xFF) == 0x4E && (head[3] & 0xFF) == 0x47;
+            boolean isJpeg = read >= 2
+                    && (head[0] & 0xFF) == 0xFF && (head[1] & 0xFF) == 0xD8;
+            if (!isPng && !isJpeg) {
+                log.info("[tbm-admin] 주관자 서명 파일 매직바이트 불일치: contentType={}", contentType);
+                throw new ApiException(TbmErrorCode.TBM_400_070);
+            }
+        } catch (java.io.IOException e) {
+            log.error("[tbm-admin] 주관자 서명 파일 검증 중 읽기 오류", e);
+            throw new ApiException(TbmErrorCode.TBM_400_070);
+        }
+    }
+
+    /** 주관자 서명 파일 저장 → fileMgmtCd 발급(FILE_TYPE 003 — 참석자 출결 서명과 동일 체계). */
+    private String saveManagerSignFile(String cmpnyCd, String userCd, String siteCd, MultipartFile file) {
+
+        String fileMgmtCd = fileMapper.selectFileMgmtCd(
+                FileInfoQuery.from(cmpnyCd, FILE_TYPE_TBM_SIGN));
+
+        // siteCd(세션 사업장)가 비어 있으면 파일 경로 안전성 위해 회사코드 폴백(tbm01 선례 동형).
+        String safeSiteCd = StringUtils.hasText(siteCd) ? siteCd : cmpnyCd;
+
+        fileService.fileSave(FileInfoParam.from(
+                cmpnyCd, userCd, safeSiteCd, FILE_TYPE_TBM_SIGN, fileMgmtCd, file));
+
+        return fileMgmtCd;
     }
 
     // ============================ R3 출결 리스트(LIVE/COMPLETED) ============================

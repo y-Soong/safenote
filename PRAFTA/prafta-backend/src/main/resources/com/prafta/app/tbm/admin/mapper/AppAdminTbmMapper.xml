@@ -189,8 +189,12 @@
 		, FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'USER_NM', A.INSERT_NO, NULL)	AS insertNm
 		, DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')		AS insertDate
 		/* 준비 타이머 절대시각(epoch 초) - 세션 타임존으로 해석되므로 저장 TZ(UTC/KST) 가정이 불필요.
-		   KST 전환(2026-08-30) 후 벽시계+Z 산출이 9시간 밀리던 결함의 수정 축. record 마지막 필드와 순서 일치. */
+		   KST 전환(2026-08-30) 후 벽시계+Z 산출이 9시간 밀리던 결함의 수정 축. */
 		, UNIX_TIMESTAMP(A.PREP_START_AT)					AS prepStartAtEpoch
+		/* tbm04-manager-sign: 주관자 서명 여부/시각(이력 상세 노출 판단·표시). record 끝 2필드와 순서 일치.
+		   시각 표기는 파일 내 표준(DATE_FORMAT 직표시 — KST 전환 완료 전제, endedAt 과 동일 방식). */
+		, CASE WHEN A.MANAGER_SIGN_FILE_MGMT_CD IS NOT NULL THEN 'Y' ELSE 'N' END	AS managerSignYn
+		, DATE_FORMAT(A.MANAGER_SIGNED_AT, '%Y-%m-%d %H:%i')	AS managerSignedAt
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_SITE ST
 		 	ON (
@@ -222,6 +226,8 @@
 		, A.GPS_VERIFY_TYPE_CD	AS gpsVerifyTypeCd
 		/* 교육준비(prepare) DB값 기준 교육시간 필수검증용 */
 		, A.EDU_MINUTES		AS eduMinutes
+		/* tbm04-manager-sign: 사후서명 중복 가드용(존재=이미 서명). record 마지막 필드와 순서 일치 */
+		, A.MANAGER_SIGN_FILE_MGMT_CD	AS managerSignFileMgmtCd
 	FROM TB_TBM_SESSION A
 		 LEFT OUTER JOIN TB_USER U
 		 	ON (
@@ -789,14 +795,17 @@
 	  AND STATUS_CD = 'OPENED'
 	</update>
 
-	<!-- prafta-051 E5: 종료비번(EXIT_PWD) 을 이 전이에서 최초 발급(개설/준비 시 동시발급 제거). -->
-	<update id="endSession" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand">
+	<!-- prafta-051 E5: 종료비번(EXIT_PWD) 을 이 전이에서 최초 발급(개설/준비 시 동시발급 제거).
+	     tbm04-manager-sign: 주관자 서명 파일코드/서명시각을 종료 전이와 한 UPDATE 로 반영(서명 필수). -->
+	<update id="endSession" parameterType="com.prafta.app.tbm.admin.application.command.AdminSessionEndCommand">
 	/* AppAdminTbmMapper.endSession */
 	UPDATE TB_TBM_SESSION
 	SET
 		STATUS_CD		= 'COMPLETED'
 		, ENDED_AT		= NOW()
-		, EXIT_PWD		= #{pwd}
+		, EXIT_PWD		= #{exitPwd}
+		, MANAGER_SIGN_FILE_MGMT_CD	= #{managerSignFileMgmtCd}
+		, MANAGER_SIGNED_AT			= NOW()
 		, UPDATE_NO		= #{gvUserCd}
 		, UPDATE_DATE	= NOW()
 	WHERE CMPNY_CD = #{gvCmpnyCd}
@@ -804,6 +813,24 @@
 	  AND DEL_YN = 'N'
 	  /* 멱등/경합 가드: 진행중(IN_PROGRESS) 상태에서만 종료 전이 */
 	  AND STATUS_CD = 'IN_PROGRESS'
+	</update>
+
+	<!-- tbm04-manager-sign: 종료(COMPLETED) 세션 사후 주관자 서명 등록.
+	     가드: COMPLETED + 서명 미존재(NULL)에서만 1회 등록(재서명 불가 확정). 0건 시 서비스가 가드 재조회로 409 분기. -->
+	<update id="updateManagerSign" parameterType="com.prafta.app.tbm.admin.application.command.AdminManagerSignCommand">
+	/* AppAdminTbmMapper.updateManagerSign */
+	UPDATE TB_TBM_SESSION
+	SET
+		MANAGER_SIGN_FILE_MGMT_CD	= #{managerSignFileMgmtCd}
+		, MANAGER_SIGNED_AT			= NOW()
+		, UPDATE_NO		= #{gvUserCd}
+		, UPDATE_DATE	= NOW()
+	WHERE CMPNY_CD = #{gvCmpnyCd}
+	  AND SESSION_CD = #{sessionCd}
+	  AND DEL_YN = 'N'
+	  AND STATUS_CD = 'COMPLETED'
+	  /* 경합 이중방어(가드 선판정과 병행): 서명 미존재 행만 갱신 */
+	  AND MANAGER_SIGN_FILE_MGMT_CD IS NULL
 	</update>
 
 	<!-- [정합성 수정] T2 종료 자동이수(autoCompleteOnEnd) 제거.

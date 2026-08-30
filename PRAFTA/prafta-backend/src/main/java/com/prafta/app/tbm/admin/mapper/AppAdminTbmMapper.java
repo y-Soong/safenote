@@ -10,9 +10,11 @@ import com.prafta.app.tbm.admin.application.command.AdminCompletionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialCommand;
 import com.prafta.app.tbm.admin.application.command.AdminEduMaterialItemCommand;
 import com.prafta.app.tbm.admin.application.command.AdminForceExitCommand;
+import com.prafta.app.tbm.admin.application.command.AdminManagerSignCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCancelCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionContentCommand;
+import com.prafta.app.tbm.admin.application.command.AdminSessionEndCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionPrepareCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionRiskCommand;
 import com.prafta.app.tbm.admin.application.command.AdminSessionSinglePwdCommand;
@@ -127,10 +129,17 @@ public interface AppAdminTbmMapper {
     int startSession(AdminSessionTransitionCommand command);
 
     /**
-     * T1 교육 종료(IN_PROGRESS→COMPLETED) + 종료비번(EXIT_PWD) 최초 발급(prafta-051 E5).
+     * T1 교육 종료(IN_PROGRESS→COMPLETED) + 종료비번(EXIT_PWD) 최초 발급(prafta-051 E5)
+     * + 주관자 서명 파일코드/서명시각 반영(tbm04-manager-sign — 서명 필수).
      * WHERE STATUS_CD='IN_PROGRESS' 가드. 영향 행수 반환.
      */
-    int endSession(AdminSessionSinglePwdCommand command);
+    int endSession(AdminSessionEndCommand command);
+
+    /**
+     * tbm04-manager-sign: 종료(COMPLETED) 세션 사후 주관자 서명 등록.
+     * WHERE STATUS_CD='COMPLETED' AND MANAGER_SIGN_FILE_MGMT_CD IS NULL 가드(재서명 불가). 영향 행수 반환.
+     */
+    int updateManagerSign(AdminManagerSignCommand command);
 
     // [정합성 수정] T2 종료 자동이수(autoCompleteOnEnd) 제거 — 사용자 직접 완료 정책으로 폐지.
 

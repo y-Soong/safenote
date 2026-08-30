@@ -12,6 +12,7 @@ import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
 import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerSignParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionCancelParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionDetailParam;
@@ -32,6 +33,7 @@ import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerSignResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminRiskOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminSessionContentsResponse;
@@ -77,7 +79,11 @@ public interface AppAdminTbmService {
     /* ===== R3 라이브 제어 ===== */
     AdminLiveTransitionResponse startSession(AdminLiveTransitionParam param);
 
-    AdminLiveTransitionResponse endSession(AdminLiveTransitionParam param);
+    /** T1 교육 종료(IN_PROGRESS→COMPLETED). tbm04-manager-sign: 주관자 서명(multipart 'item') 필수 — 서버 강제. */
+    AdminLiveTransitionResponse endSession(AdminManagerSignParam param);
+
+    /** tbm04-manager-sign: 종료(COMPLETED) 세션 사후 주관자 서명 등록(개설자 본인·서명 NULL·재서명 불가). */
+    AdminManagerSignResponse signCompletedSession(AdminManagerSignParam param);
 
     AdminAttendeeListResponse selectAttendees(AdminAttendeeListParam param);
 

@@ -52,6 +52,8 @@ public class AdminSessionDetailResponse {
         private String cancelReason;
         private String insertNm;
         private String insertDate;
+        private String managerSignYn;    // tbm04-manager-sign: 'Y'=주관자 서명 존재(이력 상세 사후서명 노출 판단)
+        private String managerSignedAt;  // 주관자 서명 시각('yyyy-MM-dd HH:mm')
     }
 
     @Getter

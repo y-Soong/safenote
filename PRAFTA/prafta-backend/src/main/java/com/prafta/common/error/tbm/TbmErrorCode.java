@@ -181,6 +181,14 @@ public enum TbmErrorCode implements ApiErrorCode {
     // 지정/해제 불가 상태(DRAFT/OPENED 외)
     , TBM_409_063(HttpStatus.CONFLICT, "지금은 연동 회사를 변경할 수 없는 상태입니다.")
 
+    // ==== 주관자 서명 (tbm04-manager-sign, 2026-08-30) ====
+    // 종료/사후서명 시 서명 파일 누락 또는 검증(크기/타입/매직바이트) 실패 - 사용자 안내
+    , TBM_400_070(HttpStatus.BAD_REQUEST, "주관자 서명을 등록해 주세요.")
+    // 사후서명 중복(이미 서명됨 — 재서명 불가 확정) - 비즈니스 룰
+    , TBM_409_070(HttpStatus.CONFLICT, "이미 주관자 서명이 등록된 세션입니다.")
+    // 사후서명 불가 상태(COMPLETED 외) - 비즈니스 룰
+    , TBM_409_071(HttpStatus.CONFLICT, "종료된 세션에서만 주관자 서명을 등록할 수 있습니다.")
+
     ;
 
     private final HttpStatus httpStatus;

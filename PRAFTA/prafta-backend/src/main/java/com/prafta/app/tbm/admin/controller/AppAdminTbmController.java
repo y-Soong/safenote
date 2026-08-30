@@ -30,6 +30,7 @@ import com.prafta.app.tbm.admin.application.param.AdminEligibleRegularParam;
 import com.prafta.app.tbm.admin.application.param.AdminHistoryListParam;
 import com.prafta.app.tbm.admin.application.param.AdminLiveTransitionParam;
 import com.prafta.app.tbm.admin.application.param.AdminManagerDirectParam;
+import com.prafta.app.tbm.admin.application.param.AdminManagerSignParam;
 import com.prafta.app.tbm.admin.application.param.AdminQrScanParam;
 import com.prafta.app.tbm.admin.application.param.AdminOptionParam;
 import com.prafta.app.tbm.admin.application.param.AdminSessionCancelParam;
@@ -61,6 +62,7 @@ import com.prafta.app.tbm.admin.dto.response.AdminManagerDirectResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminQrScanResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminHistoryListResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminLiveTransitionResponse;
+import com.prafta.app.tbm.admin.dto.response.AdminManagerSignResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminMaterialTypeOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminRiskOptionResponse;
 import com.prafta.app.tbm.admin.dto.response.AdminSessionContentsResponse;
@@ -273,14 +275,35 @@ public class AppAdminTbmController {
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }
 
-    /** R3 T1 교육 종료(IN_PROGRESS→COMPLETED) + T2 미종료 출결 자동이수. 개설자만 허용. */
-    @PostMapping("/sessions/{sessionCd}/end")
+    /**
+     * R3 T1 교육 종료(IN_PROGRESS→COMPLETED). 개설자만 허용.
+     * tbm04-manager-sign: 주관자 서명(multipart 파트 'item' — 참석자 exit 계약 미러) 필수.
+     * required=false 로 받되 서비스가 필수 검증(TBM_400_070)한다. 다른 바디 필드 없음.
+     */
+    @PostMapping(value = "/sessions/{sessionCd}/end", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> endSession(@PathVariable("sessionCd") String sessionCd,
+            @RequestPart(value = "item", required = false) MultipartFile signFile,
             @RequestHeader(value = "Authorization", required = false) String authorization) {
 
         TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
         AdminLiveTransitionResponse response = appAdminTbmService.endSession(
-                AdminLiveTransitionParam.of(sessionCd, tokenInfo));
+                AdminManagerSignParam.of(sessionCd, signFile, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK).body(response);
+    }
+
+    /**
+     * tbm04-manager-sign: 종료(COMPLETED) 세션 사후 주관자 서명 등록. 개설자 본인만.
+     * 대상 = 서명 필수 편입 이전 종료 세션(서명 NULL). 재서명 불가(TBM_409_070).
+     */
+    @PostMapping(value = "/sessions/{sessionCd}/manager-sign", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<?> signCompletedSession(@PathVariable("sessionCd") String sessionCd,
+            @RequestPart(value = "item", required = false) MultipartFile signFile,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+        AdminManagerSignResponse response = appAdminTbmService.signCompletedSession(
+                AdminManagerSignParam.of(sessionCd, signFile, tokenInfo));
 
         return ResponseEntity.status(HttpStatus.OK).body(response);
     }

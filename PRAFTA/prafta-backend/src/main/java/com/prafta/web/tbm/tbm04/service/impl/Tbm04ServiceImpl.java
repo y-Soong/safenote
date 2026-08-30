@@ -508,6 +508,70 @@ public class Tbm04ServiceImpl implements Tbm04Service {
 		return file;
 	}
 
+	// ============================ tbm04-manager-sign: 주관자 서명 이미지 ============================
+
+	/**
+	 * 주관자 서명 이미지 스트림(증빙 엑셀 "5. 확인" 삽입용). attendance-sign-image(W-13) 패턴 미러.
+	 *
+	 * <p>인가(evidence-session-details 술어와 동치 정렬 — 참석사 엑셀에도 개설사 서명 자동 표기 지원):
+	 * ①권한 미부여 차단 ②자사 개설(ownerYn='Y')이면 사업장 스코프 검증, 타사 개설이면 자사 참석
+	 * (attendedYn='Y') 존재 필수(아니면 존재 비노출 404) ③관리자 역할 게이트(W-13 security High #1 미러
+	 * — 서명 PII 열거 차단). 타사(참석사) 요청자는 개설사 조직을 조회할 수 없으므로 자기 사업장 기준으로
+	 * 노드관리자를 판정한다(→ security 에이전트 중점 검토 지점).
+	 * 파일 식별자는 서버가 세션 행에서 재조회한다(클라 파일코드 신뢰 금지 — IDOR 방지).
+	 */
+	@Override
+	public com.prafta.common.cmm.file.application.model.FileBytesResult loadManagerSignImage(
+			com.prafta.web.tbm.tbm04.application.param.ManagerSignImageParam param) {
+
+		if (AuthRoleUtils.isAccessDenied(param.gvAuthCd())) {
+			log.warn("TBM 주관자 서명 이미지 접근 차단 - authCd={}", param.gvAuthCd());
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
+		com.prafta.web.tbm.tbm04.result.ManagerSignInfoResult info =
+				tbm04Mapper.selectManagerSignInfo(param.gvCmpnyCd(), param.sessionCd());
+		if (info == null) {
+			// 세션 없음 — 존재 비노출 통합 404.
+			throw new ApiException(TbmErrorCode.TBM_404_010);
+		}
+
+		boolean owner = "Y".equals(info.ownerYn());
+		if (owner) {
+			// 자사 개설: 사업장 스코프 격리(비전사 권한은 접근 권한 보유 사업장만).
+			verifyScope(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(), param.gvSiteCd(), info.sessionSiteCd());
+		} else if (!"Y".equals(info.attendedYn())) {
+			// 타사 개설 + 자사 참석 없음 — 존재 비노출 통합 404.
+			throw new ApiException(TbmErrorCode.TBM_404_010);
+		}
+
+		// 관리자 역할 게이트: 전사 관리자 또는 노드(부서) 정/부 관리자만. 노드관리자 판정 사업장 =
+		// 자사 개설이면 세션 사업장, 타사(참석사)면 요청자 자기 사업장(개설사 조직 조회 불가).
+		String roleGateSiteCd = owner ? info.sessionSiteCd() : param.gvSiteCd();
+		if (!AuthRoleUtils.canManageSite(param.gvAuthCd())
+				&& tbm04Mapper.countNodeAdminInSite(param.gvCmpnyCd(), roleGateSiteCd, param.gvUserCd()) <= 0) {
+			log.warn("TBM 주관자 서명 이미지 접근 차단(관리자 역할 아님) - userCd={}, authCd={}, siteCd={}",
+					param.gvUserCd(), param.gvAuthCd(), roleGateSiteCd);
+			throw new ApiException(TbmErrorCode.TBM_403_021);
+		}
+
+		if (!StringUtils.hasText(info.managerSignFileMgmtCd())) {
+			// 서명 미등록 — 존재 비노출 통합 404.
+			throw new ApiException(TbmErrorCode.TBM_404_010);
+		}
+
+		// 주관자 서명은 항상 개설사 스코프로 저장(T2/T3) → hostCmpnyCd 로 로드.
+		com.prafta.common.cmm.file.application.model.FileBytesResult file = fileService.loadFileBytes(
+				new com.prafta.common.cmm.file.application.query.FileReadQuery(
+						info.hostCmpnyCd(), info.managerSignFileMgmtCd()));
+		if (file == null) {
+			throw new ApiException(TbmErrorCode.TBM_404_010);
+		}
+
+		log.info("TBM 주관자 서명 이미지 스트림 - sessionCd={}, owner={}", param.sessionCd(), owner);
+		return file;
+	}
+
 	/** 스코프 격리: 회사 전체 권한이 아니면 접근 권한 보유 사업장(User_03 원장 포함) 리소스만 접근 가능. */
 	private void verifyScope(String cmpnyCd, String userCd, String authCd, String ownSiteCd, String targetSiteCd) {
 		if (AuthRoleUtils.isCompanyWide(authCd)) {

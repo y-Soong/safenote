@@ -110,6 +110,14 @@
       @confirm="onConfirmForceExit"
     />
 
+    <!-- 주관자 서명 시트(tbm04-manager-sign — 서명 후 종료, confirm 대체) -->
+    <AdminTbmEndSignSheet
+      v-model="endSignOpen"
+      :submitting="ending"
+      :error-msg="endSignError"
+      @submit="onSubmitEndSign"
+    />
+
     <!-- 아이콘 스프라이트 -->
     <svg width="0" height="0" class="admin-tbm-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -138,6 +146,7 @@ import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmForceExitSheet from './components/AdminTbmForceExitSheet.vue'
+import AdminTbmEndSignSheet from './components/AdminTbmEndSignSheet.vue'
 import TbmMaterialSlider from '@/views/tbm/components/TbmMaterialSlider.vue'
 
 const route = useRoute()
@@ -150,10 +159,7 @@ const showAlert = (message) => {
   window.alert(message)
   return Promise.resolve()
 }
-const askConfirm = async (message) => {
-  if (proxy?.$confirm) return await proxy.$confirm(message)
-  return window.confirm(message)
-}
+// (tbm04-manager-sign) 종료 confirm 은 주관자 서명 시트로 대체되어 askConfirm 헬퍼는 제거됨.
 
 // ── 상태 ──────────────────────────────────────────────────────────
 const sessionCd = computed(() => route.query.sessionCd || '')
@@ -170,6 +176,10 @@ const attendees = ref([]) // [{ attendanceCd, userNm, userTypeCd, deptNm, entryA
 const forceExitOpen = ref(false)
 const forceExiting = ref(false)
 const targetAttendee = ref(null)
+
+// 주관자 서명 시트(tbm04-manager-sign — 종료는 서명 필수, 서버 강제)
+const endSignOpen = ref(false)
+const endSignError = ref('')
 
 // ── 조회 ──────────────────────────────────────────────────────────
 // 세션 상세 로드 + IN_PROGRESS 상태 검증 후 자료(슬라이드용) 로드.
@@ -292,18 +302,39 @@ const onConfirmForceExit = async (reason) => {
 
 // 교육 종료(→ COMPLETED, T1 개설자만). [정합성 수정] 자동이수 폐지:
 //   종료는 세션 상태만 전이하며, 근로자는 종료 후에도 직접 완료(서명)해야 이수된다.
-// confirm 후 POST .../{sessionCd}/end → 성공 시 종료화면(/AdminTbmCompleted) 으로 replace.
-const onEnd = async () => {
+// (tbm04-manager-sign) confirm 대신 주관자 서명 시트를 연다 — 서명 없이 종료 불가(서버 강제).
+const onEnd = () => {
   if (ending.value) return
-  const ok = await askConfirm('교육을 종료할까요? 종료 후에도 근로자가 직접 완료(서명)해야 이수 처리돼요.')
-  if (!ok) return
+  endSignError.value = ''
+  endSignOpen.value = true
+}
+
+// 서명 시트 submit — FormData(파트 'item' = 서명 PNG, 참석자 exit 계약 미러)로 multipart 종료 호출.
+// 성공 시 시트 닫고 종료화면(/AdminTbmCompleted) 으로 replace. 실패 시 시트 내 오류 표기(서버 message 우선).
+const onSubmitEndSign = async ({ signFile }) => {
+  if (ending.value) return
+  endSignError.value = ''
+  if (!signFile) {
+    endSignError.value = '서명 이미지를 만들지 못했어요. 다시 시도해 주세요.'
+    return
+  }
+
+  // FormData 구성(Content-Type 은 axios 가 multipart 로 자동 설정).
+  const formData = new FormData()
+  formData.append('item', signFile)
+
   ending.value = true
   try {
-    await api.post(`/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/end`)
+    await api.post(
+      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/end`,
+      formData,
+    )
+    endSignOpen.value = false
     router.replace({ path: '/AdminTbmCompleted', query: { sessionCd: sessionCd.value } })
   } catch (e) {
-    const msg = e?.response?.data?.message || '종료에 실패했어요. 잠시 후 다시 시도해 주세요.'
-    await showAlert(msg)
+    // TBM_409_051(전이 충돌) 등 서버 message 를 시트 내에 그대로 표기.
+    endSignError.value =
+      e?.response?.data?.message || '종료에 실패했어요. 잠시 후 다시 시도해 주세요.'
   } finally {
     ending.value = false
   }

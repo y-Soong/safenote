@@ -22,6 +22,7 @@ import com.prafta.web.tbm.tbm04.result.EvidenceSessionResult;
 import com.prafta.web.tbm.tbm04.result.EvidenceWorkerSummaryResult;
 import com.prafta.web.tbm.tbm04.result.HistorySessionListResult;
 import com.prafta.web.tbm.tbm04.result.HistoryStatResult;
+import com.prafta.web.tbm.tbm04.result.ManagerSignInfoResult;
 import com.prafta.web.tbm.tbm04.result.SessionAttendanceResult;
 import com.prafta.web.tbm.tbm04.result.UserAttendanceResult;
 import com.prafta.web.tbm.tbm04.result.UserAttendanceSummaryResult;
@@ -53,6 +54,12 @@ public interface Tbm04Mapper {
 
 	/** 해당 사업장의 노드(부서) 정/부 관리자 여부(서명 이미지 역할 게이트 — Baim05 동형). 1 이상이면 관리자. */
 	int countNodeAdminInSite(@org.apache.ibatis.annotations.Param("cmpnyCd") String cmpnyCd, @org.apache.ibatis.annotations.Param("siteCd") String siteCd, @org.apache.ibatis.annotations.Param("userCd") String userCd);
+
+	/* ===== tbm04-manager-sign: 주관자 서명 이미지 ===== */
+	/** 주관자 서명 파일 식별 정보 + 인가 판단 재료(ownerYn/attendedYn). 세션 없으면 null. */
+	ManagerSignInfoResult selectManagerSignInfo(
+			@org.apache.ibatis.annotations.Param("gvCmpnyCd") String gvCmpnyCd,
+			@org.apache.ibatis.annotations.Param("sessionCd") String sessionCd);
 
 	/* ===== W-14 미이수 처리 ===== */
 	/** 게이트 검증용: 출결 + 소속 세션 메타(스코프/개설자). */

@@ -41,6 +41,9 @@ public record AdminSessionResult(
     , String cancelReason
     , String insertNm
     , String insertDate
-    , Long prepStartAtEpoch // 준비 타이머 절대시각(epoch 초, UNIX_TIMESTAMP - 저장 TZ 가정 불필요). SELECT 마지막 컬럼
+    , Long prepStartAtEpoch // 준비 타이머 절대시각(epoch 초, UNIX_TIMESTAMP - 저장 TZ 가정 불필요)
+    // tbm04-manager-sign: 주관자 서명 여부/시각(이력 상세 사후서명 노출 판단·표시용). SELECT 끝 2컬럼과 순서 일치
+    , String managerSignYn      // 'Y'=서명 존재
+    , String managerSignedAt    // 'yyyy-MM-dd HH:mm' (파일 내 표준 = DATE_FORMAT 직표시)
 ){
 }

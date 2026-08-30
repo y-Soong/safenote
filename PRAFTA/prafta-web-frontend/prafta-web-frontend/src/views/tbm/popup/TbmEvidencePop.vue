@@ -114,15 +114,15 @@
 
         <div class="modal-footer">
           <div class="btn-group">
-            <button class="btn btn-secondary" :disabled="building" @click="$emit('close')">
-              닫기
-            </button>
             <button
               class="btn btn-primary"
               :disabled="!searched || building || sessions.length === 0"
               @click="fnDownload"
             >
               {{ building ? "생성 중…" : "엑셀 다운로드" }}
+            </button>
+            <button class="tev-close-btn" :disabled="building" @click="$emit('close')">
+              닫기
             </button>
           </div>
         </div>
@@ -241,6 +241,29 @@ const fnDownload = async () => {
       details.mtrlList.push(...(r.data?.mtrlList ?? []));
     }
 
+    // (tbm04-manager-sign) 주관자 서명 이미지 수집 — managerSignYn='Y' 세션만 인증 스트림 fetch.
+    // 개별 실패는 warn 후 해당 세션만 빈칸 폴백(전체 다운로드 중단 금지). 실패 응답은 JSON 이
+    // arraybuffer 로 오지만 메시지 파싱 불요(폴백만).
+    const managerSigns = {}; // { [sessionCd]: { buffer: ArrayBuffer, extension: 'png'|'jpeg' } }
+    const signTargets = details.sessionList.filter((s) => s.managerSignYn === "Y");
+    for (let i = 0; i < signTargets.length; i++) {
+      progressText.value = `주관자 서명 수집 중… (${i + 1}/${signTargets.length})`;
+      const s = signTargets[i];
+      try {
+        const r = await axios.get("/webApi/tbm04/manager-sign-image", {
+          params: { sessionCd: s.sessionCd },
+          responseType: "arraybuffer",
+        });
+        const contentType = String(r.headers?.["content-type"] ?? "");
+        managerSigns[s.sessionCd] = {
+          buffer: r.data,
+          extension: contentType.includes("jpeg") ? "jpeg" : "png",
+        };
+      } catch (e) {
+        console.warn(`[TbmEvidence] 주관자 서명 수집 실패(빈칸 폴백): ${s.sessionCd}`, e?.message);
+      }
+    }
+
     progressText.value = "엑셀 파일 생성 중…";
     const halfLabel = half.value === "H1" ? "상반기" : "하반기";
     const siteNm =
@@ -258,6 +281,7 @@ const fnDownload = async () => {
       sessions: sessions.value,
       workers,
       details,
+      managerSigns,
       fileName: `TBM_안전교육_증빙_${year.value}_${halfLabel}.xlsx`,
     });
   } catch (err) {
@@ -417,5 +441,36 @@ onMounted(fnLoadSites);
   font-weight: 600;
   color: var(--color-primary, #16a34a);
   text-align: center;
+}
+
+/* 닫기: 텍스트 크기의 ghost 버튼 (.btn 미사용 — 가이드 29px 고정 높이 배제) */
+.modal-footer .btn-group {
+  margin-bottom: 4px;
+}
+.tev-close-btn {
+  background: transparent;
+  border: none;
+  padding: 0.25rem 0.375rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  font-family: "Pretendard", sans-serif;
+  color: var(--color-text-muted, #4b5563);
+  cursor: pointer;
+  line-height: 1;
+}
+.tev-close-btn:hover:not(:disabled) {
+  color: var(--color-text-strong, #111827);
+  text-decoration: underline;
+}
+.tev-close-btn:disabled {
+  color: var(--color-text-muted, #4b5563);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tev-close-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 </style>

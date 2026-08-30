@@ -353,6 +353,30 @@
 	  AND (A.MAIN_ADMIN_CD = #{userCd} OR A.SUB_ADMIN_CD = #{userCd})
 	</select>
 
+	<!-- tbm04-manager-sign: 주관자 서명 파일 식별 정보(서버 재조회 - 클라 파일코드 신뢰 금지).
+	     인가 판단 재료(ownerYn/attendedYn)를 함께 산출: 자사 개설 또는 자사 참석(입실) 존재 세션만 서비스가 통과. -->
+	<select id="selectManagerSignInfo" resultType="com.prafta.web.tbm.tbm04.result.ManagerSignInfoResult">
+	/* Tbm04Mapper.selectManagerSignInfo */
+	SELECT
+		S.SESSION_CD	AS sessionCd
+		, S.CMPNY_CD	AS hostCmpnyCd
+		, S.SITE_CD		AS sessionSiteCd
+		, S.MANAGER_SIGN_FILE_MGMT_CD	AS managerSignFileMgmtCd
+		, CASE WHEN S.CMPNY_CD = #{gvCmpnyCd} THEN 'Y' ELSE 'N' END	AS ownerYn
+		, CASE WHEN EXISTS (
+					SELECT 1
+					FROM TB_TBM_ATTENDANCE AT
+					WHERE AT.SESSION_CD = S.SESSION_CD
+					  AND AT.CMPNY_CD = #{gvCmpnyCd}
+					  AND AT.DEL_YN = 'N'
+					  AND AT.ENTRY_AT IS NOT NULL
+				)
+			   THEN 'Y' ELSE 'N' END	AS attendedYn
+	FROM TB_TBM_SESSION S
+	WHERE S.SESSION_CD = #{sessionCd}
+	  AND S.DEL_YN = 'N'
+	</select>
+
 	<!-- ============================ W-14 미이수 처리 ============================ -->
 	<select id="selectAttendanceGuard" parameterType="com.prafta.web.tbm.tbm04.application.query.AttendanceGuardQuery" resultType="com.prafta.web.tbm.tbm04.result.AttendanceGuardResult">
 	/* Tbm04Mapper.selectAttendanceGuard */
@@ -779,6 +803,9 @@
 		, S.GPS_VERIFY_RADIUS_M	AS gpsVerifyRadiusM
 		, S.CONTENT_BODY	AS contentBody
 		, CASE WHEN S.CMPNY_CD = #{gvCmpnyCd} THEN 'Y' ELSE 'N' END	AS ownerYn
+		/* tbm04-manager-sign: 주관자 서명 여부/시각(record 끝 2필드와 순서 일치, 파일코드 미노출) */
+		, CASE WHEN S.MANAGER_SIGN_FILE_MGMT_CD IS NOT NULL THEN 'Y' ELSE 'N' END	AS managerSignYn
+		, DATE_FORMAT(CONVERT_TZ(S.MANAGER_SIGNED_AT, @@SESSION.time_zone, '+09:00'), '%Y-%m-%d %H:%i')	AS managerSignedAt
 	FROM TB_TBM_SESSION S
 		 LEFT OUTER JOIN TB_SITE ST
 		 	ON (

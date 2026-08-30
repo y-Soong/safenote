@@ -15,5 +15,6 @@ public record AdminSessionGuardResult(
     , String managerNodeCd
     , String gpsVerifyTypeCd
     , Integer eduMinutes        // 교육준비(prepare) DB값 기준 교육시간 필수검증용(분, 1~60)
+    , String managerSignFileMgmtCd  // tbm04-manager-sign: 사후서명 중복 가드용(존재=이미 서명). SELECT 마지막 컬럼
 ){
 }

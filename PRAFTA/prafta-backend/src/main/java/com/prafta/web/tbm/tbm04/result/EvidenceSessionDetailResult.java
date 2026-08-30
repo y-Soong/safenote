@@ -19,5 +19,8 @@ public record EvidenceSessionDetailResult(
     , Integer gpsVerifyRadiusM
     , String contentBody       // 교육 내용(리치 HTML)
     , String ownerYn           // 'Y'=자사 개설
+    // tbm04-manager-sign: 주관자 서명 여부/시각(엑셀 "5. 확인" 표기·서명 이미지 fetch 판단). 파일코드는 미노출.
+    , String managerSignYn     // 'Y'=주관자 서명 존재
+    , String managerSignedAt   // yyyy-MM-dd HH:mm (KST, CONVERT_TZ 표준) | null
 ){
 }

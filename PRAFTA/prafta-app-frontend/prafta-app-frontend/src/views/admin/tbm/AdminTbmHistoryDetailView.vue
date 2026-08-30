@@ -83,7 +83,23 @@
               <dt>취소사유</dt>
               <dd>{{ session.cancelReason }}</dd>
             </div>
+            <div v-if="session.managerSignYn === 'Y'" class="meta__row">
+              <dt>주관자 서명</dt>
+              <dd>{{ session.managerSignedAt }} 서명 완료</dd>
+            </div>
           </dl>
+        </section>
+
+        <!-- 사후서명 카드(tbm04-manager-sign) — 종료 세션 + 서명 없음 + 개설자 본인일 때만 노출.
+             클라 판별은 노출 제어용일 뿐, 서버가 verifyManager 로 재강제한다. -->
+        <section v-if="canPostSign" class="card">
+          <p class="card__label">주관자 서명</p>
+          <p class="admin-tbm-sign-notice">
+            이 교육은 주관자 서명 없이 종료되었습니다. 증빙자료 출력을 위해 서명을 등록해 주세요.
+          </p>
+          <button type="button" class="admin-tbm-sign-btn" @click="onOpenSignSheet">
+            서명 등록
+          </button>
         </section>
 
         <!-- 이수 집계 요약 -->
@@ -125,6 +141,17 @@
       </template>
     </main>
 
+    <!-- 주관자 사후서명 시트(tbm04-manager-sign) -->
+    <AdminTbmEndSignSheet
+      v-model="signSheetOpen"
+      :submitting="signSubmitting"
+      :error-msg="signError"
+      title="주관자 서명"
+      notice="종료된 교육에 주관자 서명을 등록합니다. 등록 후에는 다시 서명할 수 없어요."
+      submit-label="서명 등록하기"
+      @submit="onSubmitManagerSign"
+    />
+
     <!-- 아이콘 스프라이트 -->
     <svg width="0" height="0" class="admin-tbm-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -152,11 +179,18 @@ import api from '@/api/axios'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
+import AdminTbmEndSignSheet from './components/AdminTbmEndSignSheet.vue'
 
 const route = useRoute()
 const router = useRouter()
-// eslint-disable-next-line no-unused-vars
 const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 공통: alert 폴백(앱 전역 우선) — AdminTbmLiveView 패턴 동일
+const showAlert = (message) => {
+  if (proxy?.$alert) return proxy.$alert(message)
+  window.alert(message)
+  return Promise.resolve()
+}
 
 // ── 상태 ──────────────────────────────────────────────────────────
 const sessionCd = computed(() => route.query.sessionCd || '')
@@ -183,6 +217,63 @@ const completedCount = computed(
 const notCompletedCount = computed(
   () => attendees.value.filter((a) => a.completionStatusCd === 'NOT_COMPLETED').length,
 )
+
+// ── 사후서명(tbm04-manager-sign) ──────────────────────────────────
+// 노출 3조건 AND: 종료 세션 + 서명 없음 + 개설자 본인(gv_userCd — 노출 제어용, 서버는 verifyManager 재강제).
+const myUserCd = sessionStorage.getItem('gv_userCd') || ''
+const canPostSign = computed(
+  () =>
+    session.value?.statusCd === 'COMPLETED' &&
+    session.value?.managerSignYn !== 'Y' &&
+    !!myUserCd &&
+    session.value?.managerUserCd === myUserCd,
+)
+
+const signSheetOpen = ref(false)
+const signSubmitting = ref(false)
+const signError = ref('')
+
+const onOpenSignSheet = () => {
+  signError.value = ''
+  signSheetOpen.value = true
+}
+
+// 서명 등록 — POST .../{sessionCd}/manager-sign (multipart 'item').
+// 성공 시 시트 닫고 상세 재조회(서명시각 메타 행으로 전환). 409 는 서버 message 표기 후 재조회.
+const onSubmitManagerSign = async ({ signFile }) => {
+  if (signSubmitting.value) return
+  signError.value = ''
+  if (!signFile) {
+    signError.value = '서명 이미지를 만들지 못했어요. 다시 시도해 주세요.'
+    return
+  }
+
+  const formData = new FormData()
+  formData.append('item', signFile)
+
+  signSubmitting.value = true
+  try {
+    await api.post(
+      `/appApi/admin/tbm/sessions/${encodeURIComponent(sessionCd.value)}/manager-sign`,
+      formData,
+    )
+    signSheetOpen.value = false
+    await loadDetail()
+  } catch (e) {
+    const status = e?.response?.status
+    const msg = e?.response?.data?.message || '서명 등록에 실패했어요. 잠시 후 다시 시도해 주세요.'
+    if (status === 409) {
+      // 이미 서명됨/상태 변경 경합 — 안내 후 최신 상태로 재조회(시트 닫음).
+      signSheetOpen.value = false
+      await showAlert(msg)
+      await loadDetail()
+    } else {
+      signError.value = msg
+    }
+  } finally {
+    signSubmitting.value = false
+  }
+}
 
 // ── 조회 ──────────────────────────────────────────────────────────
 // 세션 상세 — GET /appApi/admin/tbm/sessions/{sessionCd} (T-A2 재사용).
@@ -397,6 +488,27 @@ onMounted(() => {
   font-size: 14px;
   color: var(--color-text-primary);
   word-break: break-all;
+}
+
+/* 사후서명 카드(tbm04-manager-sign) */
+.admin-tbm-sign-notice {
+  margin: 0 0 var(--space-md);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  word-break: keep-all;
+}
+.admin-tbm-sign-btn {
+  width: 100%;
+  height: 44px;
+  background: var(--color-primary);
+  color: var(--color-surface);
+  border: 0;
+  border-radius: var(--radius-md);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
 }
 
 /* 이수 집계 요약 */

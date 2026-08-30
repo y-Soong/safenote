@@ -103,6 +103,29 @@ public class Tbm04Controller {
 				.body(file.data());
 	}
 
+	/**
+	 * tbm04-manager-sign — 주관자 서명 이미지 스트림(증빙 엑셀 "5. 확인" 삽입용, 2026-08-30).
+	 * attendance-sign-image(W-13) 원칙 미러: 공개 정적 URL 금지, 인증 스트림 서빙, no-store + nosniff.
+	 * 파일 식별자는 서버가 세션 행에서 재조회한다(클라 파일코드 신뢰 금지).
+	 */
+	@GetMapping("/manager-sign-image")
+	public ResponseEntity<byte[]> getManagerSignImage(
+			@org.springframework.web.bind.annotation.RequestParam(value = "sessionCd", required = false) String sessionCd,
+			@RequestHeader(value = "Authorization", required = false) String authorization) {
+
+		com.prafta.common.cmm.file.application.model.FileBytesResult file =
+				tbm04Service.loadManagerSignImage(
+						com.prafta.web.tbm.tbm04.application.param.ManagerSignImageParam.from(
+								sessionCd, jwtUtil.getAllClaimsAsMap(authorization)));
+
+		return ResponseEntity.status(HttpStatus.OK)
+				.contentType(MediaType.parseMediaType(file.contentType()))
+				.header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+				// 저장 contentType 스니핑 우회 방지(이미지 외 해석 차단 — W-13 security Low #5 미러)
+				.header("X-Content-Type-Options", "nosniff")
+				.body(file.data());
+	}
+
 	/** W-14 미이수 처리(이수/미이수 사후 변경, 사유 10자 이상, 권한 개설자/safe/master). */
 	@PostMapping(value = "/update-completion", consumes = MediaType.APPLICATION_JSON_VALUE)
 	public ResponseEntity<?> updateCompletion(@RequestBody CompletionUpdateRequest request,

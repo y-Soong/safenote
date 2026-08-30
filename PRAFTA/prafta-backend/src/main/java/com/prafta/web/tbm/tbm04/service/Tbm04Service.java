@@ -31,6 +31,10 @@ public interface Tbm04Service {
 	com.prafta.common.cmm.file.application.model.FileBytesResult loadAttendanceSignImage(
 			com.prafta.web.tbm.tbm04.application.param.AttendanceSignImageParam param);
 
+	/** tbm04-manager-sign — 주관자 서명 이미지 스트림. 파일코드는 서버 재조회(IDOR 방지). */
+	com.prafta.common.cmm.file.application.model.FileBytesResult loadManagerSignImage(
+			com.prafta.web.tbm.tbm04.application.param.ManagerSignImageParam param);
+
 	/** W-14 미이수 처리(이수/미이수 사후 변경). */
 	void updateCompletion(CompletionUpdateParam param);
 

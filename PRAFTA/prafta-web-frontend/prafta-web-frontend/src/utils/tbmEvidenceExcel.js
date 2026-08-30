@@ -7,7 +7,8 @@ import ExcelJS from "exceljs";
  *   ① 반기 교육실시 목록 — 세션별 1행(자사 개설 + 연동 공유 세션 자사 참석분)
  *   ② 근로자별 이수현황 — 인정시간 축 합산 + 법정 기준 2축(사무·판매 6h / 그 외 12h) 수식 판정.
  *      기타 교육(분)은 수기 입력 칸 — 입력 시 누적/충족 수식이 자동 재계산된다.
- *   ③.. 교육일지(건별 출력) — 체크한 세션당 1시트. 서명은 이미지 대신 "서명함" 표기(확정안).
+ *   ③.. 교육일지(건별 출력) — 체크한 세션당 1시트. 참석자 서명은 "서명함" 표기 유지(확정안).
+ *       "5. 확인"의 주관자 서명만 실제 서명 이미지를 삽입한다(tbm04-manager-sign — 없으면 빈칸=수기용).
  *
  * 생성은 전부 브라우저(클라이언트)에서 수행한다 — 서버는 JSON 데이터만 공급(부하 회피 확정안).
  */
@@ -81,6 +82,7 @@ const applyRowBorder = (row, fromCol, toCol) => {
  * @param {Array}  p.sessions     시트1 대상 세션(EvidenceSessionResult[] — 반기 전체)
  * @param {Array}  p.workers      시트2 근로자 집계(EvidenceWorkerSummaryResult[])
  * @param {Object} p.details      건별 상세 { sessionList, attendeeList, riskList, mtrlList } (체크분 누적)
+ * @param {Object} [p.managerSigns] 주관자 서명 이미지 맵 { [sessionCd]: { buffer: ArrayBuffer, extension: 'png'|'jpeg' } }
  * @param {string} p.fileName
  */
 export async function buildTbmEvidenceExcel(p) {
@@ -368,21 +370,42 @@ export async function buildTbmEvidenceExcel(p) {
     attSum.font = { bold: true, size: 10 };
     applyRowBorder(attSum, 1, 9);
 
-    // ── 5. 확인 ──
+    // ── 5. 확인 (tbm04-manager-sign: 주관자 서명 단독 — 안전관리자 확인 란 제거 확정) ──
     ws.addRow([]);
     const sec5 = ws.addRow(["5. 확인"]);
     ws.mergeCells(`A${sec5.number}:I${sec5.number}`);
     sec5.getCell(1).fill = C.sectionFill;
     sec5.getCell(1).font = C.sectionFont;
-    const confirmRow = ws.addRow(["주관자 서명", "", "", "", "안전관리자 확인", "", "", "", ""]);
+    // 레이아웃: A:B=라벨 / C:F=서명 이미지 영역(없으면 빈칸=수기용) / G:I=서명 일시.
+    const confirmRow = ws.addRow(["주관자 서명", "", "", "", "", "", "서명 일시", "", ""]);
     const cr = confirmRow.number;
     ws.mergeCells(`A${cr}:B${cr}`);
-    ws.mergeCells(`C${cr}:D${cr}`);
-    ws.mergeCells(`E${cr}:F${cr}`);
+    ws.mergeCells(`C${cr}:F${cr}`);
     ws.mergeCells(`G${cr}:I${cr}`);
     confirmRow.getCell(1).fill = C.sectionFill;
-    confirmRow.getCell(5).fill = C.sectionFill;
-    confirmRow.height = 34;
+    // 라벨/일시 가로·세로 중앙 정렬(기존 좌하단 붙음 결함 수정).
+    confirmRow.getCell(1).alignment = { horizontal: "center", vertical: "middle" };
+    confirmRow.getCell(7).value =
+      s.managerSignYn === "Y" && s.managerSignedAt ? `서명 일시: ${s.managerSignedAt}` : "";
+    confirmRow.getCell(7).alignment = { horizontal: "center", vertical: "middle" };
+
+    // 서명 이미지 삽입(C:F 병합영역 내부 앵커). 없으면 빈칸 유지(수기 서명 공간, 높이 34).
+    const sign = p.managerSigns?.[s.sessionCd];
+    if (sign?.buffer && s.managerSignYn === "Y") {
+      confirmRow.height = 64;
+      const imgId = wb.addImage({
+        buffer: sign.buffer,
+        extension: sign.extension === "jpeg" ? "jpeg" : "png",
+      });
+      // tl 은 0-based {col, row}. cr 은 1-based 행번호 → row: cr-1 + 여백.
+      ws.addImage(imgId, {
+        tl: { col: 2.1, row: cr - 1 + 0.08 }, // C열 안쪽 여백
+        ext: { width: 150, height: 75 }, // 캔버스 2:1 비율 축소
+        editAs: "oneCell",
+      });
+    } else {
+      confirmRow.height = 34;
+    }
     applyRowBorder(confirmRow, 1, 9);
   }
 
