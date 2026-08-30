@@ -7,6 +7,7 @@ import java.util.List;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
+import org.springframework.web.multipart.MultipartFile;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,12 +16,21 @@ import com.prafta.app.admin.common.scope.mapper.AdminScopeMapper;
 import com.prafta.app.siteops.admin.application.command.SiteOpsCheckInCommand;
 import com.prafta.app.siteops.admin.application.command.SiteOpsCheckOutCommand;
 import com.prafta.app.siteops.admin.application.param.SiteOpsQrParam;
+import com.prafta.app.siteops.admin.application.param.SiteOpsTargetParam;
 import com.prafta.app.siteops.admin.dto.response.SiteOpsAttendanceResponse;
+import com.prafta.app.siteops.admin.dto.response.SiteOpsContractMetaResponse;
+import com.prafta.app.siteops.admin.dto.response.SiteOpsSignResponse;
 import com.prafta.app.siteops.admin.mapper.AppAdminSiteOpsMapper;
 import com.prafta.app.siteops.admin.result.SiteOpsOpenAttdResult;
 import com.prafta.app.siteops.admin.service.AppAdminSiteOpsService;
+import com.prafta.common.cmm.dailycontract.result.ContractMetaResult;
+import com.prafta.common.cmm.dailycontract.result.ContractSignMetaResult;
+import com.prafta.common.cmm.dailycontract.result.SignGateResult;
+import com.prafta.common.cmm.dailycontract.service.DailyContractService;
+import com.prafta.common.cmm.file.application.model.FileBytesResult;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.error.common.CommonErrorCode;
+import com.prafta.common.error.dailycontract.DailyContractErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 
@@ -52,6 +62,9 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
     private final AdminScopeMapper adminScopeMapper;
     private final ObjectMapper objectMapper;
 
+    /** 현장 계약서 서명 — 게이트·메타·페이지·합성 저장의 단일 출처(근로자 앱 서명과 동일 core). */
+    private final DailyContractService dailyContractService;
+
     private static final DateTimeFormatter YMD = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final DateTimeFormatter HHMM = DateTimeFormatter.ofPattern("HHmm");
 
@@ -70,6 +83,23 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
     @Transactional
     public SiteOpsAttendanceResponse checkIn(SiteOpsQrParam param) {
         ResolvedTarget t = resolveAndValidate(param, "출근");
+
+        // 현장 계약서 서명 게이트(2026-08-30) — 근로자 앱 로그인 게이트와 동일 판정(core 단일 출처).
+        //   미서명이면 출근을 등록하지 않고 SIGN_REQUIRED 를 반환한다. 화면이 관리자 폰에서
+        //   근로자 본인 서명을 받아 저장한 뒤 재출근 요청으로 완료한다(최초 행위=출근에만 적용).
+        //   활성 계약서 미등록/이미 서명/판정 불가 사이클은 게이트 스킵('N') — 기존 출근 흐름 그대로.
+        SignGateResult gate = dailyContractService.judgeSignGate(param.gvCmpnyCd(), t.userCd);
+        if (gate != null && "Y".equals(gate.signRequiredYn())) {
+            log.info("[siteops] 현장 출근 보류(계약서 서명 필요) - manager={}, userCd={}, site={}, ver={}",
+                    param.gvUserCd(), t.userCd, t.siteCd, gate.contractVer());
+            return SiteOpsAttendanceResponse.builder()
+                    .result("SIGN_REQUIRED")
+                    .userCd(t.userCd)
+                    .userNmMasked(t.userNmMasked)
+                    .contractVer(gate.contractVer())
+                    .contractNm(gate.contractNm())
+                    .build();
+        }
 
         LocalDateTime now = LocalDateTime.now();
         String today = now.format(YMD);
@@ -159,6 +189,54 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
     }
 
     // ====================================================================
+    // 현장 계약서 서명 플로우 (2026-08-30) — 메타 / 페이지 / 서명 저장
+    //   QR 스캔은 출근 1회만 수행하고 후속 호출은 targetUserCd 리소스 키를 쓰되,
+    //   관리자 진입 게이트·사업장 멤버십·대상 유효성(활성+슬롯 점유)은 QR 경로와 동일하게 재검증한다.
+    // ====================================================================
+
+    @Override
+    public SiteOpsContractMetaResponse findContractMeta(SiteOpsTargetParam param) {
+        ResolvedTarget t = resolveTargetByUserCd(param, "계약서 메타");
+        ContractMetaResult meta = dailyContractService.findActiveContractMeta(param.gvCmpnyCd(), t.userCd);
+        if (meta == null) {
+            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_400_003);
+        }
+        return SiteOpsContractMetaResponse.builder()
+                .contractVer(meta.contractVer())
+                .contractNm(meta.contractNm())
+                .formatType(meta.formatType())
+                .pageCount(meta.pageCount())
+                .build();
+    }
+
+    @Override
+    public FileBytesResult loadContractPage(SiteOpsTargetParam param, int page) {
+        ResolvedTarget t = resolveTargetByUserCd(param, "계약서 페이지");
+        FileBytesResult file = dailyContractService.loadActiveContractPage(param.gvCmpnyCd(), t.userCd, page);
+        if (file == null) {
+            throw new ApiException(DailyContractErrorCode.DAILYCONTRACT_400_003);
+        }
+        return file;
+    }
+
+    @Override
+    public SiteOpsSignResponse sign(SiteOpsTargetParam param, MultipartFile signFile) {
+        ResolvedTarget t = resolveTargetByUserCd(param, "계약서 서명");
+
+        // 합성/저장/멱등(400_002)/pin 버전 판정은 core 가 근로자 앱 서명과 동일 경로로 수행한다.
+        // 서명 주체는 근로자 본인(관리자 폰 전달 서명)이며, 관리자 대리 입력이 아님을 화면이 고지한다.
+        ContractSignMetaResult sign = dailyContractService.signContract(param.gvCmpnyCd(), t.userCd, signFile);
+
+        log.info("[siteops] 현장 계약서 서명 저장 완료 - manager={}, userCd={}, site={}, signId={}, ver={}",
+                param.gvUserCd(), t.userCd, t.siteCd, sign.signId(), sign.contractVer());
+
+        return SiteOpsSignResponse.builder()
+                .result("SIGNED")
+                .signId(sign.signId())
+                .build();
+    }
+
+    // ====================================================================
     // 공통: 진입 게이트 + 사업장 권위 재검증 + QR 파싱/위변조 + 대상 유효성
     // ====================================================================
 
@@ -167,17 +245,15 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
     }
 
     /**
-     * S1/S2 공통 전처리. 통과 시 확정 사업장(siteCd)·대상 일용직(userCd)·마스킹 이름을 반환한다.
-     * 실패는 모두 예외(진입 거부=403_002, 사업장/대상 거부=403_040, QR 형식=400_171, 길이=400_170).
+     * 관리자 진입 게이트(SITE_OPS) + 현장전환 사업장 권위 재검증. 통과 시 확정 사업장을 반환한다.
+     * (종전 resolveAndValidate 1)~2) 단계를 그대로 분리 — QR 경로/서명 플로우 경로 공용.)
      */
-    private ResolvedTarget resolveAndValidate(SiteOpsQrParam param, String modeLabel) {
-        String cmpnyCd = param.gvCmpnyCd();
-        String userCd = param.gvUserCd();
-        String authCd = param.gvAuthCd();
+    private String resolveAuthorizedSite(String cmpnyCd, String userCd, String authCd,
+            String reqSiteCd, String gvSiteCd, String modeLabel) {
 
         // 1) 진입 게이트(SITE_OPS) — EP 직접 강제(A-1 비상속).
         //    현장전환 사업장(reqSiteCd)이 비면 토큰 사업장(gv_siteCd)으로 폴백.
-        String siteCd = StringUtils.hasText(param.reqSiteCd()) ? param.reqSiteCd() : param.gvSiteCd();
+        String siteCd = StringUtils.hasText(reqSiteCd) ? reqSiteCd : gvSiteCd;
         if (!StringUtils.hasText(siteCd)) {
             log.warn("[siteops] 현장 {} 거부: 대상 사업장 미확정 - manager={}", modeLabel, userCd);
             throw new ApiException(AttdErrorCode.ATTD_403_002);
@@ -207,6 +283,59 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
                     modeLabel, userCd, siteCd);
             throw new ApiException(AttdErrorCode.ATTD_403_002);
         }
+        return siteCd;
+    }
+
+    /**
+     * 대상 일용직 유효성 검증(활성 계정 + 해당 사업장 슬롯 점유) + 마스킹 이름 로드.
+     * (종전 resolveAndValidate 6)~8) 단계를 그대로 분리 — QR 경로/서명 플로우 경로 공용.)
+     */
+    private ResolvedTarget validateTargetDailyUser(String cmpnyCd, String siteCd, String targetUserCd,
+            String managerUserCd, String modeLabel) {
+
+        // 6) 대상 유효성: 확정 사업장 소속 활성 일용직(USE_YN/ACCOUNT_STATUS/WITHDRAWAL/WORK_EXPIRE)인지 서버 재검증.
+        int valid = appAdminSiteOpsMapper.countValidDailyUser(cmpnyCd, siteCd, targetUserCd);
+        if (valid <= 0) {
+            log.warn("[siteops] 현장 {} 거부: 대상 부적합(사업장 밖/만료/탈퇴) - manager={}, userCd={}, site={}",
+                    modeLabel, managerUserCd, targetUserCd, siteCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_040);
+        }
+
+        // 7) 슬롯 점유 보강 검증(옵션B): 일용직 계정이 해당 사업장에 활성 바인딩(SLOT_STATUS='02')인지.
+        int occupied = appAdminSiteOpsMapper.countOccupiedSlot(cmpnyCd, siteCd, targetUserCd);
+        if (occupied <= 0) {
+            log.warn("[siteops] 현장 {} 거부: 슬롯 미점유(비활성 바인딩) - manager={}, userCd={}, site={}",
+                    modeLabel, managerUserCd, targetUserCd, siteCd);
+            throw new ApiException(AttdErrorCode.ATTD_403_040);
+        }
+
+        // 8) 토스트용 이름(마스킹). 평문 PII 는 응답/로그에 노출하지 않는다.
+        String userNm = appAdminSiteOpsMapper.selectDailyUserNm(cmpnyCd, siteCd, targetUserCd);
+        return new ResolvedTarget(siteCd, targetUserCd, maskUserNm(userNm));
+    }
+
+    /**
+     * 서명 플로우(메타/페이지/서명) 공통 전처리 — QR 없이 targetUserCd 리소스 키로 대상을 확정한다.
+     * 관리자 진입 게이트·사업장 멤버십·대상 유효성은 QR 경로와 동일하게 재검증한다(IDOR 차단).
+     */
+    private ResolvedTarget resolveTargetByUserCd(SiteOpsTargetParam param, String modeLabel) {
+        String siteCd = resolveAuthorizedSite(param.gvCmpnyCd(), param.gvUserCd(), param.gvAuthCd(),
+                param.reqSiteCd(), param.gvSiteCd(), modeLabel);
+        return validateTargetDailyUser(param.gvCmpnyCd(), siteCd, param.targetUserCd(),
+                param.gvUserCd(), modeLabel);
+    }
+
+    /**
+     * S1/S2 공통 전처리. 통과 시 확정 사업장(siteCd)·대상 일용직(userCd)·마스킹 이름을 반환한다.
+     * 실패는 모두 예외(진입 거부=403_002, 사업장/대상 거부=403_040, QR 형식=400_171, 길이=400_170).
+     */
+    private ResolvedTarget resolveAndValidate(SiteOpsQrParam param, String modeLabel) {
+        String cmpnyCd = param.gvCmpnyCd();
+        String userCd = param.gvUserCd();
+
+        // 1)~2) 진입 게이트 + 사업장 권위 재검증 — 공용 헬퍼로 분리(로직 무변경).
+        String siteCd = resolveAuthorizedSite(cmpnyCd, userCd, param.gvAuthCd(),
+                param.reqSiteCd(), param.gvSiteCd(), modeLabel);
 
         // 3) 바디 검증(qrPayload) — 공백/길이 상한.
         String qrPayload = param.qrPayload();
@@ -247,25 +376,8 @@ public class AppAdminSiteOpsServiceImpl implements AppAdminSiteOpsService {
             throw new ApiException(AttdErrorCode.ATTD_403_040);
         }
 
-        // 6) 대상 유효성: 확정 사업장 소속 활성 일용직(USE_YN/ACCOUNT_STATUS/WITHDRAWAL/WORK_EXPIRE)인지 서버 재검증.
-        int valid = appAdminSiteOpsMapper.countValidDailyUser(cmpnyCd, siteCd, qrUserCd);
-        if (valid <= 0) {
-            log.warn("[siteops] 현장 {} 거부: 대상 부적합(사업장 밖/만료/탈퇴) - manager={}, userCd={}, site={}",
-                    modeLabel, userCd, qrUserCd, siteCd);
-            throw new ApiException(AttdErrorCode.ATTD_403_040);
-        }
-
-        // 7) 슬롯 점유 보강 검증(옵션B): 일용직 계정이 해당 사업장에 활성 바인딩(SLOT_STATUS='02')인지.
-        int occupied = appAdminSiteOpsMapper.countOccupiedSlot(cmpnyCd, siteCd, qrUserCd);
-        if (occupied <= 0) {
-            log.warn("[siteops] 현장 {} 거부: 슬롯 미점유(비활성 바인딩) - manager={}, userCd={}, site={}",
-                    modeLabel, userCd, qrUserCd, siteCd);
-            throw new ApiException(AttdErrorCode.ATTD_403_040);
-        }
-
-        // 8) 토스트용 이름(마스킹). 평문 PII 는 응답/로그에 노출하지 않는다.
-        String userNm = appAdminSiteOpsMapper.selectDailyUserNm(cmpnyCd, siteCd, qrUserCd);
-        return new ResolvedTarget(siteCd, qrUserCd, maskUserNm(userNm));
+        // 6)~8) 대상 유효성 + 슬롯 점유 + 마스킹 이름 — 공용 헬퍼로 분리(로직 무변경).
+        return validateTargetDailyUser(cmpnyCd, siteCd, qrUserCd, userCd, modeLabel);
     }
 
     /** QR JSON 노드에서 텍스트 필드를 안전 추출(없거나 null 이면 null). TBM textOrNull 동형. */

@@ -13,7 +13,10 @@ import lombok.Getter;
 @Builder
 public class SiteOpsAttendanceResponse {
 
-    /** 처리 결과: CHECKED_IN(출근) / CHECKED_OUT(퇴근). */
+    /**
+     * 처리 결과: CHECKED_IN(출근) / CHECKED_OUT(퇴근) /
+     * SIGN_REQUIRED(현장 계약서 서명 필요 — 출근 미등록, 서명 완료 후 재요청).
+     */
     private final String result;
 
     /** 대상 일용직 USER_CD. */
@@ -24,4 +27,10 @@ public class SiteOpsAttendanceResponse {
 
     /** 처리 시각 HHMM(출근=출근시각 / 퇴근=퇴근시각). 서버 NOW raw(표준화 미적용). */
     private final String processedTime;
+
+    /** SIGN_REQUIRED 전용: 서명 대상 계약서 버전(그 외 결과에서는 null). */
+    private final Integer contractVer;
+
+    /** SIGN_REQUIRED 전용: 서명 대상 계약서명(그 외 결과에서는 null). */
+    private final String contractNm;
 }

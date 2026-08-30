@@ -104,6 +104,19 @@
       </div>
     </template>
 
+    <!-- 현장 계약서 서명 시트(2026-08-30) — 출근 스캔 응답 SIGN_REQUIRED 시 전체 오버레이.
+         관리자 폰을 근로자에게 전달해 근로자 본인이 열람·서명한다(대리 입력 아님 — 시트가 고지).
+         서명 완료 시 보관해 둔 qrPayload 로 출근을 자동 재요청해 완료한다. -->
+    <SiteOpsContractSignSheet
+      v-if="pendingSign"
+      :target-user-cd="pendingSign.userCd"
+      :user-nm-masked="pendingSign.userNmMasked"
+      :contract-nm="pendingSign.contractNm"
+      :site-cd="currentSiteCd"
+      @signed="onContractSigned"
+      @cancel="onContractSignCancel"
+    />
+
     <!-- 인라인 SVG 스프라이트 -->
     <svg width="0" height="0" class="site-ops-sprite" aria-hidden="true" focusable="false">
       <defs>
@@ -135,6 +148,7 @@ import { requestNativeCameraPermission } from '@/utils/cameraPermissionBridge'
 import { startBackCameraScan, CAMERA_FAIL } from '@/utils/qrCameraStart'
 import { startCoverScale } from '@/utils/qrPreviewCover'
 import SafetyCameraPermissionView from '@/views/chkLst/components/SafetyCameraPermissionView.vue'
+import SiteOpsContractSignSheet from '@/views/admin/siteops/SiteOpsContractSignSheet.vue'
 
 const router = useRouter()
 
@@ -152,6 +166,10 @@ const toast = ref({ visible: false, message: '', tone: 'success' })
 
 // 현장 권위(★미결 3=b): access-context 가 확정한 현재 사업장. 출퇴근 EP 바디로 전달 → 서버가 멤버십 재검증.
 const currentSiteCd = ref('')
+
+// 현장 계약서 서명(2026-08-30): 출근 응답 SIGN_REQUIRED 시 대상 정보 + 재출근용 qrPayload 보관.
+//   null=시트 미표시. { userCd, userNmMasked, contractNm, qrPayload }
+const pendingSign = ref(null)
 
 // html5-qrcode 인스턴스(단건 스캔 — 1회 인식 후 stop)
 let html5QrCode = null
@@ -213,6 +231,20 @@ const onScanSuccess = async (decodedText) => {
       qrPayload: decodedText,
       siteCd: currentSiteCd.value,
     })
+
+    // 현장 계약서 서명 게이트(2026-08-30): 출근인데 미서명이면 출근이 등록되지 않고
+    // SIGN_REQUIRED 가 온다 → 종료하지 않고 서명 시트를 연다(서명 후 자동 재출근).
+    if (data?.result === 'SIGN_REQUIRED') {
+      pendingSign.value = {
+        userCd: data.userCd,
+        userNmMasked: data.userNmMasked || '',
+        contractNm: data.contractNm || '',
+        qrPayload: decodedText,
+      }
+      busy.value = false
+      return
+    }
+
     const actionLabel = mode.value === 'IN' ? '출근' : '퇴근'
     const time = formatHhmm(data?.processedTime)
     const name = data?.userNmMasked || ''
@@ -229,8 +261,45 @@ const onScanSuccess = async (decodedText) => {
   } finally {
     busy.value = false
     // 결과 토스트를 잠깐 보여준 뒤 원래(관리자 홈) 화면으로 복귀(단건 스캔 종료).
+    //   서명 시트가 열린 경우(pendingSign)는 종료하지 않는다 — 서명 완료/취소 핸들러가 마무리.
+    if (!pendingSign.value) scheduleClose()
+  }
+}
+
+// ── 현장 계약서 서명 시트 콜백 ────────────────────────────────────────
+// 서명 완료: 보관해 둔 qrPayload 로 출근을 재요청해 완료한다(게이트는 이제 'N').
+const onContractSigned = async () => {
+  const ctx = pendingSign.value
+  pendingSign.value = null
+  if (!ctx) return
+  try {
+    const { data } = await api.post('/appApi/admin/site-ops/attendance/check-in', {
+      qrPayload: ctx.qrPayload,
+      siteCd: currentSiteCd.value,
+    })
+    const time = formatHhmm(data?.processedTime)
+    const name = data?.userNmMasked || ctx.userNmMasked
+    showToast(`서명 완료! ${name} 출근 처리됐어요${time ? ' ' + time : ''}`, 'success')
+  } catch (e) {
+    const code = e?.response?.data?.errorCode
+    const message = e?.response?.data?.message
+    if (isIdempotentCode(code)) {
+      showToast(message || '이미 처리됐어요', 'info')
+    } else {
+      // 서명은 저장됐으나 출근 재요청 실패 — 다시 스캔하면 서명 없이 바로 출근된다.
+      showToast(message || '서명은 저장됐어요. 출근은 다시 스캔해 주세요.', 'error')
+    }
+  } finally {
     scheduleClose()
   }
+}
+
+// 서명 취소: 출근 미등록 상태 그대로 종료(안내 후 관리자 홈 복귀).
+const onContractSignCancel = () => {
+  const name = pendingSign.value?.userNmMasked || ''
+  pendingSign.value = null
+  showToast(`${name} 서명이 취소되어 출근이 처리되지 않았어요`, 'info')
+  scheduleClose()
 }
 
 // 결과 안내 토스트를 잠깐 노출한 뒤 자동 종료(관리자 홈 복귀). 단건 스캔 UX.
