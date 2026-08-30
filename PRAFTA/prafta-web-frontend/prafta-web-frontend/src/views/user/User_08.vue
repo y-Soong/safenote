@@ -274,7 +274,13 @@
                       }}
                     </td>
                     <td style="text-align: center">
-                      <template v-if="row.reqStatus === '01'">
+                      <!-- User_09 승인 대기 탭 표준 미러 — 래퍼(.row-btn-area)로 버튼 이격,
+                           승인=primary / 거부=second(ghost). 거부는 사유 패널 진입 버튼이라
+                           danger 미사용(파괴적 확정은 패널의 '거부 확정'이 danger 담당). -->
+                      <div
+                        v-if="row.reqStatus === '01'"
+                        class="row-btn-area"
+                      >
                         <button
                           class="btn btn-sm btn-primary"
                           :disabled="processing"
@@ -283,13 +289,13 @@
                           승인
                         </button>
                         <button
-                          class="btn btn-sm btn-primary btn-reject"
+                          class="btn btn-sm btn-second"
                           :disabled="processing"
                           @click="fnOpenReject(row)"
                         >
                           거부
                         </button>
-                      </template>
+                      </div>
                     </td>
                   </tr>
                 </template>
@@ -477,18 +483,20 @@
                       {{ shortHash(row.mergedSha256) }}
                     </td>
                     <td style="text-align: center">
-                      <button
-                        class="btn btn-sm btn-primary"
-                        @click="fnViewSign(row)"
-                      >
-                        열람
-                      </button>
-                      <button
-                        class="btn btn-sm btn-primary"
-                        @click="fnDownloadSign(row)"
-                      >
-                        다운로드
-                      </button>
+                      <div class="row-btn-area">
+                        <button
+                          class="btn btn-sm btn-primary"
+                          @click="fnViewSign(row)"
+                        >
+                          열람
+                        </button>
+                        <button
+                          class="btn btn-sm btn-primary"
+                          @click="fnDownloadSign(row)"
+                        >
+                          다운로드
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 </template>
@@ -1187,7 +1195,14 @@ const fnDownloadSign = async (row) => {
   white-space: nowrap;
 }
 
-/* 거부 버튼 톤 */
+/* 그리드 관리 컬럼 버튼 래퍼 — User_09 .row-btn-area 표준 미러(버튼 이격 + 중앙 정렬) */
+.row-btn-area {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: center;
+}
+
+/* 거부 확정 버튼 톤(거부 사유 패널 전용 — F-10: 파괴적 확정=danger) */
 .btn-reject {
   background: var(--color-danger, #ef4444);
   border-color: var(--color-danger, #ef4444);
