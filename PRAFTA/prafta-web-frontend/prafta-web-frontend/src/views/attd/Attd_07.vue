@@ -160,9 +160,7 @@
                       타 사업장 소속 · {{ u.currentSiteNm }}
                     </span>
                   </div>
-                  <div class="m-user-meta">
-                    {{ u.userId }} · {{ u.dept }} · {{ u.role }}
-                  </div>
+                  <div class="m-user-meta">{{ u.userId }} · {{ u.dept }}</div>
                 </td>
                 <td
                   v-for="d in daysInMonth"
