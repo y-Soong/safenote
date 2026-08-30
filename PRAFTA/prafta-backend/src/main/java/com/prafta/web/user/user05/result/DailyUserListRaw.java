@@ -9,6 +9,9 @@ package com.prafta.web.user.user05.result;
  */
 public record DailyUserListRaw(
     String hisId
+    /* QR 표시/계약이력 팝업용 식별자 — his-only 행(tb_daily_user 미존재)은 null. */
+    , String userCd
+    , String siteCd
     , String userNm
     , String mblNoEnc
     , String siteNm

@@ -10,8 +10,10 @@ import com.prafta.common.security.crypto.AesGcmCrypto;
 import com.prafta.common.security.crypto.HmacSigner;
 import com.prafta.common.security.normalize.Normalizers;
 import com.prafta.common.util.AuthRoleUtils;
+import com.prafta.web.user.user05.application.param.DailyContractHistoryParam;
 import com.prafta.web.user.user05.application.param.DailyUserListParam;
 import com.prafta.web.user.user05.application.query.DailyUserListQuery;
+import com.prafta.web.user.user05.dto.response.DailyContractHistoryResponse;
 import com.prafta.web.user.user05.dto.response.DailyUserListResponse;
 import com.prafta.web.user.user05.mapper.User05Mapper;
 import com.prafta.web.user.user05.result.DailyUserListRaw;
@@ -93,6 +95,8 @@ public class User05ServiceImpl implements User05Service {
         List<DailyUserListResult> dailyUserList = rawList.stream()
                 .map(r -> new DailyUserListResult(
                         r.hisId()
+                        , r.userCd()
+                        , r.siteCd()
                         , r.userNm()
                         , formatMblNo(decryptMblNo(r.mblNoEnc()))
                         , r.siteNm()
@@ -106,6 +110,36 @@ public class User05ServiceImpl implements User05Service {
 
         return DailyUserListResponse.builder()
                 .dailyUserList(dailyUserList)
+                .build();
+    }
+
+    /**
+     * 일일사용자 계약이력(서명 이력 + 입장 승인/로그인 이력) 조회 — User_05 계약이력 팝업.
+     *
+     * <p>인가는 목록(selectDailyUserList)과 동일 축: master/hr 전사, 그 외는 대상 일용직의
+     * 사업장(TB_DAILY_USER.SITE_CD)에 대한 TB_USER_SITE_AUTH 보유를 요구한다.
+     * 대상 미존재/타 회사 userCd 는 존재를 흘리지 않도록 권한 없음(403)으로 수렴한다.
+     */
+    @Override
+    public DailyContractHistoryResponse selectDailyContractHistory(DailyContractHistoryParam param) {
+        log.info("일일사용자 계약이력 조회 진입 - cmpnyCd={}, targetUserCd={}", param.gvCmpnyCd(), param.userCd());
+
+        String targetSiteCd = user05Mapper.selectDailyUserSiteCd(param.gvCmpnyCd(), param.userCd());
+        if (targetSiteCd == null) {
+            log.warn("일일사용자 계약이력 조회 거부(대상 없음) - userCd={}, targetUserCd={}",
+                    param.gvUserCd(), param.userCd());
+            throw new ApiException(CommonErrorCode.COMMON_403_001);
+        }
+        if (!AuthRoleUtils.isManager(param.gvAuthCd())
+                && user05Mapper.countUserSiteAuth(param.gvCmpnyCd(), param.gvUserCd(), targetSiteCd) == 0) {
+            log.warn("일일사용자 계약이력 조회 사업장 권한 없음 - userCd={}, targetSiteCd={}",
+                    param.gvUserCd(), targetSiteCd);
+            throw new ApiException(CommonErrorCode.COMMON_403_001);
+        }
+
+        return DailyContractHistoryResponse.builder()
+                .signList(user05Mapper.selectDailyContractSignHis(param.gvCmpnyCd(), param.userCd()))
+                .entryList(user05Mapper.selectDailyEntryHis(param.gvCmpnyCd(), param.userCd()))
                 .build();
     }
 

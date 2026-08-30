@@ -46,6 +46,9 @@
     </if>
     SELECT
         H.HIS_ID                                                                AS hisId
+        <!-- QR 표시/계약이력 팝업용 식별자. his-only 행(D 미존재)은 NULL — 화면에서 버튼 미노출. -->
+        , D.USER_CD                                                             AS userCd
+        , H.SITE_CD                                                             AS siteCd
         , CASE
             WHEN D.USER_NM IS NULL OR D.USER_NM = '' THEN '-'
             ELSE D.USER_NM
@@ -121,5 +124,70 @@
         </if>
     ORDER BY H.OCCUPY_DTIME DESC, H.HIS_ID DESC
     LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <!-- 계약이력 팝업: 대상 일용직의 사업장코드(인가 판정용). -->
+    <select id="selectDailyUserSiteCd" resultType="string">
+    /* User05Mapper.selectDailyUserSiteCd */
+    SELECT D.SITE_CD
+    FROM TB_DAILY_USER D
+    WHERE D.CMPNY_CD = #{cmpnyCd}
+      AND D.USER_CD = #{userCd}
+    LIMIT 1
+    </select>
+
+    <!-- 계약이력 팝업: 계약서 서명 이력(사용자 단위, 최신순).
+         계약서명은 서명 시점 버전의 TB_DAILY_CONTRACT 를 LEFT JOIN(교체된 구버전 USE_YN='N' 도 조회).
+         서명본 파일코드는 노출하지 않는다(열람은 user08 contract-sign-image 스트림 EP 경유). -->
+    <select id="selectDailyContractSignHis" resultType="com.prafta.web.user.user05.result.DailyContractSignHisResult">
+    /* User05Mapper.selectDailyContractSignHis */
+    SELECT
+        S.SIGN_ID                                            AS signId
+        , S.CONTRACT_VER                                     AS contractVer
+        , C.CONTRACT_NM                                      AS contractNm
+        , DATE_FORMAT(S.SIGN_DTIME, '%Y-%m-%d %H:%i:%s')     AS signDtime
+        , S.FIRST_WORK_DATE                                  AS firstWorkDate
+        , S.REQ_ID                                           AS reqId
+    FROM TB_DAILY_CONTRACT_SIGN S
+        LEFT OUTER JOIN TB_DAILY_CONTRACT C
+            ON (
+                S.CMPNY_CD = C.CMPNY_CD
+            AND S.SITE_CD = C.SITE_CD
+            AND S.CONTRACT_VER = C.CONTRACT_VER
+            )
+    WHERE S.CMPNY_CD = #{cmpnyCd}
+      AND S.USER_CD = #{userCd}
+    ORDER BY S.SIGN_DTIME DESC
+    LIMIT 200
+    </select>
+
+    <!-- 계약이력 팝업: 입장 승인요청/로그인 이력(사용자 단위, 최신순).
+         CONTRACT_VER = 승인 시점 pin(0=활성 계약서 미등록 K4 센티넬, NULL=pin 도입 전 레거시).
+         signYn = 이 요청(REQ_ID)에 연결된 서명본 존재 여부. CONSUME_DTIME 有 + pin=0 + signYn='N'
+         = "계약서 미등록 상태 로그인"(요구: 계약서 없이 로그인된 경우도 이력 노출). -->
+    <select id="selectDailyEntryHis" resultType="com.prafta.web.user.user05.result.DailyEntryHisResult">
+    /* User05Mapper.selectDailyEntryHis */
+    SELECT
+        R.REQ_ID                                             AS reqId
+        , R.REQ_TYPE                                         AS reqType
+        , R.REQ_STATUS                                       AS reqStatus
+        , DATE_FORMAT(R.REQ_DTIME, '%Y-%m-%d %H:%i:%s')      AS reqDtime
+        , DATE_FORMAT(R.PROC_DTIME, '%Y-%m-%d %H:%i:%s')     AS procDtime
+        , DATE_FORMAT(R.CONSUME_DTIME, '%Y-%m-%d %H:%i:%s')  AS consumeDtime
+        , R.CONTRACT_VER                                     AS contractVer
+        , CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM TB_DAILY_CONTRACT_SIGN S
+                WHERE S.CMPNY_CD = R.CMPNY_CD
+                  AND S.REQ_ID = R.REQ_ID
+            ) THEN 'Y'
+            ELSE 'N'
+          END                                                AS signYn
+    FROM TB_DAILY_ENTRY_REQUEST R
+    WHERE R.CMPNY_CD = #{cmpnyCd}
+      AND R.USER_CD = #{userCd}
+    ORDER BY R.REQ_DTIME DESC
+    LIMIT 200
     </select>
 </mapper>

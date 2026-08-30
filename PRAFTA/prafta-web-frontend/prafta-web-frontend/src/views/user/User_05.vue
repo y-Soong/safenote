@@ -193,12 +193,16 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
+                <!-- 계정별 QR (Baim_05 QRCODE 컬럼 미러 — 점유 중 행만 노출) -->
+                <th style="text-align: center; width: 90px">QRCODE</th>
+                <!-- 계약서 서명/입장 이력 팝업 -->
+                <th style="text-align: center; width: 90px">계약이력</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="!dailyUserList || dailyUserList.length === 0">
                 <tr>
-                  <td colspan="8" class="edu-grid-empty">
+                  <td colspan="10" class="edu-grid-empty">
                     등록된 세부 항목이 없습니다.
                   </td>
                 </tr>
@@ -213,6 +217,28 @@
                   <td style="text-align: center">{{ row.slotNo }}</td>
                   <td>{{ row.occupyDtime }}</td>
                   <td>{{ row.releaseDtime ?? "점유 중" }}</td>
+                  <!-- QR: 점유 중(해제 전) + 계정 존재 행만. 해제/만료 계정 QR 은 무효라 미노출. -->
+                  <td style="text-align: center">
+                    <button
+                      v-if="row.userCd && !row.releaseDtime"
+                      class="btn btn-sm btn-primary"
+                      @click="fnQrCodePopOpen(row)"
+                    >
+                      QRCODE
+                    </button>
+                    <span v-else>-</span>
+                  </td>
+                  <!-- 계약이력: 계정 존재 행이면 항상(만료 계정도 서명본 3년 보존 — 조회 가능). -->
+                  <td style="text-align: center">
+                    <button
+                      v-if="row.userCd"
+                      class="btn btn-sm btn-primary"
+                      @click="fnContractHistPopOpen(row)"
+                    >
+                      이력
+                    </button>
+                    <span v-else>-</span>
+                  </td>
                 </tr>
               </template>
             </tbody>
@@ -241,6 +267,8 @@ import CalendarSrch from "@/components/common/CalendarSrch.vue";
 import search_icon from "@/assets/img/search_icon.png";
 import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import SiteNodeSearchPop from "@/components/popup/SiteNodeSearchPop.vue";
+import QrCodePop from "@/components/popup/QrCodePop.vue";
+import DailyContractHistPop from "./popup/DailyContractHistPop.vue";
 import ThSortable from "@/components/common/ThSortable.vue";
 import {
   useTableSort,
@@ -512,6 +540,28 @@ const fnSiteNodeSearchPopOpenForCondition = () => {
 const onSiteNodeSelectedForCondition = (nodeCdVal, nodeNmVal) => {
   nodeCd.value = nodeCdVal ?? "";
   nodeNm.value = nodeNmVal ?? "";
+};
+
+// 계정 QR 팝업 — Baim_05 fnSlotQrCodePopOpen 미러(출퇴근/식별용 JSON + 수동 입력용 코드값).
+const fnQrCodePopOpen = (row) => {
+  openPop(QrCodePop, {
+    qrValue: JSON.stringify({
+      cmpnyCd: sessionStorage.getItem("gv_cmpnyCd"),
+      siteCd: row.siteCd,
+      userCd: row.userCd,
+      qrTitle: `${row.siteNm} - ${row.userNm} QR코드`,
+    }),
+    // 웹 수동 입력 보완: 스캐너 없는 웹 관리자가 코드값을 직접 입력할 수 있게 노출.
+    displayCode: row.userCd,
+  });
+};
+
+// 계약이력 팝업 — 서명 이력 + 입장 승인/로그인 이력(계약서 미등록 로그인 포함).
+const fnContractHistPopOpen = (row) => {
+  openPop(DailyContractHistPop, {
+    userCd_p: row.userCd,
+    userNm_p: row.userNm,
+  });
 };
 </script>
 
