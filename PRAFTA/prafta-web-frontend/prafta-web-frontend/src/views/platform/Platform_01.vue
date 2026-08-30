@@ -16,218 +16,345 @@
         master 계정 1개가 생성됩니다.
       </p>
 
-      <!-- 입력 폼 -->
-      <table class="form-table">
-        <colgroup>
-          <col style="width: 160px" />
-          <col />
-        </colgroup>
-        <tbody>
-          <!-- 회사코드 — 등록 후 변경 불가(22개 테이블 복합 PK 선두 컬럼)라
-               입력 즉시 확인 + 저장 시 서버 재검사(2중)로 막는다. -->
-          <tr>
-            <th>회사코드 <span class="req">*</span></th>
-            <td>
-              <div class="cmpny-cd-row">
-                <input
-                  v-model.trim="form.cmpnyCd"
-                  type="text"
-                  maxlength="20"
-                  placeholder="영문·숫자 2~20자 (예: PARMA)"
-                  :disabled="saving"
-                  @input="onCmpnyCdInput"
+      <!-- 입력 폼 — 성격별 3개 섹션(기본 정보 / 근무제도 기본값 / 최초 관리자 계정).
+           소제목 바(.subtitle-pane .subtitle)는 다른 화면과 동일한 공통 스타일이다. -->
+      <div class="form-sections">
+        <!-- ── 기본 정보 ─────────────────────────────────────────────── -->
+        <section class="form-section subtitle-pane">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">기본 정보</span>
+          </div>
+
+          <table class="form-table">
+            <colgroup>
+              <col class="col-th" />
+              <col />
+            </colgroup>
+            <tbody>
+              <!-- 회사코드 — 등록 후 변경 불가(22개 테이블 복합 PK 선두 컬럼)라
+                   입력 즉시 확인 + 저장 시 서버 재검사(2중)로 막는다. -->
+              <tr>
+                <th>회사코드 <span class="req">*</span></th>
+                <td>
+                  <div class="field-row">
+                    <input
+                      v-model.trim="form.cmpnyCd"
+                      type="text"
+                      class="input-cd"
+                      maxlength="20"
+                      placeholder="영문·숫자 2~20자 (예: PARMA)"
+                      :disabled="saving"
+                      @input="onCmpnyCdInput"
+                    />
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-custom"
+                      :disabled="saving || checkingCd || !form.cmpnyCd"
+                      @click="fnCheckCmpnyCd"
+                    >
+                      {{ checkingCd ? "확인 중…" : "중복확인" }}
+                    </button>
+                  </div>
+                  <p
+                    v-if="cmpnyCdCheck.message"
+                    class="hint"
+                    :class="cmpnyCdCheck.available ? 'is-ok' : 'is-err'"
+                  >
+                    {{ cmpnyCdCheck.message }}
+                  </p>
+                  <p class="hint">
+                    입력한 값이 그대로 회사코드가 됩니다.
+                    <b>등록 후에는 변경할 수 없습니다.</b> 소문자는 대문자로
+                    자동 변환됩니다.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <th>회사명 <span class="req">*</span></th>
+                <td>
+                  <input
+                    v-model.trim="form.cmpnyNm"
+                    type="text"
+                    class="input-md"
+                    maxlength="50"
+                    placeholder="회사명"
+                    :disabled="saving"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <th>사업자등록번호 <span class="req">*</span></th>
+                <td>
+                  <input
+                    v-model.trim="form.bsnsLcnNo"
+                    type="text"
+                    class="input-sm"
+                    inputmode="numeric"
+                    maxlength="12"
+                    placeholder="숫자 10자리(하이픈 제외)"
+                    :disabled="saving"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <th>계약 종료일</th>
+                <td>
+                  <div class="field-row">
+                    <CalendarSrch
+                      v-model="form.contractEndDate"
+                      :disabled="saving"
+                      style="width: 150px"
+                    />
+                    <!-- flatpickr 입력은 직접 타이핑이 막혀 있어(선택 전용) 비우기 버튼이 필요하다. -->
+                    <button
+                      v-if="form.contractEndDate"
+                      type="button"
+                      class="btn btn-sm btn-second"
+                      :disabled="saving"
+                      @click="form.contractEndDate = ''"
+                    >
+                      지움
+                    </button>
+                  </div>
+                  <p class="hint">미입력 시 무기한 계약으로 등록됩니다.</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- ── 근무제도 기본값 ───────────────────────────────────────── -->
+        <section class="form-section subtitle-pane">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 10.6V6h-2v7.4l5.2 3.1 1-1.7-4.2-2.2z"
                 />
-                <button
-                  type="button"
-                  class="btn btn-sm btn-custom"
-                  :disabled="saving || checkingCd || !form.cmpnyCd"
-                  @click="fnCheckCmpnyCd"
-                >
-                  {{ checkingCd ? "확인 중…" : "중복확인" }}
-                </button>
-              </div>
-              <p
-                v-if="cmpnyCdCheck.message"
-                class="cmpny-cd-msg"
-                :class="cmpnyCdCheck.available ? 'is-ok' : 'is-err'"
-              >
-                {{ cmpnyCdCheck.message }}
-              </p>
-              <p class="cmpny-cd-hint">
-                입력한 값이 그대로 회사코드가 됩니다.
-                <b>등록 후에는 변경할 수 없습니다.</b> 소문자는 대문자로 자동 변환됩니다.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <th>회사명 <span class="req">*</span></th>
-            <td>
-              <input
-                v-model.trim="form.cmpnyNm"
-                type="text"
-                maxlength="50"
-                placeholder="회사명"
-                :disabled="saving"
-              />
-            </td>
-          </tr>
-          <tr>
-            <th>사업자등록번호 <span class="req">*</span></th>
-            <td>
-              <input
-                v-model.trim="form.bsnsLcnNo"
-                type="text"
-                inputmode="numeric"
-                maxlength="12"
-                placeholder="숫자 10자리(하이픈 제외)"
-                :disabled="saving"
-              />
-            </td>
-          </tr>
-          <tr>
-            <th>계약 종료일</th>
-            <td>
-              <input
-                v-model.trim="form.contractEndDate"
-                type="text"
-                inputmode="numeric"
-                maxlength="8"
-                placeholder="YYYYMMDD (선택, 무기한이면 비움)"
-                :disabled="saving"
-              />
-            </td>
-          </tr>
-          <!-- 통상근로시간(회사 기본값) — 미입력이면 행을 만들지 않고 주 40시간 폴백을 쓴다. -->
-          <tr>
-            <th>통상근로시간</th>
-            <td>
-              <div class="std-work-field">
-                <span>주</span>
-                <input
-                  v-model="form.stdWorkHours"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="2"
-                  placeholder="40"
-                  :disabled="saving"
+              </svg>
+            </span>
+            <span class="subtitle-text">근무제도 기본값</span>
+          </div>
+
+          <table class="form-table">
+            <colgroup>
+              <col class="col-th" />
+              <col />
+            </colgroup>
+            <tbody>
+              <!-- 통상근로시간(회사 기본값) — 미입력이면 행을 만들지 않고 주 40시간 폴백을 쓴다. -->
+              <tr>
+                <th>통상근로시간</th>
+                <td>
+                  <div class="field-row">
+                    <span class="field-label">주</span>
+                    <input
+                      v-model="form.stdWorkHours"
+                      type="text"
+                      class="input-num"
+                      inputmode="numeric"
+                      maxlength="2"
+                      placeholder="40"
+                      :disabled="saving"
+                    />
+                    <span class="field-label">시간</span>
+                    <input
+                      v-model="form.stdWorkMinutes"
+                      type="text"
+                      class="input-num"
+                      inputmode="numeric"
+                      maxlength="2"
+                      placeholder="0"
+                      :disabled="saving"
+                    />
+                    <span class="field-label">분</span>
+                  </div>
+                  <p class="hint">
+                    통상근로자(풀타임)의 주 소정근로시간입니다. 단시간근로자
+                    판정과 연차 비례부여의 기준이 됩니다. 미입력 시 주
+                    40시간으로 적용되며, 사업장별로 다르면 사업장 관리에서 따로
+                    지정할 수 있습니다. (법정 상한 주 40시간 — 초과 근무는
+                    연장근로로 근무타입에서 관리)
+                  </p>
+                </td>
+              </tr>
+              <!-- 기본 근무시간 — 프로비저닝이 시드하는 기본 근무타입(ST001)의 근무/휴게 시각.
+                   시각 선택은 근무타입 관리(SchInfoPop)와 동일하게 공통 TimeInput(10분 단위)을 쓴다.
+                   서버가 형식·구간을 최종 검증하고 휴게 분(FST_SCH_BRK_MIN)은 서버가 산출한다. -->
+              <tr>
+                <th>기본 근무시간 <span class="req">*</span></th>
+                <td>
+                  <div class="field-row">
+                    <span class="field-label">근무</span>
+                    <TimeInput
+                      v-model="form.schStrTime"
+                      :minute-step="10"
+                      :disabled="saving"
+                    />
+                    <span class="field-sep">~</span>
+                    <TimeInput
+                      v-model="form.schEndTime"
+                      :minute-step="10"
+                      :disabled="saving"
+                    />
+                  </div>
+                  <div class="field-row field-row-spaced">
+                    <span class="field-label">휴게</span>
+                    <TimeInput
+                      v-model="form.brkStrTime"
+                      :minute-step="10"
+                      :disabled="saving || !brkUse"
+                    />
+                    <span class="field-sep">~</span>
+                    <TimeInput
+                      v-model="form.brkEndTime"
+                      :minute-step="10"
+                      :disabled="saving || !brkUse"
+                    />
+                    <label class="check-inline">
+                      <input
+                        type="checkbox"
+                        :checked="!brkUse"
+                        :disabled="saving"
+                        @change="brkUse = !$event.target.checked"
+                      />
+                      휴게 없음
+                    </label>
+                  </div>
+                  <p class="hint">
+                    등록 시 생성되는 기본 근무타입의 근무시간입니다. 휴게시간이
+                    없으면
+                    <b>휴게 없음</b>을 체크하세요. 야간·2교대 등 다른 형태는
+                    등록 후 근무타입 관리에서 추가할 수 있습니다.
+                  </p>
+                  <p class="hint hint-warn">
+                    ⚠ 휴게시간을 비워서 소정근로가 8시간을 초과하면(예:
+                    09:00~18:00, 휴게 없음 → 9시간), 연차 시간차 계산은
+                    근로기준법 §50 법정근로시간 (1일 8시간) 기준 480분 상한으로
+                    적용됩니다 — 실제 근무시간(9시간)이 아니라 480분을 분모로
+                    차감되므로, 실제 휴게시간이 있다면 반드시 입력해 주세요.
+                  </p>
+                </td>
+              </tr>
+              <!-- 근무제도 적용일 — 기본 근무타입(ST001)의 APPLY_DATE. 미입력 시 서버가 오늘로 폴백(종전 동작).
+                   과거 소급 허용(이 필드의 존재 이유), 미래 금지(서버 PLATFORM_400_022 최종 방어).
+                   달력 maxDate 로 미래 선택을 1차 차단하되, 서버 검증이 최종 권위다. -->
+              <tr>
+                <th>근무제도 적용일</th>
+                <td>
+                  <div class="field-row">
+                    <CalendarSrch
+                      v-model="form.schApplyDate"
+                      :max-date="todayDash"
+                      :disabled="saving"
+                      style="width: 150px"
+                    />
+                    <button
+                      v-if="form.schApplyDate"
+                      type="button"
+                      class="btn btn-sm btn-second"
+                      :disabled="saving"
+                      @click="form.schApplyDate = ''"
+                    >
+                      지움
+                    </button>
+                  </div>
+                  <p class="hint">
+                    기본 근무타입의 적용 시작일입니다. 과거 입사자의 재직 기간에
+                    스케줄을 지정하려면 그 기간을 포함하는 과거 날짜로
+                    입력하세요. 미래 날짜는 지정할 수 없으며, 미입력 시
+                    오늘(회사 생성일)부터 적용됩니다.
+                  </p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <!-- ── 최초 관리자 계정 ─────────────────────────────────────── -->
+        <section class="form-section subtitle-pane">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="16" height="16">
+                <path
+                  d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10zm0 2c-5 0-9 2.5-9 5.5V22h18v-2.5c0-3-4-5.5-9-5.5z"
                 />
-                <span>시간</span>
-                <input
-                  v-model="form.stdWorkMinutes"
-                  type="text"
-                  inputmode="numeric"
-                  maxlength="2"
-                  placeholder="0"
-                  :disabled="saving"
-                />
-                <span>분</span>
-              </div>
-              <p class="hint">
-                통상근로자(풀타임)의 주 소정근로시간입니다. 단시간근로자 판정과
-                연차 비례부여의 기준이 됩니다. 미입력 시 주 40시간으로 적용되며,
-                사업장별로 다르면 사업장 관리에서 따로 지정할 수 있습니다.
-                (법정 상한 주 40시간 — 초과 근무는 연장근로로 근무타입에서 관리)
-              </p>
-            </td>
-          </tr>
-          <!-- 기본 근무시간 — 프로비저닝이 시드하는 기본 근무타입(ST001)의 근무/휴게 시각.
-               서버가 형식·구간을 최종 검증하고 휴게 분(FST_SCH_BRK_MIN)은 서버가 산출한다. -->
-          <tr>
-            <th>기본 근무시간 <span class="req">*</span></th>
-            <td>
-              <div class="std-work-field">
-                <input v-model="form.schStrTime" type="time" :disabled="saving" />
-                <span>~</span>
-                <input v-model="form.schEndTime" type="time" :disabled="saving" />
-                <span>· 휴게</span>
-                <input v-model="form.brkStrTime" type="time" :disabled="saving" />
-                <span>~</span>
-                <input v-model="form.brkEndTime" type="time" :disabled="saving" />
-              </div>
-              <p class="hint">
-                등록 시 생성되는 기본 근무타입의 근무시간입니다. 휴게시간이 없으면
-                휴게 시작·종료를 모두 비워 두세요. 야간·2교대 등 다른 형태는 등록
-                후 근무타입 관리에서 추가할 수 있습니다.
-              </p>
-              <p class="hint hint-warn">
-                ⚠ 휴게시간을 비워서 소정근로가 8시간을 초과하면(예: 09:00~18:00,
-                휴게 없음 → 9시간), 연차 시간차 계산은 근로기준법 §50 법정근로시간
-                (1일 8시간) 기준 480분 상한으로 적용됩니다 — 실제 근무시간(9시간)이
-                아니라 480분을 분모로 차감되므로, 실제 휴게시간이 있다면 반드시
-                입력해 주세요.
-              </p>
-            </td>
-          </tr>
-          <!-- 근무제도 적용일 — 기본 근무타입(ST001)의 APPLY_DATE. 미입력 시 서버가 오늘로 폴백(종전 동작).
-               과거 소급 허용(이 필드의 존재 이유), 미래 금지(서버 PLATFORM_400_022 최종 방어). -->
-          <tr>
-            <th>근무제도 적용일</th>
-            <td>
-              <input
-                v-model.trim="form.schApplyDate"
-                type="text"
-                inputmode="numeric"
-                maxlength="8"
-                placeholder="YYYYMMDD (미입력 시 오늘 = 회사 생성일)"
-                :disabled="saving"
-              />
-              <p class="hint">
-                기본 근무타입의 적용 시작일입니다. 과거 입사자의 재직 기간에 스케줄을
-                지정하려면 그 기간을 포함하는 과거 날짜로 입력하세요. 미래 날짜는
-                지정할 수 없으며, 미입력 시 오늘(회사 생성일)부터 적용됩니다.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <th>관리자명 <span class="req">*</span></th>
-            <td>
-              <input
-                v-model.trim="form.adminNm"
-                type="text"
-                maxlength="50"
-                placeholder="관리자 이름"
-                :disabled="saving"
-              />
-            </td>
-          </tr>
-          <tr>
-            <th>관리자 ID <span class="req">*</span></th>
-            <td>
-              <input
-                v-model.trim="form.adminId"
-                type="text"
-                maxlength="50"
-                placeholder="로그인에 사용할 ID (영문, 숫자, 특수문자 조합)"
-                :disabled="saving"
-              />
-              <p class="hint">
-                최초 master 계정의 로그인 ID로 사용됩니다. 회사 내에서 유일하게
-                입력하세요.
-              </p>
-            </td>
-          </tr>
-          <tr>
-            <th>관리자 휴대폰번호 <span class="req">*</span></th>
-            <td>
-              <input
-                v-model.trim="form.adminMbl"
-                type="text"
-                inputmode="numeric"
-                maxlength="13"
-                placeholder="숫자 10~11자리(하이픈 제외)"
-                :disabled="saving"
-              />
-              <p class="hint">
-                초기 비밀번호 = 이 휴대폰번호(숫자). 첫 로그인 시 SMS 본인인증
-                후 변경 가능합니다.
-              </p>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+              </svg>
+            </span>
+            <span class="subtitle-text">최초 관리자 계정 (master)</span>
+          </div>
+
+          <table class="form-table">
+            <colgroup>
+              <col class="col-th" />
+              <col />
+            </colgroup>
+            <tbody>
+              <tr>
+                <th>관리자명 <span class="req">*</span></th>
+                <td>
+                  <input
+                    v-model.trim="form.adminNm"
+                    type="text"
+                    class="input-sm"
+                    maxlength="50"
+                    placeholder="관리자 이름"
+                    :disabled="saving"
+                  />
+                </td>
+              </tr>
+              <tr>
+                <th>관리자 ID <span class="req">*</span></th>
+                <td>
+                  <input
+                    v-model.trim="form.adminId"
+                    type="text"
+                    class="input-md"
+                    maxlength="50"
+                    placeholder="로그인에 사용할 ID (영문, 숫자, 특수문자 조합)"
+                    :disabled="saving"
+                  />
+                  <p class="hint">
+                    최초 master 계정의 로그인 ID로 사용됩니다. 회사 내에서
+                    유일하게 입력하세요.
+                  </p>
+                </td>
+              </tr>
+              <tr>
+                <th>관리자 휴대폰번호 <span class="req">*</span></th>
+                <td>
+                  <input
+                    v-model.trim="form.adminMbl"
+                    type="text"
+                    class="input-sm"
+                    inputmode="numeric"
+                    maxlength="13"
+                    placeholder="숫자 10~11자리(하이픈 제외)"
+                    :disabled="saving"
+                  />
+                  <p class="hint">
+                    초기 비밀번호 = 이 휴대폰번호(숫자). 첫 로그인 시 SMS
+                    본인인증 후 변경 가능합니다.
+                  </p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
 
       <div class="form-actions">
-        <button class="btn btn-primary" :disabled="saving" @click="fnSave">
+        <button
+          type="button"
+          class="btn btn-lg btn-primary"
+          :disabled="saving"
+          @click="fnSave"
+        >
           {{ saving ? "등록 중…" : "고객사 등록" }}
         </button>
       </div>
@@ -252,8 +379,8 @@
           </tbody>
         </table>
         <p class="result-note">
-          위 정보를 고객사 관리자에게 안전하게 전달하세요. 초기 비밀번호는 첫 로그인
-          시 변경하도록 안내해 주세요.
+          위 정보를 고객사 관리자에게 안전하게 전달하세요. 초기 비밀번호는 첫
+          로그인 시 변경하도록 안내해 주세요.
         </p>
       </div>
     </div>
@@ -261,8 +388,10 @@
 </template>
 
 <script setup>
-import { ref, reactive, getCurrentInstance } from "vue";
+import { ref, reactive, computed, getCurrentInstance } from "vue";
 import ViewHeader from "@/components/common/ViewHeader.vue";
+import CalendarSrch from "@/components/common/CalendarSrch.vue";
+import TimeInput from "@/components/common/TimeInput.vue";
 import api from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 
@@ -305,6 +434,21 @@ const form = reactive({
 
 const saving = ref(false);
 const result = ref(null);
+
+// 휴게시간 사용 여부. 해제하면 TimeInput 두 개를 비활성화하고 저장 시 빈 값으로 보낸다.
+//   (TimeInput 은 "미지정"을 표현하지 못해 빈 문자열이면 00:00 을 보여주므로, 값을 지우는 대신
+//    이 플래그로 게이트한다 — 근무타입 관리 팝업 SchInfoPop 과 동일한 방식)
+const brkUse = ref(true);
+
+// 오늘(로컬 시간 기준) → CalendarSrch 모델 형식 YYYY-MM-DD. toISOString(UTC) 은 하루 밀림이 있어 금지.
+const todayDash = computed(() => {
+  const now = new Date();
+  return (
+    `${now.getFullYear()}-` +
+    `${String(now.getMonth() + 1).padStart(2, "0")}-` +
+    `${String(now.getDate()).padStart(2, "0")}`
+  );
+});
 
 // ── 회사코드 중복확인 ────────────────────────────────────────────────────
 //   ★1차 확인일 뿐이다. 확인과 저장 사이에 다른 운영자가 선점할 수 있어 서버가 저장
@@ -418,11 +562,11 @@ function validate() {
   if (schEnd <= schStr) {
     return "기본 근무시간 종료는 시작 이후여야 합니다.\n야간 등 다른 형태는 등록 후 근무타입 관리에서 추가해 주세요.";
   }
-  if (form.brkStrTime || form.brkEndTime) {
+  if (brkUse.value) {
     const brkStr = toMin(form.brkStrTime);
     const brkEnd = toMin(form.brkEndTime);
     if (brkStr == null || brkEnd == null) {
-      return "휴게시간은 시작·종료를 함께 입력해 주세요(휴게가 없으면 모두 비움).";
+      return "휴게시간은 시작·종료를 함께 입력해 주세요(휴게가 없으면 '휴게 없음'을 체크).";
     }
     if (brkEnd <= brkStr || brkStr < schStr || brkEnd > schEnd) {
       return "휴게시간은 근무시간 안에 있어야 하고, 종료가 시작보다 늦어야 합니다.";
@@ -486,8 +630,10 @@ async function fnSave() {
       // 기본 근무타입 시각(HHMM). 휴게 미입력이면 빈 문자열(서버가 휴게 없음으로 처리).
       schStrTime: form.schStrTime.replace(":", ""),
       schEndTime: form.schEndTime.replace(":", ""),
-      brkStrTime: form.brkStrTime ? form.brkStrTime.replace(":", "") : "",
-      brkEndTime: form.brkEndTime ? form.brkEndTime.replace(":", "") : "",
+      brkStrTime:
+        brkUse.value && form.brkStrTime ? form.brkStrTime.replace(":", "") : "",
+      brkEndTime:
+        brkUse.value && form.brkEndTime ? form.brkEndTime.replace(":", "") : "",
       // 근무제도 적용일 — 빈 값이면 빈 문자열 전송(서버가 오늘=회사 생성일로 폴백, 종전 동작).
       schApplyDate: form.schApplyDate ? digits(form.schApplyDate) : "",
       adminNm: form.adminNm,
@@ -515,6 +661,7 @@ async function fnSave() {
     form.schEndTime = "18:00";
     form.brkStrTime = "12:00";
     form.brkEndTime = "13:00";
+    brkUse.value = true;
     form.schApplyDate = "";
     form.adminNm = "";
     form.adminId = "";
@@ -531,111 +678,210 @@ async function fnSave() {
 </script>
 
 <style scoped>
+/* 색/폰트/간격은 전역 디자인 토큰(tokens.css)만 사용한다 — 하드코딩 금지 규약.
+   버튼은 전역 button.css(.btn/.btn-sm/.btn-lg/.btn-primary/.btn-second/.btn-custom)를
+   그대로 쓴다(종전 로컬 .btn 재정의는 다른 화면과 높이·글자크기가 어긋나 제거). */
 .platform-create {
-  padding: 1rem 1.25rem;
+  padding: 1rem;
   overflow-y: auto;
   font-family: "Pretendard", sans-serif;
+  color: var(--color-text);
 }
+
+/* 화면 설명 — 안내 배너 */
 .desc {
-  margin: 0 0 1rem;
-  font-size: 0.85rem;
-  color: #6b7280;
+  max-width: 860px;
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+}
+
+/* ── 섹션 ─────────────────────────────────────────────────────────────── */
+.form-sections {
+  max-width: 860px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.form-section .subtitle {
+  /* .subtitle-pane .subtitle 공통 스타일(inline-flex)을 행 전체 폭으로 펼친다 */
+  display: flex;
+  width: 100%;
+  min-block-size: 1.9rem;
+}
+
+/* ── 입력 테이블 ──────────────────────────────────────────────────────── */
+.col-th {
+  width: 170px;
 }
 .form-table {
   width: 100%;
-  max-width: 720px;
   border-collapse: collapse;
-  background: #fff;
-  border: 1px solid #e5e7eb;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  table-layout: fixed;
 }
 .form-table th,
 .form-table td {
-  border: 1px solid #e5e7eb;
-  padding: 0.6rem 0.75rem;
-  font-size: 0.85rem;
+  border-top: 1px solid var(--color-border);
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
   text-align: left;
   vertical-align: middle;
+  color: var(--color-text-strong);
+}
+.form-table tr:first-child th,
+.form-table tr:first-child td {
+  border-top: 0;
 }
 .form-table th {
-  background: #f9fafb;
+  background: var(--color-bg);
+  border-right: 1px solid var(--color-border);
   font-weight: 600;
-  color: #374151;
+  color: var(--color-text);
   white-space: nowrap;
 }
-.form-table input {
-  width: 100%;
-  max-width: 360px;
-  box-sizing: border-box;
-  height: 34px;
-  padding: 0 0.6rem;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 0.85rem;
-}
-.form-table input:focus {
-  outline: none;
-  border-color: #16a34a;
-}
 .req {
-  color: #ef4444;
+  color: var(--color-danger);
 }
-/* 통상근로시간 — 시간/분 분리 입력(폼 테이블 입력 폭 규칙과 별개로 좁게) */
-.std-work-field {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.85rem;
-  color: #374151;
+
+/* 입력 — 전역 .viewSearch input 과 같은 형태(테두리/라운드/포커스 링)로 맞춘다 */
+.form-table input[type="text"] {
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--input-radius);
+  font-family: "Pretendard", sans-serif;
+  font-size: 0.8rem;
+  color: var(--color-text-strong);
 }
-.std-work-field input {
+.form-table input[type="text"]::placeholder {
+  color: var(--color-text-muted);
+  opacity: 0.75;
+}
+.form-table input[type="text"]:focus {
+  border-color: var(--color-border-strong);
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+  outline-offset: var(--outline-offset);
+}
+.form-table input[type="text"]:disabled {
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+/* 입력 폭 — 내용 길이에 맞춘 3단(짧은 값이 화면 폭을 다 먹지 않게 한다) */
+.input-sm {
+  width: 200px;
+}
+.input-md {
+  width: 320px;
+}
+.input-num {
   width: 64px;
-  max-width: 64px;
   text-align: right;
 }
+/* 회사코드 — 코드값이라 등폭 글꼴이 오독(0/O, 1/I)을 줄인다 */
+.input-cd {
+  width: 220px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* ── 한 줄 필드 묶음 ──────────────────────────────────────────────────── */
+.field-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+.field-row-spaced {
+  margin-top: 0.4rem;
+}
+.field-label {
+  min-width: 1.9rem;
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+.field-sep {
+  font-weight: 600;
+  color: var(--color-text);
+}
+.check-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.check-inline input {
+  margin: 0;
+  accent-color: var(--color-primary);
+}
+
+/* ── 안내 문구 ────────────────────────────────────────────────────────── */
 .hint {
-  margin: 0.35rem 0 0;
-  font-size: 0.75rem;
-  color: #9ca3af;
+  margin: 0.3rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
+}
+.hint b {
+  font-weight: 600;
+  color: var(--color-danger);
 }
 .hint-warn {
-  color: var(--color-danger, #dc2626);
+  color: var(--color-warning-text);
+  background: var(--color-warning-bg);
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--input-radius);
 }
+.hint-warn b {
+  color: inherit;
+}
+.hint.is-ok {
+  color: var(--color-primary-hover);
+  font-weight: 600;
+}
+.hint.is-err {
+  color: var(--color-danger);
+  font-weight: 600;
+}
+
+/* ── 액션 ─────────────────────────────────────────────────────────────── */
 .form-actions {
-  max-width: 720px;
+  max-width: 860px;
   margin: 1rem 0 0;
   display: flex;
   justify-content: flex-end;
 }
-.btn {
-  height: 36px;
-  padding: 0 1.2rem;
-  border: 0;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn-primary {
-  background: #16a34a;
-  color: #fff;
-}
-.btn-primary:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
+
+/* ── 등록 결과 ────────────────────────────────────────────────────────── */
 .result-panel {
-  max-width: 720px;
-  margin: 1.5rem 0 0;
-  padding: 1rem 1.25rem;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 8px;
+  max-width: 860px;
+  margin: 1.25rem 0 0;
+  padding: 0.9rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--input-radius);
 }
 .result-panel h3 {
-  margin: 0 0 0.75rem;
-  font-size: 1rem;
-  color: #15803d;
+  margin: 0 0 0.6rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-primary-hover);
 }
 .result-table {
   width: 100%;
@@ -643,59 +889,39 @@ async function fnSave() {
 }
 .result-table th,
 .result-table td {
-  padding: 0.45rem 0.6rem;
-  font-size: 0.85rem;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.8rem;
   text-align: left;
-  border-bottom: 1px solid #dcfce7;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text-strong);
 }
 .result-table th {
-  width: 180px;
-  color: #374151;
+  width: 170px;
+  color: var(--color-text-muted);
   font-weight: 600;
   white-space: nowrap;
 }
 .mono {
-  font-family: "D2Coding", Consolas, monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   word-break: break-all;
 }
 .result-note {
-  margin: 0.75rem 0 0;
-  font-size: 0.78rem;
-  color: #166534;
+  margin: 0.7rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.55;
+  color: var(--color-text-muted);
 }
 
-/* ── 회사코드 입력(직접 지정 전환, 2026-08-16) ───────────────────────────── */
-.cmpny-cd-row {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  flex-wrap: wrap;
-}
-.cmpny-cd-row input {
-  /* 코드값이라 등폭 글꼴이 오독(0/O, 1/I)을 줄인다. */
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-}
-.cmpny-cd-msg {
-  margin: 0.25rem 0 0;
-  font-size: 12px;
-  line-height: 1.5;
-}
-.cmpny-cd-msg.is-ok {
-  color: var(--color-success-text, #15803d);
-}
-.cmpny-cd-msg.is-err {
-  color: var(--color-danger, #dc2626);
-}
-.cmpny-cd-hint {
-  margin: 0.2rem 0 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--color-text-muted, #6b7280);
-}
-.cmpny-cd-hint b {
-  font-weight: 600;
-  color: var(--color-danger, #dc2626);
+/* 좁은 화면 — 라벨 열을 줄이고 넓은 입력은 폭에 맞춰 줄인다 */
+@media (max-width: 900px) {
+  .col-th {
+    width: 120px;
+  }
+  .input-md,
+  .input-cd,
+  .input-sm {
+    width: 100%;
+    max-width: 320px;
+  }
 }
 </style>
