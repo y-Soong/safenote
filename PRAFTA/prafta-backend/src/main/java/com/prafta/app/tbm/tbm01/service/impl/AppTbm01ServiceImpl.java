@@ -84,8 +84,14 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class AppTbm01ServiceImpl implements AppTbm01Service {
 
-    /** TB_FILE_INFO.FILE_TYPE — 003: TBM 서명(디렉토리 그룹). */
-    private static final String FILE_TYPE_TBM_SIGN = "003";
+    /**
+     * TB_FILE_INFO.FILE_TYPE — 009: TBM 서명(디렉토리 그룹, 보호 파일타입).
+     * <p>security H-1 후속(2026-08-31): 자필 서명은 PII 이므로 교육자료('003', 공개 정적 서빙)에서
+     * 분리해 서명 전용 타입으로 채번했다. FileServiceImpl.PROTECTED_FILE_TYPES 에 포함되어
+     * secure base 에 저장되며(무인증 /uploads/** 정적 열람 불가), 인증 스트림 EP
+     * (GET /appApi/tbm/my-sign-image)로만 서빙된다.
+     */
+    private static final String FILE_TYPE_TBM_SIGN = "009";
 
     /** 앱 사용자 TBM 은 정규직 고정(D2). grandfather 판정(M4)의 사용자 유형에도 동일 적용. */
     private static final String USER_TYPE_REGULAR = "REGULAR";
@@ -595,12 +601,58 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
                 .materialTitles(materialTitles)
                 .riskTitles(riskTitles)
                 .mySignFileMgmtCd(head.getMySignFileMgmtCd())
-                // 서명 이미지: 파일코드+경로/확장자로 서명 절대 URL 발급(자료 미리보기와 동일 인프라). 파일 없으면 NULL.
-                .mySignUrl(signPreview(
-                        head.getSignFilePath(), head.getMySignFileMgmtCd(), head.getSignFileExt(), query.cmpnyCd()))
+                // security H-1(SEC-A): 서명 이미지의 공개 정적 URL 발급을 중단한다(항상 NULL).
+                //   종전에는 정적 URL 을 내려줬으나, 그 URL 하나로 공개 디렉토리·일자·순차 파일코드가
+                //   전부 확정돼 무인증 열거의 진입점이 됐다(구 '003' 저장분은 소급 이전 없이 공개 경로에 잔존).
+                //   열람은 인증 스트림 EP(GET /appApi/tbm/my-sign-image, 본인 한정)로만 한다.
+                //   필드 자체는 폴백 번들 호환을 위해 남기되 값은 항상 NULL 이다.
+                .mySignUrl(null)
                 .completionStatusCd(head.getCompletionStatusCd())
                 .endedAt(head.getEndedAt())
                 .build();
+    }
+
+    // -------------------------------------------------------------------------
+    // A10-1: 본인 종료 서명 이미지 스트림 (security H-1 후속, 2026-08-31)
+    // -------------------------------------------------------------------------
+
+    /**
+     * 본인 종료 서명 이미지 스트림.
+     *
+     * <p>서명 파일타입이 보호 타입('009')으로 전환되면서 공개 정적 URL(/uploads/**) 로는 열람할 수 없다.
+     * 웹 W-13 {@code attendance-sign-image} / {@code manager-sign-image} 패턴 미러 —
+     * 공개 정적 URL 금지, 인증 스트림 서빙, 파일 식별자는 서버가 출결 행에서 재조회(클라 파일코드 신뢰 금지).
+     *
+     * <p>인가: A10(완료 상세)과 완전히 동일한 경로 — 세션 접근 게이트({@code assertViewable}) 통과 후
+     * 본인 회사/본인 사용자/REGULAR 스코프의 출결 행만 조회한다(매퍼 WHERE 가 USER_CD 를 강제하므로
+     * 타인 서명에는 도달할 수 없다). 대상 없음은 존재 비노출 통합 404(TBM_404_020).
+     *
+     * <p>기존 '003' 으로 저장된 서명 파일도 이 EP 로 열람된다 — {@code FileServiceImpl.resolveSavePath}
+     * 가 DB FILE_PATH 선두 프리픽스로 base 를 판별하므로 공개/보호 저장분을 모두 읽는다(별도 분기 불필요).
+     */
+    @Override
+    public com.prafta.common.cmm.file.application.model.FileBytesResult loadMySignImage(TbmSessionDetailParam param) {
+
+        // 세션 접근 게이트 + 개설사/내 회사 키 확정(A10 과 동일).
+        TbmDetailQuery query = toDetailQuery(param);
+
+        TbmCompletionResult head = appTbm01Mapper.selectMyCompletion(query);
+        if (head == null || !StringUtils.hasText(head.getMySignFileMgmtCd())) {
+            // 본인 출결 없음 또는 서명 미등록 — 존재 비노출 통합 404.
+            throw new ApiException(TbmErrorCode.TBM_404_020);
+        }
+
+        // 서명 파일은 참석자(본인) 회사 소유 데이터다 → 내 회사코드로 로드(타사 세션이어도 동일).
+        com.prafta.common.cmm.file.application.model.FileBytesResult file = fileService.loadFileBytes(
+                new com.prafta.common.cmm.file.application.query.FileReadQuery(
+                        query.cmpnyCd(), head.getMySignFileMgmtCd()));
+        if (file == null) {
+            // DB 행/디스크 원본 부재 — 존재 비노출 통합 404.
+            throw new ApiException(TbmErrorCode.TBM_404_020);
+        }
+
+        log.info("[tbm01] 본인 서명 이미지 스트림: sessionCd={}", param.sessionCd());
+        return file;
     }
 
     // [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).

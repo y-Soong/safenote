@@ -74,6 +74,13 @@ public class FileUrlSigner {
         if (!StringUtils.hasText(relPath)) {
             return null;
         }
+        // security H-1(SEC-B): 보호 파일(FILE_PATH 선두 '/uploads-secure')은 정적 서빙 대상이 아니므로
+        //   URL 을 발급하지 않는다. normalize() 가 '/uploads/uploads-secure/...' 로 보정해 실제로는
+        //   열리지 않는 URL 을 만들어 내는 것을 차단한다(보호 파일은 인증 스트림 EP 로만 서빙).
+        if (isSecureRelPath(relPath)) {
+            log.warn("[FileUrlSigner] 보호 파일 경로에 대한 URL 발급 차단 - relPath={}", relPath);
+            return null;
+        }
         String norm = normalize(relPath);
         String base = resolveBaseUrl();
 
@@ -124,6 +131,20 @@ public class FileUrlSigner {
     /** HMAC 페이로드: relPath|exp|cmpnyCd. */
     private String payload(String normRelPath, long exp, String cmpnyCd) {
         return normRelPath + "|" + exp + "|" + (cmpnyCd == null ? "" : cmpnyCd);
+    }
+
+    /**
+     * FILE_PATH 첫 유효 세그먼트가 보호 파일 프리픽스('uploads-secure')인지 판별한다 (security H-1).
+     * FileServiceImpl 의 저장 규칙과 동일 판정(구분자는 '/' 또는 '\\' 둘 다 처리).
+     */
+    private boolean isSecureRelPath(String relPath) {
+        for (String seg : relPath.replace('\\', '/').split("/")) {
+            if (seg == null || seg.isBlank()) {
+                continue;
+            }
+            return "uploads-secure".equalsIgnoreCase(seg);
+        }
+        return false;
     }
 
     /**

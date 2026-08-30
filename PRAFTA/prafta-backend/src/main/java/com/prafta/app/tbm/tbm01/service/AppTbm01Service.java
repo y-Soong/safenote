@@ -62,6 +62,15 @@ public interface AppTbm01Service {
     TbmCompletionResponse selectMyCompletion(TbmSessionDetailParam param);
 
     /**
+     * A10-1: 본인 종료 서명 이미지 스트림(security H-1 후속, 2026-08-31).
+     *
+     * <p>서명 파일타입이 보호 타입('009')으로 전환되어 공개 정적 URL 로 열람할 수 없다. 본인 출결 행의
+     * 서명 파일만 인증 스트림으로 서빙한다(타인 서명 열람 불가 — 파일코드는 서버가 재조회, IDOR 차단).
+     * 대상 없음(출결 없음/서명 없음/원본 없음)은 존재 비노출 통합 404 로 처리한다.
+     */
+    com.prafta.common.cmm.file.application.model.FileBytesResult loadMySignImage(TbmSessionDetailParam param);
+
+    /**
      * [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).
      * <p>JWT(userCd) 스코프만 신뢰. 관리자 내보내기(present=false) / 강제퇴실(MANAGER_FORCED) /
      * 본인 완료 여부를 반환한다.

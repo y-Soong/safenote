@@ -225,6 +225,33 @@ public class AppTbm01Controller {
     }
 
     /**
+     * A10-1: 본인 종료 서명 이미지 스트림(security H-1 후속, 2026-08-31).
+     *
+     * <p>GET /prafta/appApi/tbm/my-sign-image?sessionCd=...
+     * <p>서명 파일타입이 보호 타입('009')으로 전환되어 공개 정적 URL 로 열람할 수 없다.
+     * 웹 W-13 attendance-sign-image / manager-sign-image 원칙 미러: 인증 스트림 서빙,
+     * no-store + nosniff, 파일 식별자는 서버가 본인 출결 행에서 재조회(클라 파일코드 신뢰 금지).
+     * 대상 없음은 존재 비노출 404.
+     */
+    @GetMapping("/my-sign-image")
+    public ResponseEntity<byte[]> getMySignImage(
+            @org.springframework.web.bind.annotation.RequestParam(value = "sessionCd", required = false) String sessionCd
+            , @RequestHeader(value = "Authorization", required = false) String authorization
+    ) {
+        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
+
+        com.prafta.common.cmm.file.application.model.FileBytesResult file =
+                appTbm01Service.loadMySignImage(TbmSessionDetailParam.from(sessionCd, tokenInfo));
+
+        return ResponseEntity.status(HttpStatus.OK)
+                .contentType(MediaType.parseMediaType(file.contentType()))
+                .header(org.springframework.http.HttpHeaders.CACHE_CONTROL, "no-store")
+                // 저장 contentType 스니핑 우회 방지(이미지 외 해석 차단 — W-13 security Low #5 미러)
+                .header("X-Content-Type-Options", "nosniff")
+                .body(file.data());
+    }
+
+    /**
      * [정합성 수정] 본인 출결 상태 조회(대기/진행 화면 이탈 감지용).
      * <p>GET /prafta/appApi/tbm/sessions/{sessionCd}/my-attendance.
      * 스코프는 JWT(userCd)만 신뢰(IDOR 안전). present/entered/exitAt/exitTypeCd/completionStatusCd 반환.

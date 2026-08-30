@@ -53,12 +53,34 @@ public class FileServiceImpl implements FileService {
 	private String secureUploadBaseDir;
 
 	/**
+	 * 기동 시 보호 파일 저장소 격리 검증 (security H-1 — SEC-B).
+	 *
+	 * <p>보호 파일타입(007/008/009)은 "정적 서빙 마운트 밖" 을 전제로 secure base 에 저장된다.
+	 * 설정 실수로 secure base 가 공개 base 하위로 지정되면 그 전제가 조용히 깨지면서
+	 * 계약서·증빙·자필 서명이 전부 무인증 정적 URL 로 노출된다. 런타임에 이를 검증하는 지점이
+	 * 없었으므로, 기동 자체를 실패시켜 잘못된 형상이 배포되지 않게 한다.
+	 */
+	@jakarta.annotation.PostConstruct
+	void verifySecureBaseIsolation() {
+		Path publicBase = Paths.get(uploadBaseDir).toAbsolutePath().normalize();
+		Path secureBase = Paths.get(secureUploadBaseDir).toAbsolutePath().normalize();
+		if (secureBase.startsWith(publicBase)) {
+			throw new IllegalStateException(
+					"보호 파일 저장소가 공개 저장소 하위에 있습니다(무인증 정적 노출 위험). "
+							+ "file.upload.secure-base-dir 를 file.upload.base-dir 밖으로 지정하세요. "
+							+ "secure=" + secureBase + ", public=" + publicBase);
+		}
+		log.info("보호 파일 저장소 격리 확인 - secureBase 는 공개 마운트 밖입니다.");
+	}
+
+	/**
 	 * 보호 파일타입 — 무인증 정적 서빙 제외 대상 (SEC-1).
 	 * 007: 일용직계약서(계약서 원본/서명 PNG/합성본) — 성명+자필서명 포함 PII 법정 문서.
 	 * 008: 연차 증빙자료(진단서/가족관계증명서 등) — 개인 민감정보 포함 첨부.
+	 * 009: TBM 서명(참석자 입실·종료 서명 / 주관자 서명) — 자필 서명 PII.
 	 * 여기 포함된 타입만 secure base 에 저장되며, 그 외(001~006 등)는 기존 저장 동작 불변.
 	 */
-	private static final Set<String> PROTECTED_FILE_TYPES = Set.of("007", "008");
+	private static final Set<String> PROTECTED_FILE_TYPES = Set.of("007", "008", "009");
 
 	/** 공개 파일 FILE_PATH 선두 프리픽스(정적 서빙 마운트 경로와 동일). */
 	private static final String PUBLIC_PATH_PREFIX = "uploads";
@@ -162,7 +184,13 @@ public class FileServiceImpl implements FileService {
 	                    
 	        fileMapper.insertFileInfo(FileInfoCommand.from(param, filePath.toString(), originalFilename, extension));
 
-	        log.info("파일 저장 완료: {}", savePath.toAbsolutePath());
+	        // 보호 파일(계약서·증빙·자필 서명)은 보관 절대경로를 로그에 남기지 않는다 — 로그가 PII 파일
+	        // 인덱스가 되는 것을 막기 위해 식별자만 기록한다(security H-1 SEC-D).
+	        if (protectedType) {
+	        	log.info("보호 파일 저장 완료: fileType={}, fileMgmtCd={}", param.fileType(), param.fileMgmtCd());
+	        } else {
+	        	log.info("파일 저장 완료: {}", savePath.toAbsolutePath());
+	        }
         } catch (ApiException ae) {
         	// 확장자 검증 실패 등 의도된 4xx 예외는 그대로 전파(500 으로 묻히지 않도록)
         	throw ae;

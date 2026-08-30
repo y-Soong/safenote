@@ -70,10 +70,9 @@
         </section>
 
         <!-- 내 서명 -->
-        <!-- mySignUrl: 서명 이미지 서명 절대 URL(FileUrlSigner). 자료 미리보기와 동일 인프라.
-             URL 이 있으면 인라인 렌더(릴리즈 APK·브라우저). dev 서버 모드(https 페이지 + http 파일 =
-             mixed content)에서는 앱 웹뷰가 인라인 이미지를 막으므로, TbmMaterialSlider 와 동일하게
-             onSignError → '서명 이미지 열기' 외부 열기 링크로 폴백한다. -->
+        <!-- mySignUrl: my-sign-image(인증 스트림) 응답 blob 의 objectURL. 서명은 보호 파일타입(009)
+             이라 정적 URL 로는 열람할 수 없어 blob 으로 받아 렌더한다.
+             인라인 렌더 실패 시 '서명 이미지 열기' 링크(동일 objectURL)로 폴백한다. -->
         <section class="card">
           <p class="card__label">내 서명</p>
           <div class="sign-view">
@@ -121,7 +120,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, getCurrentInstance } from 'vue'
+import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import api from '@/api/axios'
@@ -145,7 +144,12 @@ const signImgError = ref(false)
 
 // 완료 상세(A10):
 //  { title, contentBody, materialTitles:[], riskTitles:[], mySignFileMgmtCd, mySignUrl, completionStatusCd, endedAt }
-//  mySignUrl: 서명 이미지 서명 절대 URL(FileUrlSigner). 없으면 '서명 정보가 없어요'.
+//  mySignUrl: 서명 이미지 표시용 blob objectURL(security H-1 후속, 2026-08-31).
+//    ★서버 응답의 mySignUrl(공개 정적 URL)은 더 이상 사용하지 않는다 — 서명 파일이 보호 파일타입('009')
+//      으로 전환되어 정적 마운트(/uploads/**) 밖 secure base 에 저장되므로 정적 URL 로는 열리지 않는다.
+//      대신 인증 스트림 EP(GET /appApi/tbm/my-sign-image)를 blob 으로 받아 objectURL 로 렌더한다.
+//      (응답 필드 자체는 폴백 번들 호환을 위해 백엔드에 유지되어 있으나 신규 앱에서는 무시한다.)
+//    blob 로드 실패 시 빈 문자열로 남겨 template 이 '서명 완료 (이미지를 불러올 수 없어요)' 폴백을 띄운다.
 const detail = ref({
   title: '',
   contentBody: '',
@@ -171,6 +175,42 @@ const completionToneClass = computed(() =>
   detail.value.completionStatusCd === 'COMPLETED' ? 'badge--ok' : 'badge--danger',
 )
 
+// blob objectURL 해제 — 재조회/화면 이탈 시 즉시 정리(메모리 누수 방지).
+//   LeaveApprovalDetailView.revokeEvidenceUrl 패턴과 동일.
+const revokeSignUrl = () => {
+  if (detail.value.mySignUrl) {
+    try {
+      URL.revokeObjectURL(detail.value.mySignUrl)
+    } catch (e) {
+      console.warn('[TbmCompletedDetail] objectURL 해제 실패:', e?.message)
+    }
+    detail.value.mySignUrl = ''
+  }
+}
+
+// 본인 서명 이미지 로드 — GET /appApi/tbm/my-sign-image?sessionCd=... (A10-1, 인증 스트림)
+//   서명 존재 판정은 mySignFileMgmtCd 로 하며, 없으면 호출 자체를 생략한다('서명 정보가 없어요').
+//   실패해도 화면 전체를 에러로 만들지 않는다(서명 영역만 폴백 문구).
+const loadSignImage = async (sessionCd) => {
+  if (!sessionCd || !detail.value.mySignFileMgmtCd) return
+  try {
+    const res = await api.get('/appApi/tbm/my-sign-image', {
+      params: { sessionCd },
+      responseType: 'blob',
+    })
+    revokeSignUrl()
+    // blob 타입을 이미지로 고정한다 — objectURL 내비게이션은 앱 origin 을 상속하므로,
+    // 서버 Content-Type 이 예기치 않게 액티브 콘텐츠여도 실행되지 않도록 방어한다.
+    const serverType = res.headers?.['content-type'] || ''
+    const imageType = serverType.startsWith('image/') ? serverType.split(';')[0] : 'image/png'
+    detail.value.mySignUrl = URL.createObjectURL(new Blob([res.data], { type: imageType }))
+  } catch (e) {
+    console.warn('[TbmCompletedDetail] 서명 이미지 조회 실패:', e?.message)
+    // mySignUrl 을 빈 값으로 유지 → '서명 완료 (이미지를 불러올 수 없어요)' 폴백(깨진 이미지 노출 방지).
+    detail.value.mySignUrl = ''
+  }
+}
+
 // 완료 상세 조회 — GET /appApi/tbm/sessions/{sessionCd}/my-completion (A10)
 const loadDetail = async () => {
   const sessionCd = route.query.sessionCd || ''
@@ -178,6 +218,8 @@ const loadDetail = async () => {
   isLoading.value = true
   loadError.value = false
   signImgError.value = false
+  // 재조회 전 이전 objectURL 해제(누수 방지).
+  revokeSignUrl()
   try {
     const { data } = await api.get(`/appApi/tbm/sessions/${sessionCd}/my-completion`)
     detail.value = {
@@ -186,11 +228,13 @@ const loadDetail = async () => {
       materialTitles: Array.isArray(data?.materialTitles) ? data.materialTitles : [],
       riskTitles: Array.isArray(data?.riskTitles) ? data.riskTitles : [],
       mySignFileMgmtCd: data?.mySignFileMgmtCd || '',
-      // 서명 이미지 절대 URL(FileUrlSigner). 없으면 빈 문자열.
-      mySignUrl: data?.mySignUrl || '',
+      // 서버 응답의 mySignUrl(공개 정적 URL)은 사용하지 않는다 — 아래 loadSignImage 가 blob objectURL 로 채운다.
+      mySignUrl: '',
       completionStatusCd: data?.completionStatusCd || '',
       endedAt: data?.endedAt || '',
     }
+    // 서명 이미지는 인증 스트림으로 별도 로드(본문 표시를 막지 않도록 상세 조회 성공 후 이어서 호출).
+    await loadSignImage(sessionCd)
   } catch (e) {
     console.error('[TbmCompletedDetail] 상세 조회 실패:', e?.message)
     loadError.value = true
@@ -220,6 +264,11 @@ onMounted(() => {
     return
   }
   loadDetail()
+})
+
+// ── 이탈 ────────────────────────────────────────────────────────
+onUnmounted(() => {
+  revokeSignUrl()
 })
 </script>
 

@@ -184,8 +184,14 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     private static final String FILE_TYPE_TBM_MTRL = "003";
 
     // ===== tbm04-manager-sign 주관자 서명(참석자 exit 서명 c-003 규칙 동형) =====
-    /** TB_FILE_INFO.FILE_TYPE — '003' TBM 서명(출결 서명과 동일 체계). */
-    private static final String FILE_TYPE_TBM_SIGN = "003";
+    /**
+     * TB_FILE_INFO.FILE_TYPE — '009' TBM 서명(참석자 출결 서명과 동일 체계).
+     * <p>security H-1 후속(2026-08-31): 자필 서명은 PII 이므로 교육자료('003', 공개 정적 서빙)에서
+     * 분리해 서명 전용 보호 파일타입으로 채번했다. FileServiceImpl.PROTECTED_FILE_TYPES 에 포함되어
+     * secure base 에 저장되며, 인증 스트림 EP(tbm04/manager-sign-image)로만 서빙된다.
+     * 기존 '003' 으로 저장된 서명 파일도 FILE_PATH 프리픽스 판별로 동일 EP 에서 열람된다(소급 이전 없음).
+     */
+    private static final String FILE_TYPE_TBM_SIGN = "009";
     /** 서명 파일 허용 contentType 화이트리스트(PNG/JPEG). */
     private static final String SIGN_CONTENT_TYPE_PNG = "image/png";
     private static final String SIGN_CONTENT_TYPE_JPEG = "image/jpeg";
