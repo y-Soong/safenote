@@ -5,22 +5,22 @@
         PRAFTA&nbsp;&nbsp;SAFETY&nbsp;&nbsp;CYCLE
       </div>
 
+      <!-- 원본과 동일하게 unit 사이에 joint(→)를 끼워 넣는다.
+           play()가 phraseEl.children 순서대로 순차 노출하므로 DOM 순서가 곧 연출 순서다. -->
       <div class="brand-story__phrase" ref="phraseEl">
-        <span
-          v-for="(unit, i) in cycleUnits"
-          :key="unit.piece + i"
-          class="brand-story__unit"
-          :data-piece="unit.piece"
-        >
-          <small>{{ unit.ko }}</small>
-          <span class="brand-story__en"
-            ><span class="brand-story__cap">{{ unit.piece }}</span
-            ><span class="brand-story__rest">{{ unit.rest }}</span></span
+        <template v-for="(unit, i) in cycleUnits" :key="unit.piece + i">
+          <span class="brand-story__unit" :data-piece="unit.piece">
+            <small>{{ unit.ko }}</small>
+            <span class="brand-story__en"
+              ><span class="brand-story__cap">{{ unit.piece }}</span
+              ><span class="brand-story__rest">{{ unit.rest }}</span></span
+            >
+          </span>
+          <span v-if="i < cycleUnits.length - 1" class="brand-story__joint"
+            >→</span
           >
-        </span>
+        </template>
       </div>
-      <!-- 화살표(→)는 원본과 동일하게 unit 사이에 렌더 — developer가 v-for 인덱스로 조인 처리 -->
-      <!-- TODO(developer): 원본처럼 .unit 사이 .joint(→) 삽입 및 reset()/play() 애니메이션 로직 이식 -->
 
       <div class="brand-story__logo">
         <div class="brand-story__wordmark" ref="wordmarkEl">
@@ -31,6 +31,8 @@
             :data-safety="i === 3 ? '' : undefined"
             >{{ l }}</span
           >
+          <!-- data-safety 는 표시자일 뿐이고, 실제 옐로 강조는 글자가 모두 모인 뒤
+               is-safety 클래스로 입힌다(원본 slot.safety 와 동일 타이밍). -->
         </div>
         <div class="brand-story__tagline" ref="taglineEl">
           실행은 다시 예방으로 —
@@ -52,8 +54,8 @@
     </div>
 
     <p class="brand-story__bridge">
-      사명은 안전관리의 사이클에서 왔습니다. 지금 PRAFTA는 그 사이클의
-      뿌리인 근태까지, 현장 운영 전체를 하나의 시스템에 담습니다.
+      사명은 안전관리의 사이클에서 왔습니다. 지금 PRAFTA는 그 사이클의 뿌리인
+      근태까지, 현장 운영 전체를 하나의 시스템에 담습니다.
     </p>
   </section>
 </template>
@@ -88,50 +90,159 @@ const clearAllTimers = () => {
   timers = [];
 };
 
-// 원본 reset() 이식 — show/on 클래스 전부 제거, 타이머 정리
+// 날아가는 글자(flyer)는 JS로 만들어 붙이므로 scoped 스타일의 data-v-* 속성이 없어
+// 컴포넌트 CSS가 적용되지 않는다. 스테이지에서 스코프 속성명을 읽어 그대로 복사한다.
+function scopeAttrName() {
+  const el = stageEl.value;
+  if (!el) return null;
+  return (
+    Array.from(el.attributes)
+      .map((a) => a.name)
+      .find((n) => n.startsWith("data-v-")) || null
+  );
+}
+
+// phrase 안의 연출 대상 — children 순서(unit → joint → unit …)가 곧 등장 순서다
+const piecesOf = () =>
+  phraseEl.value ? Array.from(phraseEl.value.children) : [];
+const unitsOf = () =>
+  phraseEl.value
+    ? Array.from(phraseEl.value.querySelectorAll(".brand-story__unit"))
+    : [];
+const slotsOf = () =>
+  wordmarkEl.value
+    ? Array.from(wordmarkEl.value.querySelectorAll(".brand-story__slot"))
+    : [];
+
+function removeFlyers() {
+  if (!stageEl.value) return;
+  stageEl.value
+    .querySelectorAll(".brand-story__flyer")
+    .forEach((f) => f.remove());
+}
+
+// 원본 reset() 이식 — show/on 클래스·flyer·인라인 스타일을 전부 되돌리고 타이머 정리
 function reset() {
   clearAllTimers();
+  removeFlyers();
+  stageEl.value && stageEl.value.classList.remove("is-isolate");
   eyebrowEl.value && eyebrowEl.value.classList.remove("show");
   taglineEl.value && taglineEl.value.classList.remove("show");
   subEl.value && subEl.value.classList.remove("show");
   replayEl.value && replayEl.value.classList.remove("show");
   if (phraseEl.value) {
-    Array.from(phraseEl.value.children).forEach((el) =>
-      el.classList.remove("show")
-    );
+    phraseEl.value.style.display = "";
+    piecesOf().forEach((el) => el.classList.remove("show"));
+    phraseEl.value
+      .querySelectorAll(".brand-story__cap")
+      .forEach((c) => (c.style.visibility = ""));
   }
-  if (wordmarkEl.value) {
-    Array.from(wordmarkEl.value.children).forEach((el) =>
-      el.classList.remove("on")
-    );
-  }
+  slotsOf().forEach((s) => {
+    s.classList.remove("on", "is-safety");
+    s.style.visibility = "";
+  });
 }
 
-// 원본 finalFrame() 이식 — reduced-motion 시 애니메이션 없이 최종 프레임 즉시 표시
+// 원본 finalFrame() 이식 — reduced-motion 시 애니메이션 없이 최종 프레임 즉시 표시.
+// 최종 프레임에서는 사이클 문구를 반드시 감춘다(워드마크와 같은 자리라 남기면 겹쳐 보인다).
 function finalFrame() {
+  if (phraseEl.value) phraseEl.value.style.display = "none";
   eyebrowEl.value && eyebrowEl.value.classList.add("show");
-  if (phraseEl.value) {
-    Array.from(phraseEl.value.children).forEach((el) =>
-      el.classList.add("show")
-    );
-  }
-  if (wordmarkEl.value) {
-    Array.from(wordmarkEl.value.children).forEach((el) =>
-      el.classList.add("on")
-    );
-  }
+  const slots = slotsOf();
+  slots.forEach((s) => s.classList.add("on"));
+  slots[3] && slots[3].classList.add("is-safety");
   taglineEl.value && taglineEl.value.classList.add("show");
   subEl.value && subEl.value.classList.add("show");
   replayEl.value && replayEl.value.classList.add("show");
 }
 
-// 원본 play() 이식 — eyebrow → phrase 6유닛 순차 표시 → wordmark 슬롯 점등 → tagline/sub → replay 순
+// 원본 3단계 — 남은 머리글자(P·R·A·F·T·A)가 워드마크 자리로 날아가 모인다.
+// 슬롯은 좌표만 잡아둔 채 감추고, 날아간 flyer 가 그 자리에 안착한 뒤 실제 슬롯으로 교체한다.
+function flyToWordmark() {
+  const stage = stageEl.value;
+  const phrase = phraseEl.value;
+  if (!stage || !phrase) return;
+
+  const stageRect = stage.getBoundingClientRect();
+  const units = unitsOf();
+  const slots = slotsOf();
+  const scopeAttr = scopeAttrName();
+
+  slots.forEach((s) => {
+    s.style.visibility = "hidden";
+    s.classList.add("on");
+  });
+
+  units.forEach((unit, i) => {
+    const cap = unit.querySelector(".brand-story__cap");
+    const slot = slots[i];
+    if (!cap || !slot) return;
+
+    const from = cap.getBoundingClientRect();
+    const to = slot.getBoundingClientRect();
+
+    const flyer = document.createElement("span");
+    flyer.className = "brand-story__flyer";
+    if (scopeAttr) flyer.setAttribute(scopeAttr, "");
+    flyer.textContent = unit.dataset.piece;
+    flyer.style.left = `${from.left - stageRect.left}px`;
+    flyer.style.top = `${from.top - stageRect.top}px`;
+    flyer.style.fontSize = `${from.height}px`;
+    stage.appendChild(flyer);
+    cap.style.visibility = "hidden";
+
+    const dx = to.left - from.left;
+    const dy = to.top - from.top;
+    const scale = to.height / from.height;
+
+    wait(
+      () => {
+        flyer.style.transform = `translate(${dx}px, ${dy}px)`;
+        flyer.style.fontSize = `${from.height * scale}px`;
+        flyer.style.fontWeight = "900";
+        if (!slot.hasAttribute("data-safety")) {
+          flyer.style.color = "var(--bs-ink)";
+        }
+      },
+      40 + i * 110
+    );
+  });
+
+  const n = units.length;
+
+  // 4) 도착한 flyer 를 실제 워드마크로 교체하고, 사이클 문구는 완전히 감춘다
+  wait(
+    () => {
+      phrase.style.display = "none";
+      slots.forEach((s) => (s.style.visibility = ""));
+      removeFlyers();
+      slots[3] && slots[3].classList.add("is-safety");
+    },
+    1400 + n * 110
+  );
+
+  // 5) tagline + sub
+  wait(
+    () => {
+      taglineEl.value && taglineEl.value.classList.add("show");
+      subEl.value && subEl.value.classList.add("show");
+    },
+    2050 + n * 110
+  );
+
+  // 6) REPLAY
+  wait(
+    () => replayEl.value && replayEl.value.classList.add("show"),
+    2750 + n * 110
+  );
+}
+
+// 원본 play() 이식 — eyebrow → 사이클 문구 순차 등장 → 머리글자만 남김(isolate)
+//   → 워드마크로 수렴(flyer) → tagline/sub → replay
 const play = () => {
   reset();
 
-  const reduced = window.matchMedia(
-    "(prefers-reduced-motion: reduce)"
-  ).matches;
+  const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
   if (reduced) {
     finalFrame();
     return;
@@ -140,33 +251,20 @@ const play = () => {
   let t = 400;
   wait(() => eyebrowEl.value && eyebrowEl.value.classList.add("show"), t);
 
-  // 1) 사이클 문구 6유닛 순차 표시
+  // 1) 사이클 문구를 unit → joint 순서로 하나씩 세운다
   t += 500;
-  const units = phraseEl.value ? Array.from(phraseEl.value.children) : [];
-  units.forEach((unit) => {
-    wait(() => unit.classList.add("show"), t);
-    t += 430;
+  piecesOf().forEach((el) => {
+    wait(() => el.classList.add("show"), t);
+    t += el.classList.contains("brand-story__unit") ? 430 : 160;
   });
 
-  // 2) 잠시 유지 후 워드마크 전환 준비
+  // 2) 잠시 유지한 뒤 한글·영문 꼬리·화살표를 지워 머리글자만 남긴다
   t += 1400;
+  wait(() => stageEl.value && stageEl.value.classList.add("is-isolate"), t);
 
-  // 3) 워드마크 슬롯 순차 점등
-  const slots = wordmarkEl.value ? Array.from(wordmarkEl.value.children) : [];
-  slots.forEach((slot, i) => {
-    wait(() => slot.classList.add("on"), t + i * 110);
-  });
-  t += slots.length * 110 + 300;
-
-  // 4) tagline + sub 동시 노출
-  wait(() => {
-    taglineEl.value && taglineEl.value.classList.add("show");
-    subEl.value && subEl.value.classList.add("show");
-  }, t);
-  t += 700;
-
-  // 5) REPLAY 버튼 노출
-  wait(() => replayEl.value && replayEl.value.classList.add("show"), t);
+  // 3) 머리글자가 워드마크로 수렴
+  t += 850;
+  wait(() => flyToWordmark(), t);
 };
 
 // 원본 window load 트리거 대신 IntersectionObserver(threshold 0.4)로 뷰포트 진입 1회만 재생
@@ -290,6 +388,40 @@ onBeforeUnmount(() => {
   display: inline-block;
   line-height: 1;
 }
+.brand-story__joint {
+  font-size: 2.2cqi;
+  color: var(--bs-muted);
+  align-self: center;
+  padding-top: 2.4cqi;
+  opacity: 0;
+  transition: opacity 0.55s ease;
+}
+.brand-story__joint.show {
+  opacity: 0.85;
+}
+
+/* isolate 단계 — 한글 설명·영문 꼬리·화살표를 지우고 머리글자만 남긴다 */
+.brand-story__stage.is-isolate .brand-story__unit small,
+.brand-story__stage.is-isolate .brand-story__rest,
+.brand-story__stage.is-isolate .brand-story__joint {
+  opacity: 0;
+  transition: opacity 0.7s ease;
+}
+
+/* 워드마크 자리로 날아가는 머리글자 (JS 생성 — scopeAttrName() 으로 스코프 속성 부여) */
+.brand-story__flyer {
+  position: absolute;
+  z-index: 5;
+  font-weight: 800;
+  color: var(--bs-safety);
+  line-height: 1;
+  transition:
+    transform 1.05s cubic-bezier(0.72, -0.02, 0.16, 1),
+    font-size 1.05s cubic-bezier(0.72, -0.02, 0.16, 1),
+    color 0.5s ease;
+  will-change: transform;
+  white-space: nowrap;
+}
 .brand-story__logo {
   position: absolute;
   inset: 0;
@@ -315,14 +447,16 @@ onBeforeUnmount(() => {
   transition:
     opacity 0.35s ease,
     transform 0.35s ease,
-    color 0.6s ease;
+    color 0.6s ease,
+    text-shadow 0.6s ease;
 }
 .brand-story__slot.on {
   opacity: 1;
   transform: scale(1);
 }
-.brand-story__slot[data-safety] {
+.brand-story__slot.is-safety {
   color: var(--bs-safety);
+  text-shadow: 0 0 4cqi rgba(245, 179, 1, 0.35);
 }
 .brand-story__tagline {
   font-size: 2.3cqi;
@@ -395,6 +529,8 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .brand-story__unit,
+  .brand-story__joint,
+  .brand-story__flyer,
   .brand-story__slot,
   .brand-story__tagline,
   .brand-story__sub,

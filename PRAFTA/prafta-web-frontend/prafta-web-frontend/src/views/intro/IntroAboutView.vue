@@ -14,9 +14,9 @@
       <div class="section__inner section__inner--narrow">
         <p class="lead">
           프라프타는 근태·인사와 산업안전을 하나의 시스템으로 묶은 현장 운영
-          SaaS 'PRAFTA'를 만듭니다. 하드웨어 설치 없이 앱과 웹만으로,
-          일용직이 많고 하도급 구조가 겹겹인 현장에서도 운영 기록이 곧
-          증빙이 되도록 설계했습니다.
+          SaaS 'PRAFTA'를 만듭니다. 하드웨어 설치 없이 앱과 웹만으로, 일용직이
+          많고 하도급 구조가 겹겹인 현장에서도 운영 기록이 곧 증빙이 되도록
+          설계했습니다.
         </p>
       </div>
     </section>
@@ -34,7 +34,9 @@
       </div>
     </section>
 
-    <IntroCtaBand heading="프라프타와 함께, 현장 운영을 하나로 만들어 보세요." />
+    <IntroCtaBand
+      heading="프라프타와 함께, 현장 운영을 하나로 만들어 보세요."
+    />
 
     <IntroFooter />
     <IntroFloatingCta />
@@ -73,6 +75,10 @@ const companyInfo = [
   font-weight: 800;
   color: var(--color-text-strong);
   line-height: 1.5;
+  /* 한국어는 기본값(word-break:normal)에서 음절 단위로 끊겨 "만/듭니다."처럼 어절 중간이
+     갈라진다. keep-all 로 어절(띄어쓰기) 단위 줄바꿈을 강제하고, balance 로 두 줄 길이를 맞춘다. */
+  word-break: keep-all;
+  text-wrap: balance;
 }
 .section {
   padding: 56px var(--header-padding-x);
