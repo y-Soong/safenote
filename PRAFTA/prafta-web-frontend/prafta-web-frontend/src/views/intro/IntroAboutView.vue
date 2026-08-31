@@ -26,10 +26,9 @@
       </div>
     </section>
 
-    <!-- 메인(/)의 Hero·"왜 하나의 시스템" 섹션을 그대로 붙인다(2026-08-31 사용자 지시).
-         h1 은 페이지당 1개 규칙에 따라 h2 로 낮추고, 기능 맵 앵커는 이 페이지에 없으므로
-         메인으로 보낸다. -->
-    <IntroHeroSection heading-tag="h2" features-to="/" />
+    <!-- 구 메인(/)의 Hero·"왜 하나의 시스템" 섹션(2026-08-31 사용자 지시로 이 페이지에 편입).
+         페이지 대표 제목은 상단 미션 문구이므로 여기는 h2. -->
+    <IntroHeroSection heading-tag="h2" />
 
     <IntroWhySection alt />
 

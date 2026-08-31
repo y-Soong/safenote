@@ -21,11 +21,14 @@ const SERVICE_BASE = "/safenote";
 // 초기 고정 라우트만 선언 (동적 화면은 나중에 주입)
 const routes = [
   // 회사소개 랜딩 (루트 도메인, 비로그인 공개)
+  // 2026-08-31: 종전 메인 화면(IntroMainView)은 폐기하고 루트를 회사소개로 교체.
   {
     path: "/",
     name: "Home",
-    component: () => import("@/views/intro/IntroMainView.vue"),
+    component: () => import("@/views/intro/IntroAboutView.vue"),
   },
+  // 기존에 배포된 /about 링크 호환 — 루트로 보낸다
+  { path: "/about", redirect: "/" },
   {
     path: "/attendance",
     name: "IntroAttendance",
@@ -40,11 +43,6 @@ const routes = [
     path: "/pricing",
     name: "IntroPricing",
     component: () => import("@/views/intro/IntroPricingView.vue"),
-  },
-  {
-    path: "/about",
-    name: "IntroAbout",
-    component: () => import("@/views/intro/IntroAboutView.vue"),
   },
   {
     path: "/contact",

@@ -10,22 +10,8 @@
         쓰던 두 시스템을 PRAFTA 하나로 운영합니다.
       </p>
 
-      <div class="intro-hero__actions">
-        <IntroButton to="/contact" variant="primary" size="lg"
-          >도입문의</IntroButton
-        >
-        <!-- 같은 페이지 안에 기능 맵이 있으면 앵커(#features)로, 없으면 해당 페이지로 이동 -->
-        <IntroButton
-          v-if="featuresTo"
-          :to="featuresTo"
-          variant="ghost"
-          size="lg"
-          >기능 살펴보기</IntroButton
-        >
-        <IntroButton v-else :href="featuresHref" variant="ghost" size="lg"
-          >기능 살펴보기</IntroButton
-        >
-      </div>
+      <!-- CTA 버튼(도입문의 / 기능 살펴보기)은 2026-08-31 사용자 지시로 제거.
+           도입 문의 동선은 헤더 버튼과 플로팅 퀵버튼이 담당한다. -->
 
       <div class="intro-hero__preview" aria-hidden="true">
         <div v-for="p in previewChips" :key="p.label" class="intro-hero__chip">
@@ -42,15 +28,9 @@
 </template>
 
 <script setup>
-import IntroButton from "./IntroButton.vue";
-
 defineProps({
   // 제목 태그 — 페이지당 h1 1개 규칙(guide §3.2)을 지키기 위해 호출 측에서 지정
   headingTag: { type: String, default: "h1" },
-  // 같은 페이지 안의 기능 맵 앵커
-  featuresHref: { type: String, default: "#features" },
-  // 다른 페이지의 기능 맵으로 보낼 때 (지정하면 featuresHref 대신 라우터 이동)
-  featuresTo: { type: String, default: "" },
 });
 
 // 문구는 guide-v2.md §5.1 S1 원문 — 임의 변경 금지
@@ -92,13 +72,6 @@ const badges = [
   line-height: 1.7;
   margin: 0 0 28px;
   word-break: keep-all;
-}
-.intro-hero__actions {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 36px;
 }
 .intro-hero__preview {
   display: flex;

@@ -67,7 +67,7 @@ const navLinks = [
   { path: "/attendance", label: "근태관리" },
   { path: "/safety", label: "안전관리" },
   { path: "/pricing", label: "이용요금" },
-  { path: "/about", label: "회사소개" },
+  { path: "/", label: "회사소개" },
 ];
 
 const isActive = (path) => route.path === path;

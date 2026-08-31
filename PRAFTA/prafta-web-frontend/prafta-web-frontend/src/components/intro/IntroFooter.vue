@@ -43,11 +43,10 @@ import { computed } from "vue";
 const year = computed(() => new Date().getFullYear());
 
 const sitemapLinks = [
-  { path: "/", label: "메인" },
   { path: "/attendance", label: "근태관리" },
   { path: "/safety", label: "안전관리" },
   { path: "/pricing", label: "이용요금" },
-  { path: "/about", label: "회사소개" },
+  { path: "/", label: "회사소개" },
   { path: "/contact", label: "도입문의" },
 ];
 </script>
