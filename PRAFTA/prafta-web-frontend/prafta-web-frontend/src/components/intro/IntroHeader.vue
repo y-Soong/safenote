@@ -30,15 +30,26 @@
           @click="closeMobileMenu"
           >도입문의</IntroButton
         >
+        <!-- 시작하기 = 서비스 로그인 진입(/safenote). 신규 문의(도입문의)와 성격이 달라
+             primary 를 겹치지 않게 ghost 로 둔다. -->
+        <IntroButton
+          :to="SERVICE_LOGIN_PATH"
+          variant="ghost"
+          size="sm"
+          class="intro-header__cta intro-header__cta--mobile"
+          @click="closeMobileMenu"
+          >시작하기</IntroButton
+        >
       </nav>
 
-      <IntroButton
-        to="/contact"
-        variant="primary"
-        size="sm"
-        class="intro-header__cta intro-header__cta--desktop"
-        >도입문의</IntroButton
-      >
+      <div class="intro-header__actions">
+        <IntroButton to="/contact" variant="primary" size="sm"
+          >도입문의</IntroButton
+        >
+        <IntroButton :to="SERVICE_LOGIN_PATH" variant="ghost" size="sm"
+          >시작하기</IntroButton
+        >
+      </div>
 
       <button
         type="button"
@@ -62,6 +73,9 @@ import IntroButton from "./IntroButton.vue";
 
 const route = useRoute();
 const mobileMenuOpen = ref(false);
+
+// 서비스(관리자/근로자) 로그인 진입 경로. router 의 SERVICE_BASE 와 같은 값이다.
+const SERVICE_LOGIN_PATH = "/safenote";
 
 // 노출 순서 = 배열 순서. 회사소개(=루트)를 맨 앞에 둔다(2026-08-31 사용자 지시).
 const navLinks = [
@@ -131,6 +145,12 @@ const closeMobileMenu = () => {
   color: var(--color-text-strong);
   border-bottom-color: var(--color-primary);
 }
+/* 데스크톱 CTA 묶음 — 헤더 inner 의 gap(28px)과 별개로 버튼끼리는 좁게 붙인다 */
+.intro-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .intro-header__cta--mobile {
   display: none;
 }
@@ -170,12 +190,13 @@ const closeMobileMenu = () => {
     width: 100%;
     padding: 10px 0;
   }
-  .intro-header__cta--desktop {
+  .intro-header__actions {
     display: none;
   }
   .intro-header__cta--mobile {
     display: inline-flex;
     margin-top: 8px;
+    width: 100%;
   }
   .intro-header__hamburger {
     display: flex;
