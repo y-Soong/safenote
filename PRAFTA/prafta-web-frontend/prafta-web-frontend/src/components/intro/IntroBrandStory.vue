@@ -47,7 +47,7 @@
         type="button"
         class="brand-story__replay"
         ref="replayEl"
-        @click="play"
+        @click="replay"
       >
         ↺ REPLAY
       </button>
@@ -125,7 +125,8 @@ function removeFlyers() {
 function reset() {
   clearAllTimers();
   removeFlyers();
-  stageEl.value && stageEl.value.classList.remove("is-isolate");
+  stageEl.value &&
+    stageEl.value.classList.remove("is-isolate", "is-motion-forced");
   eyebrowEl.value && eyebrowEl.value.classList.remove("show");
   taglineEl.value && taglineEl.value.classList.remove("show");
   subEl.value && subEl.value.classList.remove("show");
@@ -239,13 +240,23 @@ function flyToWordmark() {
 
 // 원본 play() 이식 — eyebrow → 사이클 문구 순차 등장 → 머리글자만 남김(isolate)
 //   → 워드마크로 수렴(flyer) → tagline/sub → replay
-const play = () => {
+//
+// 재생 정책(2026-08-31 사용자 확정):
+//   · 자동 재생(스크롤 진입)은 OS 의 reduced-motion 설정을 존중해 최종 프레임만 표시한다.
+//     — 애니메이션을 원치 않는 사용자에게 갑자기 움직이는 화면을 보이지 않기 위함.
+//   · REPLAY 는 사용자가 직접 누른 경우이므로 설정과 무관하게 전체 연출을 재생한다.
+//     이때는 CSS 의 reduced-motion 블록(transition:none)도 함께 풀어야 하므로
+//     스테이지에 is-motion-forced 를 걸어 해당 블록이 매칭되지 않게 한다.
+const play = ({ force = false } = {}) => {
   reset();
 
   const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  if (reduced) {
+  if (reduced && !force) {
     finalFrame();
     return;
+  }
+  if (reduced && stageEl.value) {
+    stageEl.value.classList.add("is-motion-forced");
   }
 
   let t = 400;
@@ -266,6 +277,9 @@ const play = () => {
   t += 850;
   wait(() => flyToWordmark(), t);
 };
+
+// REPLAY 버튼 핸들러 — click 이벤트 객체가 play() 의 옵션 자리로 들어가지 않도록 감싼다
+const replay = () => play({ force: true });
 
 // 원본 window load 트리거 대신 IntersectionObserver(threshold 0.4)로 뷰포트 진입 1회만 재생
 let observer;
@@ -527,14 +541,24 @@ onBeforeUnmount(() => {
   line-height: 1.7;
 }
 
+/* OS 에서 애니메이션을 끈 경우 전환 효과를 없앤다.
+   단 REPLAY 로 사용자가 직접 재생을 요청한 동안(is-motion-forced)에는 적용하지 않는다 —
+   전환이 없으면 글자가 순간이동하듯 튀어 연출이 성립하지 않기 때문. */
 @media (prefers-reduced-motion: reduce) {
-  .brand-story__unit,
-  .brand-story__joint,
-  .brand-story__flyer,
-  .brand-story__slot,
-  .brand-story__tagline,
-  .brand-story__sub,
-  .brand-story__eyebrow {
+  .brand-story__stage:not(.is-motion-forced) .brand-story__unit,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__joint,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__flyer,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__slot,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__tagline,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__sub,
+  .brand-story__stage:not(.is-motion-forced) .brand-story__eyebrow {
+    transition: none;
+  }
+  .brand-story__stage:not(.is-motion-forced).is-isolate
+    .brand-story__unit
+    small,
+  .brand-story__stage:not(.is-motion-forced).is-isolate .brand-story__rest,
+  .brand-story__stage:not(.is-motion-forced).is-isolate .brand-story__joint {
     transition: none;
   }
 }
