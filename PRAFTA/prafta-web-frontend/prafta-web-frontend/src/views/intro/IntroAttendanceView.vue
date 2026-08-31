@@ -157,21 +157,21 @@ const dailyWorkerImages = [
   margin: 0 auto;
 }
 .page-head__kicker {
-  font-size: 12px;
+  font-size: var(--intro-text-xs);
   font-weight: 700;
   letter-spacing: 0.12em;
   color: var(--color-attd);
   margin: 0 0 10px;
 }
 .page-head__title {
-  font-size: clamp(1.5rem, 3vw, 2.2rem);
+  font-size: var(--intro-text-lg);
   font-weight: 800;
   color: var(--color-text-strong);
   margin: 0;
-  line-height: 1.4;
+  line-height: var(--intro-lh-tight);
 }
 .feature-note {
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
   margin: 6px 0 0;
 }

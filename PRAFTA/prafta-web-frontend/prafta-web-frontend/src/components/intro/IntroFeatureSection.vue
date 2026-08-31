@@ -14,9 +14,15 @@
           {{ label }}
         </p>
         <h3 class="intro-feature__heading">{{ heading }}</h3>
-        <p v-if="description" class="intro-feature__desc">{{ description }}</p>
+        <IntroSentences
+          v-if="description"
+          class="intro-feature__desc"
+          :text="description"
+        />
         <ul v-if="bullets && bullets.length" class="intro-feature__bullets">
-          <li v-for="(b, i) in bullets" :key="i">{{ b }}</li>
+          <li v-for="(b, i) in bullets" :key="i">
+            <IntroSentences :text="b" tag="span" />
+          </li>
         </ul>
         <slot name="footnote" />
       </div>
@@ -38,6 +44,7 @@
 
 <script setup>
 import IntroImageGallery from "./IntroImageGallery.vue";
+import IntroSentences from "./IntroSentences.vue";
 
 defineProps({
   id: { type: String, default: "" },
@@ -73,7 +80,7 @@ defineProps({
 }
 .intro-feature__label {
   display: inline-block;
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   font-weight: 700;
   letter-spacing: 0.02em;
   margin: 0 0 10px;
@@ -86,15 +93,16 @@ defineProps({
   color: var(--color-primary);
 }
 .intro-feature__heading {
-  font-size: 1.65rem;
+  font-size: var(--intro-text-md);
   font-weight: 800;
   color: var(--color-text-strong);
   margin: 0 0 12px;
-  line-height: 1.35;
+  line-height: var(--intro-lh-tight);
 }
 .intro-feature__desc {
   color: var(--color-text-muted);
-  line-height: 1.7;
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
   margin: 0 0 18px;
 }
 .intro-feature__bullets {
@@ -109,14 +117,14 @@ defineProps({
   position: relative;
   padding-left: 20px;
   color: var(--color-text);
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
 }
 .intro-feature__bullets li::before {
   content: "";
   position: absolute;
   left: 0;
-  top: 8px;
+  top: calc(0.85em - 3px);
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -145,7 +153,7 @@ defineProps({
   color: var(--color-primary);
 }
 .intro-feature__placeholder-text {
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
 }
 

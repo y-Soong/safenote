@@ -389,7 +389,7 @@ onBeforeUnmount(() => {
 }
 .intro-gallery__caption {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   line-height: 1.5;
   color: var(--color-text-muted);
 }

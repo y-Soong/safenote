@@ -2,10 +2,10 @@
   <section class="intro-why" :class="{ 'intro-why--alt': alt }">
     <div class="intro-why__inner">
       <h2 class="intro-why__title">왜 하나의 시스템이어야 할까요</h2>
-      <p class="intro-why__lead">
-        근태 시스템 따로, 안전 시스템 따로 쓰면 같은 현장·같은 사람의 데이터가
-        두 번 입력되고, 두 곳에서 어긋납니다.
-      </p>
+      <IntroSentences
+        class="intro-why__lead"
+        text="근태 시스템 따로, 안전 시스템 따로 쓰면 같은 현장·같은 사람의 데이터가 두 번 입력되고, 두 곳에서 어긋납니다."
+      />
       <div class="intro-why__grid">
         <IntroIconCard
           v-for="c in cards"
@@ -22,6 +22,7 @@
 
 <script setup>
 import IntroIconCard from "./IntroIconCard.vue";
+import IntroSentences from "./IntroSentences.vue";
 
 defineProps({
   // 배경을 한 단계 어둡게(교차 섹션용)
@@ -65,7 +66,7 @@ const cards = [
   margin: 0 auto;
 }
 .intro-why__title {
-  font-size: 1.65rem;
+  font-size: var(--intro-text-md);
   font-weight: 800;
   color: var(--color-text-strong);
   text-align: center;
@@ -75,6 +76,8 @@ const cards = [
 .intro-why__lead {
   text-align: center;
   color: var(--color-text-muted);
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
   margin: 0 0 36px;
   word-break: keep-all;
 }

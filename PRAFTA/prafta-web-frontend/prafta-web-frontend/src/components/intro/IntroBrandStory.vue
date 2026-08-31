@@ -52,11 +52,6 @@
         ↺ REPLAY
       </button>
     </div>
-
-    <p class="brand-story__bridge">
-      사명은 안전관리의 사이클에서 왔습니다. 지금 PRAFTA는 그 사이클의 뿌리인
-      근태까지, 현장 운영 전체를 하나의 시스템에 담습니다.
-    </p>
   </section>
 </template>
 
@@ -338,7 +333,7 @@ onBeforeUnmount(() => {
   /* 재생 속도 배율(단일 출처) — 1 = 원본 속도, 0.6 = 원본의 60% 속도.
      아래 transition 들과 JS 대기시간(speedFactor)이 모두 이 값을 나눠 쓴다.
      속도를 바꿀 때는 이 숫자 하나만 고치면 된다. */
-  --bs-speed: 0.6;
+  --bs-speed: 1.2;
   position: relative;
   width: min(96vw, 1120px);
   aspect-ratio: 16 / 9;
@@ -553,14 +548,6 @@ onBeforeUnmount(() => {
 .brand-story__replay:hover {
   color: var(--bs-safety);
   border-color: var(--bs-safety);
-}
-.brand-story__bridge {
-  max-width: 720px;
-  margin: 24px auto 0;
-  text-align: center;
-  color: var(--color-text-muted);
-  font-size: 14px;
-  line-height: 1.7;
 }
 
 /* OS 에서 애니메이션을 끈 경우 전환 효과를 없앤다.

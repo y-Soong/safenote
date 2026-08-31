@@ -5,10 +5,10 @@
       <component :is="headingTag" class="intro-hero__title">
         근태부터 안전까지, 현장 운영을 하나로
       </component>
-      <p class="intro-hero__desc">
-        출퇴근·스케줄·연차의 근태관리와 TBM·위험성평가·점검의 안전관리. 따로
-        쓰던 두 시스템을 PRAFTA 하나로 운영합니다.
-      </p>
+      <IntroSentences
+        class="intro-hero__desc"
+        text="출퇴근·스케줄·연차의 근태관리와 TBM·위험성평가·점검의 안전관리. 따로 쓰던 두 시스템을 PRAFTA 하나로 운영합니다."
+      />
 
       <!-- CTA 버튼(도입문의 / 기능 살펴보기)은 2026-08-31 사용자 지시로 제거.
            도입 문의 동선은 헤더 버튼과 플로팅 퀵버튼이 담당한다. -->
@@ -28,6 +28,8 @@
 </template>
 
 <script setup>
+import IntroSentences from "./IntroSentences.vue";
+
 defineProps({
   // 제목 태그 — 페이지당 h1 1개 규칙(guide §3.2)을 지키기 위해 호출 측에서 지정
   headingTag: { type: String, default: "h1" },
@@ -59,17 +61,17 @@ const badges = [
   margin: 0 auto;
 }
 .intro-hero__title {
-  font-size: clamp(1.8rem, 4vw, 3rem);
+  font-size: var(--intro-text-lg);
   font-weight: 800;
   color: var(--color-text-strong);
-  line-height: 1.3;
+  line-height: var(--intro-lh-tight);
   margin: 0 0 18px;
   word-break: keep-all;
 }
 .intro-hero__desc {
   color: var(--color-text-muted);
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
   margin: 0 0 28px;
   word-break: keep-all;
 }
@@ -88,7 +90,7 @@ const badges = [
   border-radius: var(--card-radius);
   border: var(--card-border);
   background: var(--color-surface);
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text);
 }
 .intro-hero__badges {
@@ -99,7 +101,7 @@ const badges = [
   flex-wrap: wrap;
   margin: 0;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
 }
 </style>

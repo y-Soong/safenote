@@ -32,7 +32,7 @@ defineProps({
   margin: 0 auto;
 }
 .intro-cta-band__heading {
-  font-size: 1.5rem;
+  font-size: var(--intro-text-md);
   font-weight: 800;
   color: var(--color-text-strong);
   margin: 0 0 10px;

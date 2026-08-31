@@ -1,14 +1,20 @@
 <template>
-  <component :is="to ? 'router-link' : 'div'" :to="to || undefined" class="intro-icon-card">
+  <component
+    :is="to ? 'router-link' : 'div'"
+    :to="to || undefined"
+    class="intro-icon-card"
+  >
     <div class="intro-icon-card__icon" aria-hidden="true">
       <slot name="icon">⬡</slot>
     </div>
     <h3 class="intro-icon-card__title">{{ title }}</h3>
-    <p class="intro-icon-card__desc">{{ desc }}</p>
+    <IntroSentences class="intro-icon-card__desc" :text="desc" />
   </component>
 </template>
 
 <script setup>
+import IntroSentences from "./IntroSentences.vue";
+
 defineProps({
   title: { type: String, required: true },
   desc: { type: String, required: true },
@@ -47,14 +53,14 @@ a.intro-icon-card:hover {
   font-size: 20px;
 }
 .intro-icon-card__title {
-  font-size: 16px;
+  font-size: var(--intro-text-sm);
   font-weight: 700;
   color: var(--color-text-strong);
   margin: 0 0 6px;
 }
 .intro-icon-card__desc {
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
   color: var(--color-text-muted);
   margin: 0;
 }

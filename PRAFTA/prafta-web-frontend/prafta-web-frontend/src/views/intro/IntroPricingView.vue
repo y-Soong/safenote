@@ -23,7 +23,11 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="row in pricingRows" :key="row.label" :class="{ 'is-enterprise': row.enterprise }">
+            <tr
+              v-for="row in pricingRows"
+              :key="row.label"
+              :class="{ 'is-enterprise': row.enterprise }"
+            >
               <td data-label="구분">{{ row.label }}</td>
               <td data-label="요금">{{ row.price }}</td>
               <td data-label="부과 기준">{{ row.basis }}</td>
@@ -69,15 +73,39 @@ import IntroFloatingCta from "@/components/intro/IntroFloatingCta.vue";
 import IntroCtaBand from "@/components/intro/IntroCtaBand.vue";
 
 const pricingRows = [
-  { label: "정규직 근로자", price: "인당 월 5,000원", basis: "해당 월 사용 인원 수", enterprise: false },
-  { label: "일용직 일일계정", price: "계정당 월 3,000원", basis: "해당 월 활성화된 일일계정 수", enterprise: false },
-  { label: "엔터프라이즈", price: "협의", basis: "사업장 정규 근로자 100명 이상 — 별도 상담", enterprise: true },
+  {
+    label: "정규직 근로자",
+    price: "인당 월 5,000원",
+    basis: "해당 월 사용 인원 수",
+    enterprise: false,
+  },
+  {
+    label: "일용직 일일계정",
+    price: "계정당 월 3,000원",
+    basis: "해당 월 활성화된 일일계정 수",
+    enterprise: false,
+  },
+  {
+    label: "엔터프라이즈",
+    price: "협의",
+    basis: "사업장 정규 근로자 100명 이상 — 별도 상담",
+    enterprise: true,
+  },
 ];
 
 const steps = [
-  { title: "계약", desc: "도입 규모와 현장 상황을 확인하고 계약을 체결합니다." },
-  { title: "사업장·조직·권한 세팅", desc: "사업장, 조직 구조, 사용자 권한을 설정합니다." },
-  { title: "현장 온보딩", desc: "관리자 교육을 진행하고, 근로자는 QR 안내만으로 시작합니다." },
+  {
+    title: "계약",
+    desc: "도입 규모와 현장 상황을 확인하고 계약을 체결합니다.",
+  },
+  {
+    title: "사업장·조직·권한 세팅",
+    desc: "사업장, 조직 구조, 사용자 권한을 설정합니다.",
+  },
+  {
+    title: "현장 온보딩",
+    desc: "관리자 교육을 진행하고, 근로자는 QR 안내만으로 시작합니다.",
+  },
 ];
 </script>
 
@@ -95,14 +123,16 @@ const steps = [
   margin: 0 auto;
 }
 .page-head__title {
-  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  font-size: var(--intro-text-lg);
+  line-height: var(--intro-lh-tight);
   font-weight: 800;
   color: var(--color-text-strong);
   margin: 0 0 12px;
 }
 .page-head__lead {
   color: var(--color-text-muted);
-  line-height: 1.7;
+  font-size: var(--intro-text-sm);
+  line-height: var(--intro-lh-base);
   margin: 0;
 }
 .section {
@@ -116,7 +146,7 @@ const steps = [
   margin: 0 auto;
 }
 .section__title {
-  font-size: 1.4rem;
+  font-size: var(--intro-text-md);
   font-weight: 800;
   color: var(--color-text-strong);
   text-align: center;
@@ -134,7 +164,7 @@ const steps = [
   padding: 16px 20px;
   text-align: left;
   border-bottom: 1px solid var(--color-border);
-  font-size: 14px;
+  font-size: var(--intro-text-sm);
 }
 .pricing-table th {
   background: var(--color-bg);
@@ -148,7 +178,7 @@ const steps = [
 }
 .pricing-note {
   text-align: center;
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
   margin: 16px 0 0;
 }
@@ -179,12 +209,12 @@ const steps = [
 }
 .steps__item h3 {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: var(--intro-text-sm);
   color: var(--color-text-strong);
 }
 .steps__item p {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
 }
 

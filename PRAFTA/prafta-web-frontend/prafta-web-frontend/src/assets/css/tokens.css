@@ -32,7 +32,8 @@
   --card-bg: #ffffff;
   --card-border: 1px solid var(--color-border);
   --card-radius: 16px;
-  --card-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --card-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
   --card-padding: 20px;
 
   /* 인풋/버튼 radius (기준의 80%) */
@@ -54,7 +55,8 @@
 
   /* App Shell */
   --header-height: 56px;
-  --header-shadow: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
+  --header-shadow:
+    0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.1);
   --header-padding-x: 20px;
   --header-gap: 12px;
   --header-right-gap: 8px;
@@ -65,6 +67,21 @@
   --lnb-item-padding-x: 12px;
 
   /* 인트로(마케팅 랜딩) 전용 — 근태/안전 축 라벨·로고 한정 */
-  --color-attd: #2563eb;          /* 근태 축 라벨·아이콘 전용(블루) */
-  --color-brand-yellow: #f5b301;  /* 로고 F 액센트·브랜드 스토리 스테이지 전용 */
+  --color-attd: #2563eb; /* 근태 축 라벨·아이콘 전용(블루) */
+  --color-brand-yellow: #f5b301; /* 로고 F 액센트·브랜드 스토리 스테이지 전용 */
+
+  /* 인트로 타이포 스케일 — 역할별 대/중/소 + 보조 4단.
+     인트로 화면의 "콘텐츠 텍스트"는 이 토큰만 쓴다(px/rem 하드코딩 금지).
+       대(lg) = 페이지 대표 제목(h1)
+       중(md) = 섹션 제목(h2/h3)
+       소(sm) = 본문 — 설명 문단·리드·불릿·카드 본문
+       보조(xs) = 캡션·주석·메타(푸터, 이미지 설명, 라벨)
+     ※ 헤더 메뉴·버튼·앵커탭 등 UI 크롬과, 자체 cqi 스케일을 쓰는
+        브랜드 스토리 스테이지는 이 스케일 적용 대상이 아니다. */
+  --intro-text-lg: clamp(1.9rem, 3.6vw, 2.75rem);
+  --intro-text-md: clamp(1.35rem, 2.2vw, 1.75rem);
+  --intro-text-sm: 1rem;
+  --intro-text-xs: 0.8125rem;
+  --intro-lh-tight: 1.35; /* 제목용 */
+  --intro-lh-base: 1.7; /* 본문용 */
 }

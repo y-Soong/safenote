@@ -14,11 +14,21 @@
       <form class="contact-form" @submit.prevent="handleSubmit">
         <div class="field">
           <label for="companyName">회사명 <span class="req">*</span></label>
-          <input id="companyName" v-model="form.companyName" type="text" required />
+          <input
+            id="companyName"
+            v-model="form.companyName"
+            type="text"
+            required
+          />
         </div>
         <div class="field">
           <label for="managerName">담당자명 <span class="req">*</span></label>
-          <input id="managerName" v-model="form.managerName" type="text" required />
+          <input
+            id="managerName"
+            v-model="form.managerName"
+            type="text"
+            required
+          />
         </div>
         <div class="field">
           <label for="phone">연락처 <span class="req">*</span></label>
@@ -45,14 +55,23 @@
 
         <div class="field">
           <label for="siteCount">사업장(현장) 수</label>
-          <input id="siteCount" v-model="form.siteCount" type="number" min="0" />
+          <input
+            id="siteCount"
+            v-model="form.siteCount"
+            type="number"
+            min="0"
+          />
         </div>
 
         <div class="field">
           <label for="headcountRange">상시 인원 규모</label>
           <select id="headcountRange" v-model="form.headcountRange">
             <option value="">선택해 주세요</option>
-            <option v-for="opt in headcountOptions" :key="opt.value" :value="opt.value">
+            <option
+              v-for="opt in headcountOptions"
+              :key="opt.value"
+              :value="opt.value"
+            >
               {{ opt.label }}
             </option>
           </select>
@@ -60,7 +79,12 @@
 
         <div class="field">
           <label for="message">문의 내용 <span class="req">*</span></label>
-          <textarea id="message" v-model="form.message" rows="5" required></textarea>
+          <textarea
+            id="message"
+            v-model="form.message"
+            rows="5"
+            required
+          ></textarea>
         </div>
 
         <label class="agree-row">
@@ -71,7 +95,12 @@
           >
         </label>
 
-        <IntroButton type="submit" variant="primary" size="lg" :disabled="!canSubmit">
+        <IntroButton
+          type="submit"
+          variant="primary"
+          size="lg"
+          :disabled="!canSubmit"
+        >
           문의 보내기
         </IntroButton>
       </form>
@@ -82,7 +111,8 @@
             100명 이상 사업장은 엔터프라이즈 도입 상담을 권장합니다.
           </p>
           <p class="contact-aside__email">
-            직통 이메일: <a href="mailto:contact@prafta.com">contact@prafta.com</a>
+            직통 이메일:
+            <a href="mailto:contact@prafta.com">contact@prafta.com</a>
           </p>
         </div>
       </aside>
@@ -149,7 +179,9 @@ const handleSubmit = () => {
     `연락처: ${form.phone}`,
     `이메일: ${form.email}`,
     `관심 영역: ${
-      form.interests.length ? form.interests.map(interestLabel).join(", ") : "미선택"
+      form.interests.length
+        ? form.interests.map(interestLabel).join(", ")
+        : "미선택"
     }`,
     `사업장(현장) 수: ${form.siteCount || "미입력"}`,
     `상시 인원 규모: ${
@@ -182,7 +214,8 @@ const handleSubmit = () => {
   margin: 0 auto;
 }
 .page-head__title {
-  font-size: clamp(1.5rem, 3vw, 2.1rem);
+  font-size: var(--intro-text-lg);
+  line-height: var(--intro-lh-tight);
   font-weight: 800;
   color: var(--color-text-strong);
   line-height: 1.4;
@@ -271,13 +304,13 @@ const handleSubmit = () => {
   padding: 20px;
 }
 .contact-aside__title {
-  font-size: 13px;
+  font-size: var(--intro-text-sm);
   font-weight: 700;
   color: var(--color-text-strong);
   margin: 0 0 12px;
 }
 .contact-aside__email {
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
   margin: 0;
 }

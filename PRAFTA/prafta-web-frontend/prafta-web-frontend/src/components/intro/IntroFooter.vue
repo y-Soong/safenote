@@ -75,7 +75,7 @@ const sitemapLinks = [
   margin: 0 0 4px;
 }
 .intro-footer__company-meta {
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
   margin: 0;
 }
@@ -105,7 +105,7 @@ const sitemapLinks = [
   gap: 12px;
 }
 .intro-footer__slogan {
-  font-size: 13px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
   margin: 0;
 }
@@ -113,7 +113,7 @@ const sitemapLinks = [
   display: flex;
   align-items: center;
   gap: 16px;
-  font-size: 12px;
+  font-size: var(--intro-text-xs);
   color: var(--color-text-muted);
 }
 .intro-footer__util {
