@@ -3,13 +3,14 @@
     <IntroHeader />
 
     <section class="mission">
-      <!-- 줄바꿈 위치를 카피 의도대로 고정한다(자동 줄바꿈에 맡기지 않음) -->
-      <p class="mission__slogan">
+      <!-- 이 문장이 회사소개 페이지의 대표 제목이라 h1 (guide §3.2 페이지당 h1 1개).
+           줄바꿈 위치는 카피 의도대로 고정한다(자동 줄바꿈에 맡기지 않음). -->
+      <h1 class="mission__slogan">
         <span class="mission__line">현장이 돌아가는 것만으로</span>
         <span class="mission__line"
           >근태와 안전이 증명되는 회사를 만듭니다.</span
         >
-      </p>
+      </h1>
     </section>
 
     <IntroBrandStory />
@@ -25,6 +26,13 @@
       </div>
     </section>
 
+    <!-- 메인(/)의 Hero·"왜 하나의 시스템" 섹션을 그대로 붙인다(2026-08-31 사용자 지시).
+         h1 은 페이지당 1개 규칙에 따라 h2 로 낮추고, 기능 맵 앵커는 이 페이지에 없으므로
+         메인으로 보낸다. -->
+    <IntroHeroSection heading-tag="h2" features-to="/" />
+
+    <IntroWhySection alt />
+
     <IntroFooter />
     <IntroFloatingCta />
   </div>
@@ -35,6 +43,8 @@ import IntroHeader from "@/components/intro/IntroHeader.vue";
 import IntroFooter from "@/components/intro/IntroFooter.vue";
 import IntroFloatingCta from "@/components/intro/IntroFloatingCta.vue";
 import IntroBrandStory from "@/components/intro/IntroBrandStory.vue";
+import IntroHeroSection from "@/components/intro/IntroHeroSection.vue";
+import IntroWhySection from "@/components/intro/IntroWhySection.vue";
 
 // 회사 정보 표(회사명·대표·사업자등록번호)와 하단 CTA 밴드는 2026-08-31 사용자 지시로 제거.
 // 회사 정보는 푸터에 그대로 남아 있다.

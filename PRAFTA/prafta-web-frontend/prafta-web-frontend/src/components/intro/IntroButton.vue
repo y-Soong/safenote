@@ -7,6 +7,16 @@
   >
     <slot />
   </router-link>
+  <!-- 페이지 내 앵커(#id) 등 라우터를 거치지 않는 이동. 버튼 스타일이 scoped 라
+       호출 측에서 <a class="intro-button"> 를 직접 쓰면 스타일이 먹지 않으므로 여기서 받는다. -->
+  <a
+    v-else-if="href"
+    :href="href"
+    class="intro-button"
+    :class="[`intro-button--${variant}`, `intro-button--${size}`]"
+  >
+    <slot />
+  </a>
   <button
     v-else
     :type="type"
@@ -23,6 +33,7 @@ defineProps({
   variant: { type: String, default: "primary" },
   size: { type: String, default: "lg" },
   to: { type: String, default: "" },
+  href: { type: String, default: "" },
   type: { type: String, default: "button" },
   disabled: { type: Boolean, default: false },
 });
