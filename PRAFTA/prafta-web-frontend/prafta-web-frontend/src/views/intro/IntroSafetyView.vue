@@ -83,16 +83,7 @@
       </div>
     </section>
 
-    <section class="cross-link">
-      <div class="cross-link__inner">
-        <router-link to="/attendance" class="feature-link"
-          >모든 안전활동의 기반에는 근태가 있습니다. 누가, 언제, 어느 현장에
-          있었는가 — 근태관리 보기 →</router-link
-        >
-      </div>
-    </section>
-
-    <IntroCtaBand heading="안전관리, PRAFTA로 시작해 보세요." />
+    <!-- 하단 크로스링크 밴드와 CTA 밴드는 2026-08-31 사용자 지시로 제거 -->
 
     <IntroFooter />
     <IntroFloatingCta />
@@ -106,7 +97,6 @@ import IntroFloatingCta from "@/components/intro/IntroFloatingCta.vue";
 import IntroAnchorTabs from "@/components/intro/IntroAnchorTabs.vue";
 import IntroFeatureSection from "@/components/intro/IntroFeatureSection.vue";
 import IntroIconCard from "@/components/intro/IntroIconCard.vue";
-import IntroCtaBand from "@/components/intro/IntroCtaBand.vue";
 import subcontract1 from "@/assets/intro/subcontract-1.png";
 import subcontract2 from "@/assets/intro/subcontract-2.png";
 import subcontract3 from "@/assets/intro/subcontract-3.png";
@@ -243,19 +233,6 @@ const aiCards = [
 }
 .ai-section__footnote {
   margin-top: 24px;
-}
-.feature-link {
-  color: var(--color-primary);
-  font-weight: 700;
-  text-decoration: none;
-}
-.cross-link {
-  padding: 32px var(--header-padding-x);
-  text-align: center;
-}
-.cross-link__inner {
-  max-width: 720px;
-  margin: 0 auto;
 }
 
 @media (max-width: 767px) {

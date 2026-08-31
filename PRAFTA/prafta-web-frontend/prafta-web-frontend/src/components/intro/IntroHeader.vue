@@ -63,11 +63,12 @@ import IntroButton from "./IntroButton.vue";
 const route = useRoute();
 const mobileMenuOpen = ref(false);
 
+// 노출 순서 = 배열 순서. 회사소개(=루트)를 맨 앞에 둔다(2026-08-31 사용자 지시).
 const navLinks = [
+  { path: "/", label: "회사소개" },
   { path: "/attendance", label: "근태관리" },
   { path: "/safety", label: "안전관리" },
   { path: "/pricing", label: "이용요금" },
-  { path: "/", label: "회사소개" },
 ];
 
 const isActive = (path) => route.path === path;

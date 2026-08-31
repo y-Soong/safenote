@@ -69,16 +69,7 @@
       reverse
     />
 
-    <section class="cross-link">
-      <div class="cross-link__inner">
-        <router-link to="/safety" class="feature-link"
-          >일용직의 출퇴근 기록은 그대로 안전활동의 기반이 됩니다 — 안전관리
-          보기 →</router-link
-        >
-      </div>
-    </section>
-
-    <IntroCtaBand heading="근태관리, PRAFTA로 시작해 보세요." />
+    <!-- 하단 크로스링크 밴드와 CTA 밴드는 2026-08-31 사용자 지시로 제거 -->
 
     <IntroFooter />
     <IntroFloatingCta />
@@ -91,7 +82,6 @@ import IntroFooter from "@/components/intro/IntroFooter.vue";
 import IntroFloatingCta from "@/components/intro/IntroFloatingCta.vue";
 import IntroAnchorTabs from "@/components/intro/IntroAnchorTabs.vue";
 import IntroFeatureSection from "@/components/intro/IntroFeatureSection.vue";
-import IntroCtaBand from "@/components/intro/IntroCtaBand.vue";
 import contractEsign from "@/assets/intro/contract-esign.jpg";
 import contractAdmin from "@/assets/intro/contract-admin.png";
 
@@ -188,19 +178,5 @@ const dailyWorkerImages = [
 .feature-note--strong {
   color: var(--color-text-strong);
   font-weight: 700;
-}
-.feature-link {
-  color: var(--color-primary);
-  font-weight: 700;
-  text-decoration: none;
-}
-.cross-link {
-  padding: 32px var(--header-padding-x);
-  text-align: center;
-  background: var(--color-bg);
-}
-.cross-link__inner {
-  max-width: 720px;
-  margin: 0 auto;
 }
 </style>
