@@ -22,16 +22,7 @@
       </div>
 
       <div class="intro-feature__visual">
-        <template v-if="images && images.length">
-          <IntroMockupFrame
-            v-for="(img, i) in images"
-            :key="img.src"
-            :variant="img.variant || 'browser'"
-            :src="img.src"
-            :alt="img.alt"
-            :class="{ 'intro-feature__visual-secondary': i > 0 }"
-          />
-        </template>
+        <IntroImageGallery v-if="images && images.length" :images="images" />
         <div v-else class="intro-feature__placeholder">
           <slot name="placeholder">
             <span class="intro-feature__placeholder-icon" aria-hidden="true"
@@ -46,7 +37,7 @@
 </template>
 
 <script setup>
-import IntroMockupFrame from "./IntroMockupFrame.vue";
+import IntroImageGallery from "./IntroImageGallery.vue";
 
 defineProps({
   id: { type: String, default: "" },
@@ -135,10 +126,6 @@ defineProps({
   display: flex;
   flex-direction: column;
   gap: 12px;
-}
-.intro-feature__visual-secondary {
-  max-width: 70%;
-  align-self: flex-end;
 }
 .intro-feature__placeholder {
   display: flex;

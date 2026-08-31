@@ -5,7 +5,9 @@
     <section class="page-head">
       <div class="page-head__inner">
         <p class="page-head__kicker">ATTENDANCE</p>
-        <h1 class="page-head__title">근태관리 — 출근 한 번이면, 마감까지 빈틈없이</h1>
+        <h1 class="page-head__title">
+          근태관리 — 출근 한 번이면, 마감까지 빈틈없이
+        </h1>
       </div>
     </section>
 
@@ -14,7 +16,6 @@
     <IntroFeatureSection
       id="clock"
       axis="attd"
-      label="근태관리"
       heading="GPS 지오펜스로, 현장에서의 출퇴근을 정확하게"
       :bullets="clockBullets"
     />
@@ -22,7 +23,6 @@
     <IntroFeatureSection
       id="schedule"
       axis="attd"
-      label="근태관리"
       heading="교대 패턴을 등록하면, 1년치 스케줄이 자동으로"
       :bullets="scheduleBullets"
       reverse
@@ -31,7 +31,6 @@
     <IntroFeatureSection
       id="leave"
       axis="attd"
-      label="근태관리"
       heading="부여부터 촉진까지, 연차 관리가 스스로 돌아갑니다"
       :bullets="leaveBullets"
     />
@@ -39,7 +38,6 @@
     <IntroFeatureSection
       id="approval"
       axis="attd"
-      label="근태관리"
       heading="네 종류의 결재를 한 화면에서"
       :bullets="approvalBullets"
       reverse
@@ -48,14 +46,13 @@
     <IntroFeatureSection
       id="closing"
       axis="attd"
-      label="근태관리"
       heading="빠진 것이 있으면, 마감이 잠깁니다"
       :bullets="closingBullets"
     >
       <template #footnote>
         <p class="feature-note">
-          마감된 근태 데이터는 앞으로 급여 처리 시스템과의 연동 등으로
-          확장될 수 있습니다.
+          마감된 근태 데이터는 앞으로 급여 처리 시스템과의 연동 등으로 확장될 수
+          있습니다.
         </p>
         <p class="feature-note feature-note--strong">
           마감이 곧 검증입니다. 빠진 기록이 있는 채로는 닫히지 않습니다.
@@ -66,7 +63,6 @@
     <IntroFeatureSection
       id="daily-worker"
       axis="attd"
-      label="근태관리"
       heading="QR 한 번으로 출역 등록부터 근로계약 체결·교부·3년 보존까지"
       :bullets="dailyWorkerBullets"
       :images="dailyWorkerImages"
@@ -76,7 +72,8 @@
     <section class="cross-link">
       <div class="cross-link__inner">
         <router-link to="/safety" class="feature-link"
-          >일용직의 출퇴근 기록은 그대로 안전활동의 기반이 됩니다 — 안전관리 보기 →</router-link
+          >일용직의 출퇴근 기록은 그대로 안전활동의 기반이 됩니다 — 안전관리
+          보기 →</router-link
         >
       </div>
     </section>
@@ -108,9 +105,9 @@ const tabs = [
 ];
 
 const clockBullets = [
-  "사업장별 지오펜스 반경 설정, 범위 밖은 \"근무지 외\" 태그",
+  '사업장별 지오펜스 반경 설정, 범위 밖은 "근무지 외" 태그',
   "외근은 사유 입력으로 등록",
-  "GPS 미확인 건은 \"확인 필요\"로 관리되어 마감 전 반드시 해소",
+  'GPS 미확인 건은 "확인 필요"로 관리되어 마감 전 반드시 해소',
   "하루 2구간 근무·재출근 지원",
   "스케줄 대비 지각·조퇴·초과근무 자동 판정과 인정시간 산출",
 ];

@@ -5,7 +5,9 @@
     <section class="page-head">
       <div class="page-head__inner">
         <p class="page-head__kicker">SAFETY</p>
-        <h1 class="page-head__title">안전관리 — 안전활동이 그대로 기록이 됩니다</h1>
+        <h1 class="page-head__title">
+          안전관리 — 안전활동이 그대로 기록이 됩니다
+        </h1>
       </div>
     </section>
 
@@ -14,7 +16,6 @@
     <IntroFeatureSection
       id="tbm"
       axis="safety"
-      label="안전관리"
       heading="매일 아침 TBM, 개설부터 수료 서명까지 한 흐름으로"
       :bullets="tbmBullets"
     />
@@ -22,7 +23,6 @@
     <IntroFeatureSection
       id="risk"
       axis="safety"
-      label="안전관리"
       heading="가능성×중대성 매트릭스로, 평가부터 개선까지 이력으로"
       :bullets="riskBullets"
       reverse
@@ -31,7 +31,6 @@
     <IntroFeatureSection
       id="inspection"
       axis="safety"
-      label="안전관리"
       heading="체크리스트 점검, 조작할 수 없는 기록으로"
       :bullets="inspectionBullets"
     />
@@ -39,7 +38,6 @@
     <IntroFeatureSection
       id="accident"
       axis="safety"
-      label="안전관리"
       heading="사고 1건을 열면, 관련 기록이 한 화면에 모입니다"
       :bullets="accidentBullets"
       reverse
@@ -54,7 +52,6 @@
     <IntroFeatureSection
       id="subcontract"
       axis="safety"
-      label="안전관리"
       heading="원청–협력사 n차 구조를 시스템이 그대로 수용합니다"
       :bullets="subcontractBullets"
       :images="subcontractImages"
@@ -69,7 +66,6 @@
 
     <section id="ai" class="ai-section">
       <div class="ai-section__inner">
-        <p class="ai-section__label">안전관리</p>
         <h3 class="ai-section__heading">문서 작업은 AI가, 판단은 담당자가</h3>
         <div class="grid grid--2">
           <IntroIconCard
@@ -140,7 +136,7 @@ const inspectionBullets = [
   "모바일 체크리스트(양호/불량) + 사진 첨부",
   "점검 수행일 서버 시간 강제 — 소급 입력 차단",
   "불량 원천값 불변, 조치는 별도 기록",
-  "문항 변경 이력 보존 — \"그 시점의 점검 의무\"까지 증빙",
+  '문항 변경 이력 보존 — "그 시점의 점검 의무"까지 증빙',
 ];
 const accidentBullets = [
   "사고 등록 시 근태(당일)·순회점검(1주)·위험성평가(3개월)·아차사고(3개월)·TBM(당일) 기록을 확정 사본으로 일괄 구성",
@@ -149,20 +145,40 @@ const accidentBullets = [
 ];
 const subcontractBullets = [
   "미러 사업장 — 원청 기준을 협력사에 복제·동기화, 협력사는 세팅 없이 시작",
-  "근태·위험성평가·아차사고는 \"요청→승인→스냅샷\" 공유",
+  '근태·위험성평가·아차사고는 "요청→승인→스냅샷" 공유',
   "순회점검 결과는 원청 화면에 즉시 반영",
   "2차·3차 협력사까지 수용",
   "연동 해지 시 협력사 데이터는 협력사 소유로 독립(락인 없음)",
 ];
 const subcontractImages = [
-  { src: subcontract1, alt: "하도급 데이터 연동요청 화면 대표", variant: "browser" },
-  { src: subcontract2, alt: "하도급 데이터 연동요청 보조 화면 1", variant: "browser" },
-  { src: subcontract3, alt: "하도급 데이터 연동요청 보조 화면 2", variant: "browser" },
+  {
+    src: subcontract1,
+    alt: "하도급 데이터 연동요청 화면 대표",
+    variant: "browser",
+  },
+  {
+    src: subcontract2,
+    alt: "하도급 데이터 연동요청 보조 화면 1",
+    variant: "browser",
+  },
+  {
+    src: subcontract3,
+    alt: "하도급 데이터 연동요청 보조 화면 2",
+    variant: "browser",
+  },
 ];
 
 const aiCards = [
-  { icon: "🧾", title: "TBM 교육안 자동 생성", desc: "교육자료 AI 분석 + 해당 현장 위험성평가를 통합해 교육안 초안 생성, 분량 지정(800~5,000자). 관리자 검토·확정 후에만 사용." },
-  { icon: "🔍", title: "위험성평가 유해요인·개선안 도출", desc: "현장 사진 기반으로 AI가 유해요인·개선안 초안 제시, 관리자 확정이 항상 우선." },
+  {
+    icon: "🧾",
+    title: "TBM 교육안 자동 생성",
+    desc: "교육자료 AI 분석 + 해당 현장 위험성평가를 통합해 교육안 초안 생성, 분량 지정(800~5,000자). 관리자 검토·확정 후에만 사용.",
+  },
+  {
+    icon: "🔍",
+    title: "위험성평가 유해요인·개선안 도출",
+    desc: "현장 사진 기반으로 AI가 유해요인·개선안 초안 제시, 관리자 확정이 항상 우선.",
+  },
 ];
 </script>
 
@@ -212,12 +228,6 @@ const aiCards = [
   max-width: 1160px;
   margin: 0 auto;
   text-align: center;
-}
-.ai-section__label {
-  color: var(--color-primary);
-  font-weight: 700;
-  font-size: 13px;
-  margin: 0 0 10px;
 }
 .ai-section__heading {
   font-size: 1.5rem;
