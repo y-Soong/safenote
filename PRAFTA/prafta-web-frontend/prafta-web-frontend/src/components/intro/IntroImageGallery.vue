@@ -259,6 +259,20 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
+/* 카테고리 간 이미지 크기 통일 —
+   웹 화면 캡처는 가로형(약 2.1:1)이라 컬럼 폭을 채워도 높이가 낮은 반면,
+   폰 화면 캡처는 세로형(약 0.51:1)이라 같은 폭 기준으로는 2배 가까이 커진다.
+   갤러리 안에서는 폰 목업을 세로 기준으로 잘라 웹 캡처와 같은 크기대로 맞춘다.
+   (세부 내용은 이미지를 눌러 확대 보기로 확인) */
+.intro-gallery :deep(.intro-mockup--phone) {
+  width: fit-content;
+  max-width: 100%;
+}
+.intro-gallery :deep(.intro-mockup--phone .intro-mockup__screen img) {
+  width: auto;
+  max-height: 260px;
+}
+
 /* ── 슬라이드 스테이지 ───────────────────────────── */
 .intro-gallery__stage {
   display: grid;
