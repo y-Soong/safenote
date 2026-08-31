@@ -121,6 +121,16 @@ function removeFlyers() {
     .forEach((f) => f.remove());
 }
 
+// 재생 속도 배율 — 단일 출처는 CSS 의 --bs-speed(스테이지에 선언).
+// 1 = 원본 속도, 0.6 = 원본의 60% 속도(그만큼 느리게). JS 대기시간과 CSS transition 이
+// 어긋나면 연출이 깨지므로 JS 는 값을 읽어 쓰고, 숫자는 CSS 한 곳에서만 고친다.
+function speedFactor() {
+  const el = stageEl.value;
+  const raw = el ? getComputedStyle(el).getPropertyValue("--bs-speed") : "";
+  const n = parseFloat(raw);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 // 원본 reset() 이식 — show/on 클래스·flyer·인라인 스타일을 전부 되돌리고 타이머 정리
 function reset() {
   clearAllTimers();
@@ -168,6 +178,9 @@ function flyToWordmark() {
   const units = unitsOf();
   const slots = slotsOf();
   const scopeAttr = scopeAttrName();
+  // 아래 대기시간은 원본 기준값이며, 실제 지연은 --bs-speed 로 나눠 적용한다
+  const spd = speedFactor();
+  const d = (ms) => Math.round(ms / spd);
 
   slots.forEach((s) => {
     s.style.visibility = "hidden";
@@ -205,7 +218,7 @@ function flyToWordmark() {
           flyer.style.color = "var(--bs-ink)";
         }
       },
-      40 + i * 110
+      d(40 + i * 110)
     );
   });
 
@@ -219,7 +232,7 @@ function flyToWordmark() {
       removeFlyers();
       slots[3] && slots[3].classList.add("is-safety");
     },
-    1400 + n * 110
+    d(1400 + n * 110)
   );
 
   // 5) tagline + sub
@@ -228,13 +241,13 @@ function flyToWordmark() {
       taglineEl.value && taglineEl.value.classList.add("show");
       subEl.value && subEl.value.classList.add("show");
     },
-    2050 + n * 110
+    d(2050 + n * 110)
   );
 
   // 6) REPLAY
   wait(
     () => replayEl.value && replayEl.value.classList.add("show"),
-    2750 + n * 110
+    d(2750 + n * 110)
   );
 }
 
@@ -259,23 +272,27 @@ const play = ({ force = false } = {}) => {
     stageEl.value.classList.add("is-motion-forced");
   }
 
+  // t 는 원본 기준 누적 시각이고, 실제 지연은 --bs-speed 로 나눈 d(t) 를 쓴다
+  const spd = speedFactor();
+  const d = (ms) => Math.round(ms / spd);
+
   let t = 400;
-  wait(() => eyebrowEl.value && eyebrowEl.value.classList.add("show"), t);
+  wait(() => eyebrowEl.value && eyebrowEl.value.classList.add("show"), d(t));
 
   // 1) 사이클 문구를 unit → joint 순서로 하나씩 세운다
   t += 500;
   piecesOf().forEach((el) => {
-    wait(() => el.classList.add("show"), t);
+    wait(() => el.classList.add("show"), d(t));
     t += el.classList.contains("brand-story__unit") ? 430 : 160;
   });
 
   // 2) 잠시 유지한 뒤 한글·영문 꼬리·화살표를 지워 머리글자만 남긴다
   t += 1400;
-  wait(() => stageEl.value && stageEl.value.classList.add("is-isolate"), t);
+  wait(() => stageEl.value && stageEl.value.classList.add("is-isolate"), d(t));
 
   // 3) 머리글자가 워드마크로 수렴
   t += 850;
-  wait(() => flyToWordmark(), t);
+  wait(() => flyToWordmark(), d(t));
 };
 
 // REPLAY 버튼 핸들러 — click 이벤트 객체가 play() 의 옵션 자리로 들어가지 않도록 감싼다
@@ -318,6 +335,10 @@ onBeforeUnmount(() => {
   --bs-muted: #7e8792;
   --bs-safety: #f5b301;
   --bs-line: #2a3038;
+  /* 재생 속도 배율(단일 출처) — 1 = 원본 속도, 0.6 = 원본의 60% 속도.
+     아래 transition 들과 JS 대기시간(speedFactor)이 모두 이 값을 나눠 쓴다.
+     속도를 바꿀 때는 이 숫자 하나만 고치면 된다. */
+  --bs-speed: 0.6;
   position: relative;
   width: min(96vw, 1120px);
   aspect-ratio: 16 / 9;
@@ -352,7 +373,7 @@ onBeforeUnmount(() => {
   color: var(--bs-muted);
   text-transform: uppercase;
   opacity: 0;
-  transition: opacity 0.8s ease;
+  transition: opacity calc(0.8s / var(--bs-speed)) ease;
   white-space: nowrap;
 }
 .brand-story__eyebrow.show {
@@ -374,8 +395,8 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(1.6cqi);
   transition:
-    opacity 0.55s ease,
-    transform 0.55s ease;
+    opacity calc(0.55s / var(--bs-speed)) ease,
+    transform calc(0.55s / var(--bs-speed)) ease;
   color: var(--bs-ink);
 }
 .brand-story__unit.show {
@@ -408,7 +429,7 @@ onBeforeUnmount(() => {
   align-self: center;
   padding-top: 2.4cqi;
   opacity: 0;
-  transition: opacity 0.55s ease;
+  transition: opacity calc(0.55s / var(--bs-speed)) ease;
 }
 .brand-story__joint.show {
   opacity: 0.85;
@@ -419,7 +440,7 @@ onBeforeUnmount(() => {
 .brand-story__stage.is-isolate .brand-story__rest,
 .brand-story__stage.is-isolate .brand-story__joint {
   opacity: 0;
-  transition: opacity 0.7s ease;
+  transition: opacity calc(0.7s / var(--bs-speed)) ease;
 }
 
 /* 워드마크 자리로 날아가는 머리글자 (JS 생성 — scopeAttrName() 으로 스코프 속성 부여) */
@@ -430,9 +451,9 @@ onBeforeUnmount(() => {
   color: var(--bs-safety);
   line-height: 1;
   transition:
-    transform 1.05s cubic-bezier(0.72, -0.02, 0.16, 1),
-    font-size 1.05s cubic-bezier(0.72, -0.02, 0.16, 1),
-    color 0.5s ease;
+    transform calc(1.05s / var(--bs-speed)) cubic-bezier(0.72, -0.02, 0.16, 1),
+    font-size calc(1.05s / var(--bs-speed)) cubic-bezier(0.72, -0.02, 0.16, 1),
+    color calc(0.5s / var(--bs-speed)) ease;
   will-change: transform;
   white-space: nowrap;
 }
@@ -459,10 +480,10 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: scale(0.96);
   transition:
-    opacity 0.35s ease,
-    transform 0.35s ease,
-    color 0.6s ease,
-    text-shadow 0.6s ease;
+    opacity calc(0.35s / var(--bs-speed)) ease,
+    transform calc(0.35s / var(--bs-speed)) ease,
+    color calc(0.6s / var(--bs-speed)) ease,
+    text-shadow calc(0.6s / var(--bs-speed)) ease;
 }
 .brand-story__slot.on {
   opacity: 1;
@@ -480,8 +501,8 @@ onBeforeUnmount(() => {
   opacity: 0;
   transform: translateY(1cqi);
   transition:
-    opacity 0.8s ease 0.1s,
-    transform 0.8s ease 0.1s;
+    opacity calc(0.8s / var(--bs-speed)) ease calc(0.1s / var(--bs-speed)),
+    transform calc(0.8s / var(--bs-speed)) ease calc(0.1s / var(--bs-speed));
 }
 .brand-story__tagline b {
   color: var(--bs-safety);
@@ -498,7 +519,8 @@ onBeforeUnmount(() => {
   text-indent: 0.24em;
   text-transform: uppercase;
   opacity: 0;
-  transition: opacity 0.8s ease 0.5s;
+  transition: opacity calc(0.8s / var(--bs-speed)) ease
+    calc(0.5s / var(--bs-speed));
   white-space: nowrap;
 }
 .brand-story__sub.show {

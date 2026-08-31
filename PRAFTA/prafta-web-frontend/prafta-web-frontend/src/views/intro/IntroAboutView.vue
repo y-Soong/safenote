@@ -3,8 +3,12 @@
     <IntroHeader />
 
     <section class="mission">
+      <!-- 줄바꿈 위치를 카피 의도대로 고정한다(자동 줄바꿈에 맡기지 않음) -->
       <p class="mission__slogan">
-        현장이 돌아가는 것만으로 근태와 안전이 증명되는 회사를 만듭니다.
+        <span class="mission__line">현장이 돌아가는 것만으로</span>
+        <span class="mission__line"
+          >근태와 안전이 증명되는 회사를 만듭니다.</span
+        >
       </p>
     </section>
 
@@ -21,23 +25,6 @@
       </div>
     </section>
 
-    <section class="section section--alt">
-      <div class="section__inner section__inner--narrow">
-        <table class="company-table">
-          <tbody>
-            <tr v-for="row in companyInfo" :key="row.label">
-              <th>{{ row.label }}</th>
-              <td>{{ row.value }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <IntroCtaBand
-      heading="프라프타와 함께, 현장 운영을 하나로 만들어 보세요."
-    />
-
     <IntroFooter />
     <IntroFloatingCta />
   </div>
@@ -47,16 +34,10 @@
 import IntroHeader from "@/components/intro/IntroHeader.vue";
 import IntroFooter from "@/components/intro/IntroFooter.vue";
 import IntroFloatingCta from "@/components/intro/IntroFloatingCta.vue";
-import IntroCtaBand from "@/components/intro/IntroCtaBand.vue";
 import IntroBrandStory from "@/components/intro/IntroBrandStory.vue";
 
-// 설립/소재지는 PH(§10 목록 #5)라 표에서 제외 — 임의 값 생성 금지
-const companyInfo = [
-  { label: "회사명", value: "프라프타" },
-  { label: "대표", value: "김여진" },
-  { label: "사업자등록번호", value: "111-12-46366" },
-  { label: "주요 서비스", value: "PRAFTA(근태·안전 통합 SaaS)" },
-];
+// 회사 정보 표(회사명·대표·사업자등록번호)와 하단 CTA 밴드는 2026-08-31 사용자 지시로 제거.
+// 회사 정보는 푸터에 그대로 남아 있다.
 </script>
 
 <style scoped>
@@ -75,16 +56,15 @@ const companyInfo = [
   font-weight: 800;
   color: var(--color-text-strong);
   line-height: 1.5;
-  /* 한국어는 기본값(word-break:normal)에서 음절 단위로 끊겨 "만/듭니다."처럼 어절 중간이
-     갈라진다. keep-all 로 어절(띄어쓰기) 단위 줄바꿈을 강제하고, balance 로 두 줄 길이를 맞춘다. */
+  /* 줄바꿈은 .mission__line 으로 고정하되, 좁은 화면에서 한 줄이 더 접힐 때
+     한국어가 음절 단위로 갈라지지 않도록(예: "만/듭니다.") 어절 단위를 유지한다. */
   word-break: keep-all;
-  text-wrap: balance;
+}
+.mission__line {
+  display: block;
 }
 .section {
   padding: 56px var(--header-padding-x);
-}
-.section--alt {
-  background: var(--color-bg);
 }
 .section__inner {
   max-width: 900px;
@@ -99,25 +79,5 @@ const companyInfo = [
   line-height: 1.8;
   font-size: 15px;
   margin: 0;
-}
-.company-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.company-table th,
-.company-table td {
-  padding: 14px 4px;
-  text-align: left;
-  border-bottom: 1px solid var(--color-border);
-  font-size: 14px;
-}
-.company-table th {
-  width: 160px;
-  color: var(--color-text-muted);
-  font-weight: 600;
-}
-.company-table td {
-  color: var(--color-text-strong);
-  font-weight: 600;
 }
 </style>
