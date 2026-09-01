@@ -182,13 +182,23 @@
                 </tr>
               </template>
               <template v-else>
+                <!-- key 는 termsVersion 기준. termsId 는 이 테이블 전 행이 동일해 중복 key 가 된다. -->
                 <tr
                   v-for="(termsDetail, idx) in detailSortedData"
-                  :key="termsDetail.termsId"
+                  :key="termsDetail.termsVersion"
+                  :class="{ 'is-current-terms': termsDetail.currentYn === 'Y' }"
                   @dblclick="fnAddRow(termsDetail)"
                 >
                   <td style="text-align: center">{{ idx + 1 }}</td>
-                  <td>{{ termsDetail.termsVersion }}</td>
+                  <td>
+                    {{ termsDetail.termsVersion }}
+                    <!-- 지금 가입·동의 화면에 실제로 노출되는 버전 표시 -->
+                    <span
+                      v-if="termsDetail.currentYn === 'Y'"
+                      class="terms-current-badge"
+                      >시행중</span
+                    >
+                  </td>
                   <td>{{ termsDetail.requiredYn }}</td>
                   <td>
                     {{ formatYmdDot(termsDetail.strDate) }}
@@ -402,4 +412,20 @@ async function fnAlertMsg(message, afterConfirmCallback) {
 }
 </script>
 
-<style scoped></style>
+<style scoped>
+/* 현행(서비스 노출) 버전 강조 — 관리자가 가입 화면에 실제로 뜨는 버전을 즉시 구분하도록 한다. */
+.terms-current-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: var(--btn-radius);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.is-current-terms {
+  background: var(--color-bg);
+}
+</style>

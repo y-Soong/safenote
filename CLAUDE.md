@@ -139,6 +139,12 @@ SQL 작성 규칙 (재확인)
 
 모든 SQL은 실제 DB 스키마와 100% 일치해야 함
 
+현행/이력 쌍 테이블은 마이그레이션 SQL에서도 반드시 함께 쓴다 (2026-09-01 신설)
+
+- 대표 사례: **약관** — `TB_TERMS`(현행, 가입·동의 화면이 읽음) ↔ `TB_TERMS_ID_VERSION`(버전 이력, 관리 화면이 읽음). 화면 저장 로직(`Baim03ServiceImpl.updateTermsInfo`)은 두 테이블을 한 트랜잭션에서 처리하므로 안전하고, **직접 실행하는 마이그레이션 SQL만 이 함정에 빠진다.**
+- 실제 사고: `prafta-terms-real-content-1.sql`(2026-07-20 실행)이 `TB_TERMS` 만 UPDATE 하고 이력 INSERT 를 누락(파일 내 `TB_TERMS_ID_VERSION` 등장 0회) → 6건 중 5건에서 **현재 서비스 중인 약관 본문이 관리 화면에 표시되지 않음**. 개발·운영에 19초 간격으로 같은 스크립트를 돌려 결함까지 양쪽에 복제됨.
+- 규칙: 현행 테이블을 직접 UPDATE 하는 SQL 은 이력 테이블 INSERT 를 **짝으로** 포함한다. 이력 백필 시 `INSERT_DATE` 에 `NOW()` 대신 원본의 `UPDATE_DATE` 를, `INSERT_NO` 에 `UPDATE_NO` 를 승계해 시간 순서·작성자를 왜곡하지 않는다.
+
 프론트엔드 환경
 
 prafta는 별도의 web-frontend 프로젝트를 가진다.

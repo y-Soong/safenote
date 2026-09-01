@@ -32,24 +32,59 @@
 
     <select id="selectTermsDList" parameterType="com.prafta.web.baim.baim03.application.query.TermsDetailInfoListQuery" resultType="com.prafta.web.baim.baim03.result.TermsDetailInfoResult">
     /* Baim03Mapper.selectTermsDList */
+	/*
+	  현행(TB_TERMS) + 과거 이력(TB_TERMS_ID_VERSION) 합집합으로 조회한다.
+	  종전에는 이력 테이블만 INNER JOIN 해서, 이력 INSERT 를 누락한 채 TB_TERMS 만
+	  갱신된 약관(prafta-terms-real-content-1.sql 로 교체된 001~005)의 현행 본문이
+	  관리 화면에 아예 뜨지 않았다. currentYn='Y' 행이 지금 서비스에 노출되는 버전이다.
+	  주의: 이력에 현행과 같은 버전이 이미 있으면 중복되므로 아래 절에서 제외한다.
+	*/
 	SELECT
-		A.TERMS_ID 				AS termsId
-		, B.TERMS_VERSION 		AS termsVersion
-		, B.REQUIRED_YN 		AS requiredYn
-		, B.TERMS_CONTENT 		AS termsContent
-		, B.STR_DATE 			AS strDate
-		, A.USE_YN				AS useYn
-		, B.TERMS_DESC 			AS termsDesc
-	FROM TB_TERMS A
-		 INNER JOIN TB_TERMS_ID_VERSION B
-			ON (
-				A.TERMS_ID = B.TERMS_ID
-			)
+		X.termsId
+		, X.termsVersion
+		, X.requiredYn
+		, X.termsContent
+		, X.strDate
+		, X.useYn
+		, X.termsDesc
+		, X.currentYn
+	FROM (
+			SELECT
+				A.TERMS_ID 			AS termsId
+				, A.TERMS_VERSION 	AS termsVersion
+				, A.REQUIRED_YN 	AS requiredYn
+				, A.TERMS_CONTENT 	AS termsContent
+				, A.STR_DATE 		AS strDate
+				, A.USE_YN			AS useYn
+				, A.TERMS_DESC 		AS termsDesc
+				, 'Y'				AS currentYn
+			FROM TB_TERMS A
+			WHERE A.TERMS_ID = #{termsId}
+
+			UNION ALL
+
+			SELECT
+				A.TERMS_ID
+				, B.TERMS_VERSION
+				, B.REQUIRED_YN
+				, B.TERMS_CONTENT
+				, B.STR_DATE
+				, A.USE_YN
+				, B.TERMS_DESC
+				, 'N'
+			FROM TB_TERMS A
+				 INNER JOIN TB_TERMS_ID_VERSION B
+					ON (
+						A.TERMS_ID = B.TERMS_ID
+					)
+			WHERE A.TERMS_ID = #{termsId}
+			  AND B.TERMS_VERSION != A.TERMS_VERSION
+		 ) X
 	WHERE 1=1
-	  AND A.TERMS_ID = #{termsId}
 	  <if test="termsVersion != null and termsVersion != ''">
-	  	AND B.TERMS_VERSION = #{termsVersion}
+	  	AND X.termsVersion = #{termsVersion}
 	  </if>
+	ORDER BY CAST(X.termsVersion AS UNSIGNED) DESC
 	</select>
 		
 	<insert id="mergeTermsInfo" parameterType="com.prafta.web.baim.baim03.application.command.TermsInfoCommand">
