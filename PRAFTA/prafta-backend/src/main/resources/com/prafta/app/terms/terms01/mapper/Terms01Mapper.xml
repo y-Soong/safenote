@@ -33,6 +33,12 @@
     WHERE 1=1
       AND B.REQUIRED_YN = 'Y'
       AND B.USE_YN = 'Y'
+      /* 위치정보 동의철회·중지 S2: 로그인 게이트 대상만 잡는다.
+         ★위치기반서비스 약관(005)은 LOGIN_GATE_YN='N' 이라 여기서 빠진다.
+           게이트가 잡으면 철회한 사용자가 로그인 단계에서 재동의를 강요당하고 거부 시 로그아웃되어
+           (TermsAgreeView.vue "미동의 상태로 진입 불가") 철회 상태가 물리적으로 존재할 수 없다.
+           005 는 가입 시 필수로 받되(REQUIRED_YN='Y' 유지) 차단은 이벤트 시점에서 한다. */
+      AND B.LOGIN_GATE_YN = 'Y'
       AND A.USER_CD IS NULL
     </select>
 

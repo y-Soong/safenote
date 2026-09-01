@@ -76,7 +76,10 @@
                 />
               </svg>
             </span>
-            <span>{{ "(필수) " + terms.systValDNm }}</span>
+            <span>{{
+              (terms.requiredYn === "N" ? "(선택) " : "(필수) ") +
+              terms.systValDNm
+            }}</span>
 
             <!-- 오른쪽 영역: (보기) 버튼 -->
             <button
@@ -172,6 +175,8 @@ const fnGetSystinfoList = async () => {
         systValDCd: o.termsId,
         systValDNm: o.termsNm,
         termsVersion: o.termsVersion,
+        // 위치정보 S2 ⑤: 서버가 필수/선택을 함께 내린다. 006(연동 제3자 제공)이 선택으로 섞인다.
+        requiredYn: o.requiredYn,
         checked: false, // 각 항목별 체크 상태 추가
       }));
 
@@ -233,11 +238,16 @@ const fnJoinUser = () => {
   // 목록이 비면(조회 실패) 통과시키지 않는다 — every() 는 빈 배열에서 true 라 약관을
   //   하나도 못 본 채 가입 화면으로 넘어갔다(fail-open). 앱 TermsInfo.vue 와 동일 보강.
   if (termsList.value.length === 0) {
-    proxy.$alert("약관 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    proxy.$alert(
+      "약관 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
     return;
   }
 
-  const joinFlg = termsList.value.every((terms) => terms.checked);
+  // ★필수 약관만 검증한다. requiredYn==="N"(선택, 006)은 체크하지 않아도 진행할 수 있다.
+  const joinFlg = termsList.value
+    .filter((terms) => terms.requiredYn !== "N")
+    .every((terms) => terms.checked);
 
   if (joinFlg) {
     if (proxy.$util.isNotEmpty(props.loginFlg_p)) {
@@ -245,9 +255,13 @@ const fnJoinUser = () => {
     } else {
       // 동의 결과를 가입 팝업으로 넘긴다 — 서버가 필수약관 동의를 검증한다.
       openPop(JoinUserPop, {
-        agrTermsList_p: termsList.value.map((terms) => ({
-          termsId: terms.systValDCd,
-        })),
+        // ★실제로 체크한 항목만 넘긴다. 선택약관은 동의한 경우에만 서버가 기록한다
+        //   (미동의를 기록하면 나중에 연동됐을 때 006 게이트가 다시 뜨지 않는다).
+        agrTermsList_p: termsList.value
+          .filter((terms) => terms.checked)
+          .map((terms) => ({
+            termsId: terms.systValDCd,
+          })),
       });
       emit("close");
     }

@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.prafta.common.cmm.baseinfo.application.command.SmsAuthConsumeCommand;
+import com.prafta.common.cmm.consent.ConsentConst;
 import com.prafta.common.cmm.dailyentry.service.DailyEntryService;
 import com.prafta.common.cmm.dailyjoin.application.command.InsertDailyUserCommand;
 import com.prafta.common.cmm.dailyjoin.application.command.TermsUserAgrCommand;
@@ -43,6 +44,10 @@ import lombok.extern.slf4j.Slf4j;
 public class DailyJoinServiceImpl implements DailyJoinService {
 
     private final DailyJoinMapper dailyJoinMapper;
+
+    /** 위치정보 동의철회·중지 S2 ⑤: 가입 시 선택약관(006) 동의 기록 — 전이 이력 경유 필수. */
+    private final com.prafta.common.cmm.consent.mapper.ConsentMapper consentMapper;
+    private final com.prafta.common.cmm.consent.service.ConsentHistoryRecorder consentHistoryRecorder;
     private final HmacSigner hmacSigner;
     private final AesGcmCrypto aesGcmCrypto;
     private final PasswordHasher passwordHasher;
@@ -277,6 +282,23 @@ public class DailyJoinServiceImpl implements DailyJoinService {
             String termsVersion = termsVersionMap.get(required.termsId());
             dailyJoinMapper.insertTermsUserAgrMgmt(
                     TermsUserAgrCommand.of(param.cmpnyCd(), userCd, required.termsId(), termsVersion));
+        }
+
+        // 위치정보 동의철회·중지 S2 ⑤: 가입 화면에 함께 노출한 선택약관(006) 동의 기록.
+        //   ★동의한 경우에만 기록한다. 006 게이트 해제 판정이 "응답 행 존재"(Y/N 무관)라
+        //     미동의를 적어 두면 나중에 사업장이 새로 연동돼도 게이트가 다시 뜨지 않는다.
+        //   ★ConsentHistoryRecorder 경유 — 선택약관 동의는 PII 반출의 법적 근거라 이력 없이 기록되면 안 된다.
+        boolean thirdPartyAgreed = param.agrTermsList() != null
+                && param.agrTermsList().stream()
+                        .anyMatch(a -> ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID.equals(a.termsId()));
+        if (thirdPartyAgreed) {
+            String optionalVersion = consentMapper.selectOptionalTermsCurrentVersion(
+                    ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID);
+            if (optionalVersion != null && !optionalVersion.isBlank()) {
+                consentHistoryRecorder.recordAndUpsert(
+                        param.cmpnyCd(), userCd, ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID, optionalVersion
+                        , "Y", ConsentConst.SOURCE_JOIN, param.cmpnyCd(), userCd);
+            }
         }
     }
 }

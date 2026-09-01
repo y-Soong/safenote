@@ -20,6 +20,9 @@ import com.prafta.common.cmm.consent.dto.response.ConsentOptionalTermsResponse;
 import com.prafta.common.cmm.consent.dto.response.ConsentSubconGateResponse;
 import com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult;
 import com.prafta.common.cmm.consent.service.ConsentTermsService;
+import com.prafta.common.cmm.location.LocationConsentConst;
+import com.prafta.common.cmm.location.dto.response.LocationConsentStatusResponse;
+import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -53,6 +56,7 @@ import lombok.extern.slf4j.Slf4j;
 public class ConsentController {
 
     private final ConsentTermsService consentTermsService;
+    private final LocationConsentService locationConsentService;
     private final JwtUtil jwtUtil;
 
     /** 선택약관 목록(현재버전 + 본인 동의여부). 선택약관이 없으면 빈 배열. */
@@ -113,6 +117,76 @@ public class ConsentController {
                 param.cmpnyCd(), param.userCd(), param.agrYn(), ConsentConst.SOURCE_GATE);
 
         return ResponseEntity.status(HttpStatus.OK).body(ConsentAgreeResponse.success(param.agrYn(), affected));
+    }
+
+    // ================================================================
+    // 위치정보 동의(005) — 위치정보 동의철회·중지 S3
+    //
+    // ★대상 식별값은 전부 JWT 에서만 도출한다. 본문·쿼리로 userCd 를 받지 않는다.
+    //   철회는 되돌릴 수 없는 파기를 동반하므로 IDOR 이 곧 타인 데이터 파기가 된다.
+    // ★관리자 대행 경로를 만들지 않는다(본인만). 오조작 시 복구 수단이 없다.
+    // ================================================================
+
+    /** 위치정보 동의 현재 상태(4-state) + 현재 약관 버전. */
+    @GetMapping("/location-consent")
+    public ResponseEntity<?> getLocationConsent(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = resolveToken(authorization);
+        return ResponseEntity.status(HttpStatus.OK).body(
+                LocationConsentStatusResponse.of(
+                        locationConsentService.resolveStatus(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd())));
+    }
+
+    /**
+     * 위치정보 동의 철회(법 제24조①) — <b>수집된 위치정보를 전부 파기</b>한다.
+     *
+     * <p>★되돌릴 수 없다. 화면은 반드시 <b>철회 전</b>에 "삭제된 기록은 복구할 수 없습니다"를
+     * 고지하고 확인을 받은 뒤 호출해야 한다.
+     */
+    @PostMapping("/location-consent/withdraw")
+    public ResponseEntity<?> withdrawLocationConsent(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = resolveToken(authorization);
+        return ResponseEntity.status(HttpStatus.OK).body(
+                LocationConsentStatusResponse.of(
+                        locationConsentService.withdraw(
+                                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd(), resolveUserTypeCd(tokenInfo))));
+    }
+
+    /** 위치정보 수집 일시 중지(법 제24조②) — 과거 좌표는 유지하고 이후 수집만 중단한다. */
+    @PostMapping("/location-consent/suspend")
+    public ResponseEntity<?> suspendLocationConsent(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = resolveToken(authorization);
+        return ResponseEntity.status(HttpStatus.OK).body(
+                LocationConsentStatusResponse.of(
+                        locationConsentService.suspend(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd())));
+    }
+
+    /** 위치정보 재동의 — 중지/재동의대기/철회 어느 상태에서도 호출할 수 있다(파기분은 복구되지 않음). */
+    @PostMapping("/location-consent/resume")
+    public ResponseEntity<?> resumeLocationConsent(
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        TokenInfo tokenInfo = resolveToken(authorization);
+        return ResponseEntity.status(HttpStatus.OK).body(
+                LocationConsentStatusResponse.of(
+                        locationConsentService.resume(tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd())));
+    }
+
+    /**
+     * 계정 계통(SYS050 REGULAR/DAILY) 도출 — 파기 범위 산정에 쓴다.
+     *
+     * <p>{@code USER_CD} 는 정규/일용직 계통별로 채번되어 같은 값이 두 계통에 존재할 수 있다.
+     * 계통을 빼고 파기하면 <b>남의 좌표를 지운다.</b> 고용형태(SYS041) 클레임에서 도출한다.
+     */
+    private String resolveUserTypeCd(TokenInfo tokenInfo) {
+        return LocationConsentConst.USER_TYPE_DAILY.equals(tokenInfo.gv_employmentType())
+                ? LocationConsentConst.USER_TYPE_DAILY
+                : LocationConsentConst.USER_TYPE_REGULAR;
     }
 
     /** JWT 클레임 → TokenInfo. userCd 부재면 인증 결함(COMMON_400_003). */

@@ -118,6 +118,56 @@
     </select>
 
     <!-- ====================================================================
+         동의값 + 동의상태 조회 + 행 잠금 — 상태 관리 약관(005) 전이 경로 전용.
+         위 selectUserAgrYnForUpdate 와 잠금 의미는 같고 CONSENT_STATE 를 함께 읽는다.
+         ★AGR_YN 만 보면 SUSPENDED→WITHDRAWN 전이('N'→'N')를 "변화 없음"으로 오판한다.
+         ★record 매핑 — SELECT 컬럼 순서 = ConsentStateResult 컴포넌트 순서(agrYn, consentState).
+         ==================================================================== -->
+    <!-- ====================================================================
+         동의값 + 동의상태 조회(잠금 없음) — 읽기 전용 판정 경로 전용.
+         위치정보 수집 허용 판정은 근태·TBM 의 모든 요청에서 호출되므로 잠금을 걸면 안 된다.
+         ★record 매핑 — SELECT 컬럼 순서 = ConsentStateResult 컴포넌트 순서(agrYn, consentState).
+         ==================================================================== -->
+    <select id="selectUserAgrState" resultType="com.prafta.common.cmm.consent.mapper.result.ConsentStateResult">
+    /* ConsentMapper.selectUserAgrState */
+    SELECT IFNULL(A.AGR_YN, 'N') AS agrYn
+         , A.CONSENT_STATE       AS consentState
+    FROM TB_TERMS_USER_AGR_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.TERMS_ID = #{termsId}
+      AND A.TERMS_VERSION = #{termsVersion}
+    LIMIT 1
+    </select>
+
+    <select id="selectUserAgrStateForUpdate" resultType="com.prafta.common.cmm.consent.mapper.result.ConsentStateResult">
+    /* ConsentMapper.selectUserAgrStateForUpdate */
+    SELECT IFNULL(A.AGR_YN, 'N') AS agrYn
+         , A.CONSENT_STATE       AS consentState
+    FROM TB_TERMS_USER_AGR_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.TERMS_ID = #{termsId}
+      AND A.TERMS_VERSION = #{termsVersion}
+    FOR UPDATE
+    </select>
+
+    <!-- ====================================================================
+         버전 무관 동의 이력 존재 여부 — "구버전에는 동의했는데 현재버전 행이 없다"
+         = 약관 개정에 따른 재동의 대기 판정.
+         ★이걸 철회로 취급하면 개정할 때마다 전 사용자의 위치정보가 파기된다.
+         ==================================================================== -->
+    <select id="countAgreedAnyVersion" resultType="int">
+    /* ConsentMapper.countAgreedAnyVersion */
+    SELECT COUNT(1)
+    FROM TB_TERMS_USER_AGR_MGMT A
+    WHERE A.CMPNY_CD = #{cmpnyCd}
+      AND A.USER_CD = #{userCd}
+      AND A.TERMS_ID = #{termsId}
+      AND IFNULL(A.AGR_YN, 'N') = 'Y'
+    </select>
+
+    <!-- ====================================================================
          동의자 USER_CD 목록(T3 스냅샷 필터).
          현재버전(TB_TERMS.TERMS_VERSION) 동의만 유효 — 버전 상향 = 재동의 필요(plan D6).
          반환 집합에 없는 USER_CD = 미동의 → T3 가 해당 근로자 상세행 전량 제외 + CONSENT_EXCLUDED_CNT 증가.
@@ -191,6 +241,20 @@
     </select>
 
     <!-- ====================================================================
+         약관 현재 시행 버전 — 필수/선택 구분 없음.
+         위 selectOptionalTermsCurrentVersion 은 REQUIRED_YN='N' 을 강제해
+         필수 약관인 위치기반서비스(005)에 쓸 수 없다.
+         ==================================================================== -->
+    <select id="selectTermsCurrentVersion" resultType="string">
+    /* ConsentMapper.selectTermsCurrentVersion */
+    SELECT B.TERMS_VERSION
+    FROM TB_TERMS B
+    WHERE B.TERMS_ID = #{termsId}
+      AND B.USE_YN = 'Y'
+    LIMIT 1
+    </select>
+
+    <!-- ====================================================================
          동의 현재상태 upsert. PK=(CMPNY_CD,USER_CD,TERMS_ID,TERMS_VERSION) 충돌 시 AGR_YN 갱신.
          스키마에 UPDATE_* 컬럼이 없어 INSERT 컬럼만 사용한다.
          ★ 이력 우회 방지를 위해 프로젝트 내 유일한 동의 upsert 구문이다
@@ -204,6 +268,7 @@
         , TERMS_ID
         , TERMS_VERSION
         , AGR_YN
+        , CONSENT_STATE
         , INSERT_NO
         , INSERT_DATE
     ) VALUES (
@@ -212,11 +277,15 @@
         , #{termsId}
         , #{termsVersion}
         , #{agrYn}
+        , #{consentState}
         , #{userCd}
         , NOW()
     )
     ON DUPLICATE KEY UPDATE
           AGR_YN = VALUES(AGR_YN)
+        /* 위치정보 S2: consentState 가 null 이면(상태 관리 대상 아닌 약관) 기존 값을 보존한다.
+           NULL 을 그대로 덮으면 다른 경로의 저장 한 번으로 005 상태가 지워진다. */
+        , CONSENT_STATE = COALESCE(VALUES(CONSENT_STATE), CONSENT_STATE)
     </insert>
 
     <!-- ====================================================================
@@ -233,6 +302,8 @@
         , TERMS_VERSION
         , BEFORE_AGR_YN
         , AFTER_AGR_YN
+        , BEFORE_STATE
+        , AFTER_STATE
         , AGR_SOURCE
         , ACTOR_CMPNY_CD
         , ACTOR_USER_CD
@@ -246,6 +317,8 @@
         , #{termsVersion}
         , #{beforeAgrYn}
         , #{afterAgrYn}
+        , #{beforeState}
+        , #{afterState}
         , #{agrSource}
         , #{actorCmpnyCd}
         , #{actorUserCd}

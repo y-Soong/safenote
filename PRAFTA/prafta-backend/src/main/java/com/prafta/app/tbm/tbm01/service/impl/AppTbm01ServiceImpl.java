@@ -56,6 +56,7 @@ import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.tbmshare.result.TbmSessionAccess;
 import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
 import com.prafta.common.cmm.worktime.service.WorktimeGateService;
+import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
@@ -124,6 +125,9 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
 
     /** GPS좌표-암호화-전환-06/-07: 좌표 AES-GCM 암복호화(입실 저장 암호화 + 세션 좌표 fallback 복호화). */
     private final GpsCoordCrypto gpsCoordCrypto;
+
+    /** 위치정보 동의 판정 단일 출처(위치정보 동의철회·중지 S3) — 미동의 시 좌표를 저장하지 않는다. */
+    private final LocationConsentService locationConsentService;
 
     // -------------------------------------------------------------------------
     // C3: 입실 컨텍스트
@@ -228,9 +232,14 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         // (managerEnter 의 동일 패턴 이식 — 관리자 "내보내기"가 소프트삭제(DEL_YN='Y')라
         //  UNIQUE 키가 여전히 점유돼 있어, 무조건 INSERT 하면 중복키 충돌 후 갈 곳이 없어 500 이 났었다.)
         // GPS좌표-암호화-전환-07: 좌표는 암호문만 저장(BigDecimal.valueOf 경유 정규화 — 좌표 결측이면 null).
+        //   ★위치정보 동의철회·중지 S3: 동의(AGREED) 상태가 아니면 좌표를 저장하지 않는다.
+        //     거리 검증(resolveDistanceAndVerify)은 원본 좌표로 이미 수행됐다 — 판정에는 쓰고 저장만 하지 않는다.
+        //     ENTRY_DISTANCE_M 은 좌표가 아니므로 그대로 남긴다(3년 파기 배치의 대상 범위와 동일 기준).
+        boolean gpsAllowed = locationConsentService.isCollectAllowed(cmpnyCd, userCd);
         TbmEnterCommand command = TbmEnterCommand.of(
                 cmpnyCd, sessionCd, userCd,
-                gpsCoordCrypto.encrypt(param.lat()), gpsCoordCrypto.encrypt(param.lon()), distanceM);
+                gpsAllowed ? gpsCoordCrypto.encrypt(param.lat()) : null,
+                gpsAllowed ? gpsCoordCrypto.encrypt(param.lon()) : null, distanceM);
 
         TbmAttendanceSlotResult slot = appTbm01Mapper.selectAttendanceSlot(command);
         if (slot == null) {

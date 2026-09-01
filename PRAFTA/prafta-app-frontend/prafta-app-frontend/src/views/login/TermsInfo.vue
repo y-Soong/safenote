@@ -76,7 +76,7 @@
               />
             </svg>
           </span>
-          <span>{{ '(필수) ' + terms.termsNm }}</span>
+          <span>{{ (terms.requiredYn === 'N' ? '(선택) ' : '(필수) ') + terms.termsNm }}</span>
 
           <!-- 오른쪽 영역: (보기) 버튼 -->
           <button
@@ -126,8 +126,9 @@ onMounted(async () => {
 //   종전에는 SYS008 코드표(syst-info-lists)를 받아 "SYS008 에 있으면 전부 필수"로 그렸다.
 //   그 탓에 선택약관인 006(연동 회사 제3자 제공 동의)까지 필수 체크를 강요했고, 006 은
 //   가입 시 저장되지 않는 약관이라 로그인 후 게이트(termsGate ②)가 다시 물었다.
-//   006 은 연동 사업장 소속자에게만 묻는 게이트 전용 약관이므로 가입 화면에서 제외한다.
-//   여기를 코드표 기반으로 되돌리지 말 것(중복 동의 재발).
+//   ★위치정보 S2 ⑤(2026-09-02): 006 을 가입 화면에 '선택' 항목으로 다시 노출한다.
+//     서버가 requiredYn 을 함께 내려주므로 필수/선택을 구분해 그리고, 검증도 필수만 본다.
+//     여기를 코드표 기반으로 되돌리지 말 것(그러면 선택약관까지 강요하는 결함이 재발한다).
 const fnGetSystinfoList = async () => {
   try {
     const response = await axios.get('/comApi/baseinfo/join-terms-lists')
@@ -153,7 +154,10 @@ function fnJoinUser() {
     return
   }
 
-  const joinFlg = termsList.value.every((terms) => terms.checked)
+  // ★필수 약관만 검증한다. requiredYn==='N'(선택, 006)은 체크하지 않아도 진행할 수 있다.
+  const joinFlg = termsList.value
+    .filter((terms) => terms.requiredYn !== 'N')
+    .every((terms) => terms.checked)
 
   if (joinFlg) {
     // ★동의 결과는 history state 로 넘긴다(TermsAgreeView 와 동일 방식).
@@ -163,7 +167,11 @@ function fnJoinUser() {
     router.push({
       path: '/JoinUser',
       state: {
-        agrTermsList: termsList.value.map((terms) => ({ termsId: terms.termsId })),
+        // ★실제로 체크한 항목만 넘긴다. 선택약관은 동의한 경우에만 서버가 기록한다
+        //   (미동의를 기록하면 나중에 연동됐을 때 게이트가 다시 뜨지 않는다).
+        agrTermsList: termsList.value
+          .filter((terms) => terms.checked)
+          .map((terms) => ({ termsId: terms.termsId })),
       },
     })
   } else {

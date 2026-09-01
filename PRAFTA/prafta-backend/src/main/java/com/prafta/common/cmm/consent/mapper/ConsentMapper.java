@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.common.cmm.consent.application.command.ConsentAgrUpsertCommand;
 import com.prafta.common.cmm.consent.application.command.ConsentHistInsertCommand;
+import com.prafta.common.cmm.consent.mapper.result.ConsentStateResult;
 import com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult;
 import com.prafta.common.cmm.consent.mapper.result.OptionalTermsResult;
 
@@ -75,6 +76,46 @@ public interface ConsentMapper {
             , @Param("termsVersion") String termsVersion);
 
     /**
+     * 동의값 + 동의상태 조회 + 행 잠금(FOR UPDATE) — 상태 관리 약관(005) 전이 경로 전용.
+     *
+     * <p>{@link #selectUserAgrYnForUpdate} 와 잠금 의미는 같고, 4-state 판정에 필요한
+     * {@code CONSENT_STATE} 를 함께 읽는다. <b>AGR_YN 만 보면 SUSPENDED→WITHDRAWN 같은
+     * 전이('N'→'N')를 "변화 없음"으로 오판</b>해 이력이 남지 않는다.
+     *
+     * @return 행이 없으면 null(미응답)
+     */
+    /**
+     * 동의값 + 동의상태 조회(<b>잠금 없음</b>) — 읽기 전용 판정 경로 전용.
+     *
+     * <p>{@link #selectUserAgrStateForUpdate} 와 결과는 같지만 FOR UPDATE 를 걸지 않는다.
+     * 위치정보 수집 허용 판정은 근태·TBM 의 <b>모든 요청</b>에서 호출되므로 잠금을 걸면 안 된다.
+     *
+     * @return 행이 없으면 null(미응답)
+     */
+    ConsentStateResult selectUserAgrState(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("termsId") String termsId
+            , @Param("termsVersion") String termsVersion);
+
+    ConsentStateResult selectUserAgrStateForUpdate(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("termsId") String termsId
+            , @Param("termsVersion") String termsVersion);
+
+    /**
+     * 해당 약관에 대해 <b>버전 무관</b>하게 동의(AGR_YN='Y') 이력이 있는 행이 존재하는지.
+     *
+     * <p>"구버전에는 동의했으나 현재버전 행이 없는" 상태 = 약관 개정에 따른 <b>재동의 대기</b> 판정에 쓴다.
+     * 이걸 철회로 취급하면 개정할 때마다 전 사용자의 위치정보가 파기된다.
+     */
+    int countAgreedAnyVersion(
+            @Param("cmpnyCd") String cmpnyCd
+            , @Param("userCd") String userCd
+            , @Param("termsId") String termsId);
+
+    /**
      * 후보 사용자 중 해당 약관 <b>현재버전</b>에 AGR_YN='Y' 동의한 USER_CD 목록(T3 스냅샷 필터).
      * 정규/일용직 공통(USER_CD 는 회사 스코프 채번 → CMPNY_CD 조건으로 충분).
      */
@@ -98,6 +139,14 @@ public interface ConsentMapper {
      * 토글/게이트 응답 경로에서 필수약관·미사용약관 변조로 게이트를 우회하려는 시도를 차단한다.
      */
     String selectOptionalTermsCurrentVersion(@Param("termsId") String termsId);
+
+    /**
+     * 약관의 현재 시행 버전 — 필수/선택 구분 없이 {@code USE_YN='Y'} 인 약관이면 반환한다.
+     *
+     * <p>{@link #selectOptionalTermsCurrentVersion} 은 {@code REQUIRED_YN='N'} 을 강제해
+     * 필수 약관인 위치기반서비스(005)에는 쓸 수 없다.
+     */
+    String selectTermsCurrentVersion(@Param("termsId") String termsId);
 
     /**
      * 동의 현재상태 upsert(TB_TERMS_USER_AGR_MGMT). 영향행 반환.

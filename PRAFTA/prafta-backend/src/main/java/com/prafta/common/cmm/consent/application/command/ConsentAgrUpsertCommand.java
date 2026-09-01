@@ -17,8 +17,18 @@ public record ConsentAgrUpsertCommand(
         , String termsId
         , String termsVersion
         , String agrYn
+        // 위치정보 동의철회·중지 S2: 4-state 동의상태. null = 상태 관리 대상이 아닌 약관(001~004·006).
+        //   매퍼가 COALESCE 로 처리하므로 null 을 넘겨도 기존 상태를 지우지 않는다.
+        , String consentState
 ) {
+    /** 상태 관리 대상이 아닌 약관용(종전 호출부 전부). consentState 는 null 로 둔다. */
     public static ConsentAgrUpsertCommand of(String cmpnyCd, String userCd, String termsId, String termsVersion, String agrYn) {
+        return of(cmpnyCd, userCd, termsId, termsVersion, agrYn, null);
+    }
+
+    /** 상태 관리 대상 약관용(위치기반서비스 005). */
+    public static ConsentAgrUpsertCommand of(String cmpnyCd, String userCd, String termsId, String termsVersion
+            , String agrYn, String consentState) {
 
         if (cmpnyCd == null || cmpnyCd.isBlank()
                 || userCd == null || userCd.isBlank()
@@ -27,6 +37,6 @@ public record ConsentAgrUpsertCommand(
                 || agrYn == null || agrYn.isBlank())
             throw new ApiException(CommonErrorCode.COMMON_400_001);
 
-        return new ConsentAgrUpsertCommand(cmpnyCd, userCd, termsId, termsVersion, agrYn);
+        return new ConsentAgrUpsertCommand(cmpnyCd, userCd, termsId, termsVersion, agrYn, consentState);
     }
 }

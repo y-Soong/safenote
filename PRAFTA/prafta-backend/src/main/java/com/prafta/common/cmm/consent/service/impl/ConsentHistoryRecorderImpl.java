@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import com.prafta.common.cmm.consent.application.command.ConsentAgrUpsertCommand;
 import com.prafta.common.cmm.consent.application.command.ConsentHistInsertCommand;
 import com.prafta.common.cmm.consent.mapper.ConsentMapper;
+import com.prafta.common.cmm.consent.mapper.result.ConsentStateResult;
 import com.prafta.common.cmm.consent.service.ConsentHistoryRecorder;
 
 import lombok.RequiredArgsConstructor;
@@ -58,6 +59,46 @@ public class ConsentHistoryRecorderImpl implements ConsentHistoryRecorder {
 
         log.info("약관 동의 전이 기록 - cmpnyCd={}, userCd={}, termsId={}, ver={}, {}→{}, 경로={}, 영향행={}"
                 , cmpnyCd, userCd, termsId, termsVersion, beforeAgrYn, afterAgrYn, source, affected);
+        return affected;
+    }
+
+    @Override
+    public int recordAndUpsertState(
+            String cmpnyCd
+            , String userCd
+            , String termsId
+            , String termsVersion
+            , String afterAgrYn
+            , String afterState
+            , String source
+            , String actorCmpnyCd
+            , String actorUserCd) {
+
+        // 1) 현재값(before) + 잠금. 행이 없으면 null(최초 응답). 잠금 이유는 recordAndUpsert 와 동일하다.
+        ConsentStateResult before = consentMapper.selectUserAgrStateForUpdate(cmpnyCd, userCd, termsId, termsVersion);
+        String beforeAgrYn = before == null ? null : before.agrYn();
+        String beforeState = before == null ? null : before.consentState();
+
+        // 2) ★동의값과 상태가 <b>둘 다</b> 같을 때만 전이가 아니다.
+        //    AGR_YN 만 비교하면 SUSPENDED→WITHDRAWN('N'→'N')이 걸러져 철회 이력이 남지 않는다.
+        if (beforeAgrYn != null && beforeAgrYn.equals(afterAgrYn)
+                && beforeState != null && beforeState.equals(afterState)) {
+            log.debug("위치정보 동의 전이 없음(멱등) - cmpnyCd={}, userCd={}, ver={}, state={}"
+                    , cmpnyCd, userCd, termsVersion, afterState);
+            return 0;
+        }
+
+        // 3) 현재상태 upsert(AGR_YN + CONSENT_STATE).
+        int affected = consentMapper.upsertTermsAgr(
+                ConsentAgrUpsertCommand.of(cmpnyCd, userCd, termsId, termsVersion, afterAgrYn, afterState));
+
+        // 4) 전이 이력 INSERT(append-only).
+        consentMapper.insertTermsAgrHist(ConsentHistInsertCommand.of(
+                cmpnyCd, userCd, termsId, termsVersion, beforeAgrYn, afterAgrYn, source, actorCmpnyCd, actorUserCd
+                , beforeState, afterState));
+
+        log.info("위치정보 동의 전이 기록 - cmpnyCd={}, userCd={}, ver={}, 상태 {}→{}, 동의 {}→{}, 경로={}, 영향행={}"
+                , cmpnyCd, userCd, termsVersion, beforeState, afterState, beforeAgrYn, afterAgrYn, source, affected);
         return affected;
     }
 }

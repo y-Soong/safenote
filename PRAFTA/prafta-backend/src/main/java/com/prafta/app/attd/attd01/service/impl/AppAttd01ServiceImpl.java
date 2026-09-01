@@ -59,6 +59,7 @@ import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
+import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.error.attd.AttdErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
@@ -146,6 +147,9 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     /** GPS좌표-암호화-전환-02: 좌표 AES-GCM 암호화(저장 전용 — 지오펜스 판정은 요청 평문 좌표 그대로 사용). */
     private final GpsCoordCrypto gpsCoordCrypto;
+
+    /** 위치정보 동의 판정 단일 출처(위치정보 동의철회·중지 S3) — 미동의 시 좌표를 저장하지 않는다. */
+    private final LocationConsentService locationConsentService;
 
     // ====================================================================
     // 1) 오늘 / 일자 상세 (동일 응답 구조)
@@ -1196,7 +1200,12 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //    해당 ATTD_ID 의 퇴근 GPS 행(02)을 먼저 hard DELETE 한 뒤, 외근(지오펜스 밖)일 때만 최신 값 INSERT.
         //    온사이트면 INSERT 안 함 → "외근 판정 = 퇴근 GPS행 존재" 불변식으로 외근↔온사이트 전환을 정확히 반영.
         appAttd01Mapper.deleteCheckOutGps(cmpnyCd, open.attdId());
-        if (isOffsite) {
+        //    ★위치정보 동의철회·중지 S3: 퇴근은 <b>진행 중인 근태의 후속 동작</b>이라
+        //      isCollectAllowedForOngoing 을 쓴다(② 오버나이트 예외). 약관 시행 시점이 자정이라
+        //      오버나이트 근무자는 개정 때마다 퇴근 시점에 재동의 대기 상태가 되는데, 그때 퇴근을
+        //      막으면 근태가 열린 채로 남아 관리자 보정으로 넘어간다.
+        //      ★본인 의사인 중지/철회에는 이 예외가 적용되지 않는다(수집 중단).
+        if (isOffsite && locationConsentService.isCollectAllowedForOngoing(cmpnyCd, userCd)) {
             String gpsId = appAttd01Mapper.selectGpsId(cmpnyCd);
             // GPS좌표-암호화-전환-02: 좌표는 암호문만 저장(평문 LAT/LON 기록 중단). 좌표/암호문 로그 금지.
             CheckOutGpsCommand gpsCmd = new CheckOutGpsCommand(
@@ -1545,7 +1554,10 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         appAttd01Mapper.insertCheckIn(insertCmd);
 
         // GPS 행은 "지오펜스 밖(외근)"일 때만 INSERT(GPS_INFO_TYPE='01'). 안/폴백=정상이면 미저장.
-        if (isOffsite) {
+        //   ★위치정보 동의철회·중지 S3: 동의(AGREED) 상태가 아니면 좌표를 저장하지 않는다.
+        //     중지·철회는 "이후 수집 중단"이 정의이고(법 제24조①②), 이를 무시하고 저장하면 그 자체가 위반이다.
+        //     ★종전에는 005 가 로그인 게이트에 잡혀 미동의로는 진입 자체가 불가능했기에 이 판정이 없었다.
+        if (isOffsite && locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
             String gpsId = appAttd01Mapper.selectGpsId(cmpnyCd);
             // GPS좌표-암호화-전환-02: 좌표는 암호문만 저장(평문 LAT/LON 기록 중단). 좌표/암호문 로그 금지.
             CheckInGpsCommand gpsCmd = new CheckInGpsCommand(

@@ -171,7 +171,10 @@
           >
             <label class="daily-join__terms-label">
               <input type="checkbox" v-model="terms.checked" />
-              <span>(필수) {{ terms.systValDNm }}</span>
+              <span
+                >({{ terms.requiredYn === "N" ? "선택" : "필수" }})
+                {{ terms.systValDNm }}</span
+              >
             </label>
             <button
               type="button"
@@ -351,6 +354,8 @@ const fnGetTermsList = async () => {
       termsList.value = (response.data?.joinTermsList || []).map((o) => ({
         systValDCd: o.termsId,
         systValDNm: o.termsNm,
+        // 위치정보 S2 ⑤: 서버가 필수/선택을 함께 내린다. 006(연동 제3자 제공)이 선택으로 섞인다.
+        requiredYn: o.requiredYn,
         checked: false,
       }));
     }
@@ -446,7 +451,12 @@ const handleSmsAuthReq = async () => {
     }
   } catch (err) {
     // SMS-PPURIO-08: 발송 실패인데 입력한 번호를 지워 재입력을 강요하지 않는다(mblNo 초기화 제거).
-    proxy.$alert(resolveApiErrorMessage(err, "인증번호 발송에 실패했습니다.\n잠시 후 다시 시도해 주세요."));
+    proxy.$alert(
+      resolveApiErrorMessage(
+        err,
+        "인증번호 발송에 실패했습니다.\n잠시 후 다시 시도해 주세요."
+      )
+    );
   }
 };
 
@@ -501,9 +511,13 @@ const handleSubmit = async () => {
     return;
   }
 
-  const agrTermsList = termsList.value.map((terms) => ({
-    termsId: terms.systValDCd,
-  }));
+  // ★실제로 체크한 항목만 넘긴다. 선택약관은 동의한 경우에만 서버가 기록한다
+  //   (미동의를 기록하면 나중에 연동됐을 때 006 게이트가 다시 뜨지 않는다).
+  const agrTermsList = termsList.value
+    .filter((terms) => terms.checked)
+    .map((terms) => ({
+      termsId: terms.systValDCd,
+    }));
 
   try {
     const response = await axios.post("/comApi/dailyJoin/insert-daily-user", {
@@ -585,7 +599,10 @@ function fnValidateInput() {
     );
     return false;
   }
-  const allChecked = termsList.value.every((terms) => terms.checked);
+  // ★필수 약관만 검증한다. requiredYn==="N"(선택, 006)은 체크하지 않아도 진행할 수 있다.
+  const allChecked = termsList.value
+    .filter((terms) => terms.requiredYn !== "N")
+    .every((terms) => terms.checked);
   if (!allChecked) {
     proxy.$alert("필수 약관에 모두 동의해주세요.");
     return false;

@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.cmm.location.mapper.LocationPurgeMapper">
+
+    <!-- ============================================================
+         위치정보 계정 단위 파기 — 동의 철회(위치정보법 제24조①·④)
+
+         ★행을 지우지 않는다. 좌표 컬럼만 NULL 로 만든다.
+           세 테이블 모두 외근 사유·교육 이수 등 파기 대상이 아닌 업무 기록을 함께 담고 있어,
+           행을 지우면 고객사의 법정 보존 의무(근로기준법·산업안전보건법 3년)를 깨뜨린다.
+
+         ★평문/암호문을 쌍으로 지운다. 읽기 fallback 이 "암호문이 NULL 이면 평문 컬럼"이라
+           암호문만 지우면 파기했다고 생각한 좌표가 되살아난다(GpsCoordCrypto).
+
+         ★UPDATE_NO / UPDATE_DATE 는 건드리지 않는다. 업무 내용은 그대로인데 최종 수정자를
+           파기로 덮으면 실제 마지막 업무 수정자를 잃는다. 파기 사실은 이력 테이블로 남긴다.
+
+         ★배치(GpsRetentionMapper)와 달리 LIMIT 을 두지 않는다 — 한 계정 분량이라 트랜잭션이
+           길어지지 않고, 철회는 "지체 없이" 전량 파기해야 한다.
+
+         ★기간 제한을 두지 않는다. 법 문언이 "수집된 개인위치정보"로 과거형이고 기간 단서가 없다.
+           마감 여부와 무관하게 해당 계정의 보유분 전부가 대상이다.
+         ============================================================ -->
+
+    <!-- ================= 파기 대상 집계 (실행 전에 호출) =================
+         파기 후에는 대상이 사라져 집계할 수 없다. 순서가 중요하다.
+         ★record 매핑 — SELECT 순서 = LocationPurgeScopeResult 컴포넌트 순서.
+         ★수집일 축이 테이블마다 다르다:
+             TB_USER_ATTD_GPS   API_CALL_DATE (varchar8 YYYYMMDD, 측정일자)
+             TBM 두 테이블       INSERT_DATE   (datetime) → DATE_FORMAT 으로 축 통일
+         ============================================================ -->
+    <select id="selectPurgeScope" resultType="com.prafta.common.cmm.location.mapper.result.LocationPurgeScopeResult">
+    /* LocationPurgeMapper.selectPurgeScope */
+    SELECT
+          IFNULL(SUM(S.SRC = 'ATTD'), 0)      AS attdGpsRows
+        , IFNULL(SUM(S.SRC = 'TBM_ATT'), 0)   AS tbmAttendanceRows
+        , IFNULL(SUM(S.SRC = 'TBM_SES'), 0)   AS tbmSessionRows
+        , MIN(S.COLLECTED_YMD)                AS oldestCollected
+        , MAX(S.COLLECTED_YMD)                AS latestCollected
+    FROM (
+        SELECT 'ATTD' AS SRC
+             , G.API_CALL_DATE AS COLLECTED_YMD
+        FROM TB_USER_ATTD_GPS G
+        WHERE G.CMPNY_CD = #{cmpnyCd}
+          AND G.USER_CD = #{userCd}
+          AND (G.LAT IS NOT NULL OR G.LON IS NOT NULL
+               OR G.LAT_ENC IS NOT NULL OR G.LON_ENC IS NOT NULL)
+
+        UNION ALL
+
+        SELECT 'TBM_ATT'
+             , DATE_FORMAT(A.INSERT_DATE, '%Y%m%d')
+        FROM TB_TBM_ATTENDANCE A
+        WHERE A.CMPNY_CD = #{cmpnyCd}
+          AND A.USER_CD = #{userCd}
+          AND A.USER_TYPE_CD = #{userTypeCd}
+          AND (A.ENTRY_GPS_LAT IS NOT NULL OR A.ENTRY_GPS_LON IS NOT NULL
+               OR A.ENTRY_GPS_LAT_ENC IS NOT NULL OR A.ENTRY_GPS_LON_ENC IS NOT NULL)
+
+        UNION ALL
+
+        SELECT 'TBM_SES'
+             , DATE_FORMAT(T.INSERT_DATE, '%Y%m%d')
+        FROM TB_TBM_SESSION T
+        WHERE T.CMPNY_CD = #{cmpnyCd}
+          AND T.MANAGER_USER_CD = #{userCd}
+          AND (T.MANAGER_GPS_LAT IS NOT NULL OR T.MANAGER_GPS_LON IS NOT NULL
+               OR T.MANAGER_GPS_LAT_ENC IS NOT NULL OR T.MANAGER_GPS_LON_ENC IS NOT NULL)
+    ) S
+    </select>
+
+    <!-- ================= 1. 출퇴근(출역) 좌표 ================= -->
+    <update id="purgeAttdGpsByUser">
+    /* LocationPurgeMapper.purgeAttdGpsByUser */
+    UPDATE TB_USER_ATTD_GPS
+       SET LAT     = NULL
+         , LON     = NULL
+         , LAT_ENC = NULL
+         , LON_ENC = NULL
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD = #{userCd}
+       AND (LAT IS NOT NULL OR LON IS NOT NULL OR LAT_ENC IS NOT NULL OR LON_ENC IS NOT NULL)
+    </update>
+
+    <!-- ================= 2. TBM 입실(참석자) 좌표 =================
+         ★USER_TYPE_CD 를 조건에 포함한다 — USER_CD 는 정규/일용직 계통별로 채번되어
+           같은 값이 두 계통에 존재할 수 있다. 계통을 빼면 남의 좌표를 지운다.
+         ★DEL_YN 은 조건에 넣지 않는다 — 삭제 표시된 행에도 좌표가 남아 있을 수 있고,
+           철회 대상은 행의 상태와 무관하게 그 계정의 위치정보 전부다.
+         ============================================================ -->
+    <update id="purgeTbmAttendanceGpsByUser">
+    /* LocationPurgeMapper.purgeTbmAttendanceGpsByUser */
+    UPDATE TB_TBM_ATTENDANCE
+       SET ENTRY_GPS_LAT     = NULL
+         , ENTRY_GPS_LON     = NULL
+         , ENTRY_GPS_LAT_ENC = NULL
+         , ENTRY_GPS_LON_ENC = NULL
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND USER_CD = #{userCd}
+       AND USER_TYPE_CD = #{userTypeCd}
+       AND (ENTRY_GPS_LAT IS NOT NULL OR ENTRY_GPS_LON IS NOT NULL
+            OR ENTRY_GPS_LAT_ENC IS NOT NULL OR ENTRY_GPS_LON_ENC IS NOT NULL)
+    </update>
+
+    <!-- ================= 3. TBM 세션 개설(관리자) 좌표 =================
+         ★세션 행 자체는 다른 참석자들의 교육 실시 기록이므로 절대 지우지 않는다.
+           개설자 본인의 좌표만 NULL 로 만든다.
+         ★세션 개설자는 정규직 계정이므로 USER_TYPE_CD 조건이 없다(MANAGER_USER_CD 는 TB_USER).
+         ============================================================ -->
+    <update id="purgeTbmSessionGpsByUser">
+    /* LocationPurgeMapper.purgeTbmSessionGpsByUser */
+    UPDATE TB_TBM_SESSION
+       SET MANAGER_GPS_LAT     = NULL
+         , MANAGER_GPS_LON     = NULL
+         , MANAGER_GPS_LAT_ENC = NULL
+         , MANAGER_GPS_LON_ENC = NULL
+     WHERE CMPNY_CD = #{cmpnyCd}
+       AND MANAGER_USER_CD = #{userCd}
+       AND (MANAGER_GPS_LAT IS NOT NULL OR MANAGER_GPS_LON IS NOT NULL
+            OR MANAGER_GPS_LAT_ENC IS NOT NULL OR MANAGER_GPS_LON_ENC IS NOT NULL)
+    </update>
+
+    <!-- ================= 파기 이력 (append-only) =================
+         ★★좌표 값은 어떤 형태로도 저장하지 않는다. 남기는 것은
+           "누가·언제·무엇을·몇 건·왜" 뿐이다.
+         위치정보법 시행령 제20조①의 취급대장 실체로도 사용한다.
+         ============================================================ -->
+    <insert id="insertPurgeHist" parameterType="com.prafta.common.cmm.location.application.command.LocationPurgeHistCommand">
+    /* LocationPurgeMapper.insertPurgeHist */
+    INSERT INTO TB_LOCATION_PURGE_HIST (
+          CMPNY_CD
+        , USER_CD
+        , USER_TYPE_CD
+        , PURGE_REASON_CD
+        , TERMS_VERSION
+        , ATTD_GPS_ROWS
+        , TBM_ATTENDANCE_ROWS
+        , TBM_SESSION_ROWS
+        , OLDEST_COLLECTED
+        , LATEST_COLLECTED
+        , ACTOR_CMPNY_CD
+        , ACTOR_USER_CD
+        , ACTION_DTIME
+        , INSERT_NO
+        , INSERT_DATE
+    ) VALUES (
+          #{cmpnyCd}
+        , #{userCd}
+        , #{userTypeCd}
+        , #{purgeReasonCd}
+        , #{termsVersion}
+        , #{attdGpsRows}
+        , #{tbmAttendanceRows}
+        , #{tbmSessionRows}
+        , #{oldestCollected}
+        , #{latestCollected}
+        , #{actorCmpnyCd}
+        , #{actorUserCd}
+        , NOW()
+        , #{actorUserCd}
+        , NOW()
+    )
+    </insert>
+
+</mapper>

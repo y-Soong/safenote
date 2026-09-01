@@ -814,11 +814,16 @@
     	A.SYST_VAL_D_CD		AS termsId
 	    , A.SYST_VAL_D_NM	AS termsNm
 	    , B.TERMS_VERSION	AS termsVersion
+	    , B.REQUIRED_YN		AS requiredYn
 	FROM TB_SYST_VAL_D A
 	     INNER JOIN TB_TERMS B
 	        ON (
 	            A.SYST_VAL_D_CD = B.TERMS_ID
-	        AND B.REQUIRED_YN   = 'Y'
+	        /* 위치정보 동의철회·중지 S2 ⑤: REQUIRED_YN 조건을 제거해 선택약관도 가입 화면에 노출한다.
+	           종전에는 필수약관만 내려 006(연동 회사 제3자 제공 동의)이 가입 시점에 보이지 않았고,
+	           로그인 후 별도 게이트에서만 물었다.
+	           ★005(위치기반서비스)는 REQUIRED_YN='Y' 를 유지하므로 여기서 계속 필수로 노출된다 —
+	             게이트에서만 빠질 뿐(LOGIN_GATE_YN='N') 가입 시 동의는 그대로 받는다. */
 	        AND B.USE_YN        = 'Y'
 	        )
 	WHERE A.SYST_VAL_CD = 'SYS008'

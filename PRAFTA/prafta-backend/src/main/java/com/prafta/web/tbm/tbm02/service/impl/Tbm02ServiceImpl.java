@@ -24,6 +24,7 @@ import com.prafta.common.cmm.tbmshare.result.TbmEntryHandle;
 import com.prafta.common.cmm.tbmshare.result.TbmSessionAccess;
 import com.prafta.common.cmm.tbmshare.service.TbmEntryHandleCodec;
 import com.prafta.common.cmm.tbmshare.service.TbmSessionShareService;
+import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.exception.ApiException;
@@ -111,6 +112,9 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	private final com.prafta.common.cmm.siteauth.service.SiteAccessService siteAccessService;
 	/** GPS좌표-암호화-전환-06: 관리자 좌표 AES-GCM 암복호화(쓰기 암호화 + 상세 fallback 복호화). */
 	private final GpsCoordCrypto gpsCoordCrypto;
+
+	/** 위치정보 동의 판정 단일 출처(위치정보 동의철회·중지 S3) — 미동의 시 좌표를 저장하지 않는다. */
+	private final LocationConsentService locationConsentService;
 
 	/** 15분 자동 교육시작 경과 임계(분). 앱(AppAdminTbmServiceImpl)과 동일 프로퍼티 키로 단일 값 유지. */
 	@Value("${tbm.prep.auto-start-minutes:15}")
@@ -292,7 +296,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		// 1. 세션 헤더 INSERT(DRAFT 고정, 비번/OPENED_AT 미설정)
 		// GPS좌표-암호화-전환-06: 좌표(개설 시 선입력 가능)는 암호화해 저장(평문 기록 중단).
 		tbm02Mapper.insertSession(SessionCommand.forSave(param, sessionCd,
-				encryptGpsOrReject(param.managerGpsLat()), encryptGpsOrReject(param.managerGpsLon())));
+				encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLat()), encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLon())));
 
 		// 2. 콘텐츠 매핑 INSERT
 		insertContents(param.contents(), sessionCd, param.gvCmpnyCd(), param.gvUserCd());
@@ -369,7 +373,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		// 교육준비 전이 UPDATE(WHERE STATUS_CD='DRAFT' 경합 가드)
 		// GPS좌표-암호화-전환-06: 좌표는 validateGps(원본 문자열 기준) 통과 후 암호화해 저장.
 		int affected = tbm02Mapper.prepareSession(SessionPrepareCommand.of(param, entryPwd,
-				encryptGpsOrReject(param.managerGpsLat()), encryptGpsOrReject(param.managerGpsLon())));
+				encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLat()), encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLon())));
 		if (affected == 0) {
 			// 동시 전이/상태 변경으로 DRAFT 가 아님
 			log.warn("TBM 교육준비 전이 경합/상태부적합 - sessionCd={}", param.sessionCd());
@@ -574,7 +578,7 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 		// 1. 세션 헤더 UPDATE(비번/상태 제외)
 		// GPS좌표-암호화-전환-06: 좌표는 암호화해 저장(구 평문은 매퍼에서 명시 NULL).
 		tbm02Mapper.updateSession(SessionCommand.forUpdate(param,
-				encryptGpsOrReject(param.managerGpsLat()), encryptGpsOrReject(param.managerGpsLon())));
+				encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLat()), encryptGpsOrReject(param.gvCmpnyCd(), param.gvUserCd(), param.managerGpsLon())));
 
 		// 2. 매핑 재구성(기존 delete 후 재insert)
 		tbm02Mapper.deleteSessionContents(param.gvCmpnyCd(), param.sessionCd());
@@ -1457,7 +1461,13 @@ public class Tbm02ServiceImpl implements Tbm02Service {
 	 * 공백/빈값은 null(기존 normalize 트림 규칙 미러). 숫자 파싱 실패는 기존 GPS 오류 체계(TBM_400_012)로
 	 * 거부한다(현재도 DB decimal 변환 실패로 거부되던 입력 — 오류 지점만 앞당김). 좌표값 로그 출력 금지.
 	 */
-	private String encryptGpsOrReject(String raw) {
+	private String encryptGpsOrReject(String cmpnyCd, String userCd, String raw) {
+		// ★위치정보 동의철회·중지 S3: 동의(AGREED) 상태가 아니면 개설자 좌표를 저장하지 않는다.
+		//   중지·철회는 "이후 수집 중단"이 정의라(법 제24조①②) 무시하고 저장하면 그 자체가 위반이다.
+		//   세션 개설 자체는 막지 않는다 — 좌표만 비운다(GPS 미사용 세션과 같은 형태).
+		if (!locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
+			return null;
+		}
 		try {
 			return gpsCoordCrypto.encryptString(raw);
 		} catch (NumberFormatException e) {

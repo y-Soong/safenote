@@ -13,6 +13,9 @@ public record JoinTermsResult(
 	String termsId
 	, String termsNm
 	, String termsVersion
+	// 위치정보 동의철회·중지 S2 ⑤: 가입 화면이 필수/선택을 구분해 그리도록 함께 내린다.
+	//   종전에는 목록 자체가 필수약관만 담아 구분이 필요 없었다.
+	, String requiredYn
 ) {
 
 }

@@ -20,7 +20,12 @@ public record ConsentHistInsertCommand(
         , String agrSource
         , String actorCmpnyCd
         , String actorUserCd
+        // 위치정보 동의철회·중지 S2: 4-state 전이 기록. null = 상태 관리 대상이 아닌 약관.
+        //   ★AGR_YN 만으로는 SUSPENDED→WITHDRAWN 같은 전이('N'→'N')가 이력에 남지 않는다.
+        , String beforeState
+        , String afterState
 ) {
+    /** 상태 관리 대상이 아닌 약관용(종전 호출부 전부). state 는 null 로 둔다. */
     public static ConsentHistInsertCommand of(
             String cmpnyCd
             , String userCd
@@ -31,6 +36,24 @@ public record ConsentHistInsertCommand(
             , String agrSource
             , String actorCmpnyCd
             , String actorUserCd) {
+
+        return of(cmpnyCd, userCd, termsId, termsVersion, beforeAgrYn, afterAgrYn
+                , agrSource, actorCmpnyCd, actorUserCd, null, null);
+    }
+
+    /** 상태 관리 대상 약관용(위치기반서비스 005). */
+    public static ConsentHistInsertCommand of(
+            String cmpnyCd
+            , String userCd
+            , String termsId
+            , String termsVersion
+            , String beforeAgrYn
+            , String afterAgrYn
+            , String agrSource
+            , String actorCmpnyCd
+            , String actorUserCd
+            , String beforeState
+            , String afterState) {
 
         if (cmpnyCd == null || cmpnyCd.isBlank()
                 || userCd == null || userCd.isBlank()
@@ -43,6 +66,7 @@ public record ConsentHistInsertCommand(
             throw new ApiException(CommonErrorCode.COMMON_400_001);
 
         return new ConsentHistInsertCommand(
-                cmpnyCd, userCd, termsId, termsVersion, beforeAgrYn, afterAgrYn, agrSource, actorCmpnyCd, actorUserCd);
+                cmpnyCd, userCd, termsId, termsVersion, beforeAgrYn, afterAgrYn, agrSource, actorCmpnyCd, actorUserCd
+                , beforeState, afterState);
     }
 }

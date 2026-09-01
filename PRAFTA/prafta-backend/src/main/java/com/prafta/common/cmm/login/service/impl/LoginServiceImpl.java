@@ -18,6 +18,7 @@ import com.prafta.common.cmm.login.application.command.UserJoinCommand;
 import com.prafta.common.cmm.login.application.command.UserLogoutCommand;
 import com.prafta.common.cmm.login.application.command.UserPwdFailCommand;
 import com.prafta.common.cmm.login.application.command.UserPwdUnlockCommand;
+import com.prafta.common.cmm.consent.ConsentConst;
 import com.prafta.common.cmm.audit.AuditActionType;
 import com.prafta.common.cmm.audit.AuditContext;
 import com.prafta.common.cmm.audit.AuditResourceType;
@@ -73,6 +74,10 @@ public class LoginServiceImpl implements LoginService{
 	private final com.prafta.common.cmm.sch.mapper.DefaultSchGenMapper defaultSchGenMapper;
 	// 셀프가입 승인 대기 통보(M6). afterCommit + REQUIRES_NEW 격리라 푸시 실패가 가입 접수를 롤백시키지 않는다.
 	private final com.prafta.common.cmm.push.SelfJoinPendingNotiService selfJoinPendingNotiService;
+
+	/** 위치정보 동의철회·중지 S2 ⑤: 가입 시 선택약관(006) 동의 기록 — 전이 이력 경유 필수. */
+	private final com.prafta.common.cmm.consent.mapper.ConsentMapper consentMapper;
+	private final com.prafta.common.cmm.consent.service.ConsentHistoryRecorder consentHistoryRecorder;
 
 	// PRAFTA-036 — 인증대기 분기에서 발급하는 임시 토큰 만료(분).
 	private static final int PHONE_AUTH_TOKEN_TTL_MINUTES = 10;
@@ -624,6 +629,9 @@ public class LoginServiceImpl implements LoginService{
             loginMapper.insertTermsUserAgrMgmt(RequiredTermsInfoCommand.from(userCd, param, RequiredTermsResult));
         }
 
+        // 위치정보 동의철회·중지 S2 ⑤: 가입 화면에 함께 노출한 선택약관(006) 동의 기록.
+        recordOptionalJoinConsent(param.cmpnyCd(), userCd, param.agrTermsIdList());
+
         // 승인권자 통보(공통 정책서 §10.2 "요청 등록 → 승인권자에게 알림").
         //   ★신규 INSERT 경로와 거부 행 재활용(재가입) UPDATE 경로 양쪽을 한 지점에서 덮는다.
         //   afterCommit 등록이라 이 트랜잭션이 커밋된 뒤에만 적재되고, 적재 실패는 가입 접수에
@@ -783,6 +791,40 @@ public class LoginServiceImpl implements LoginService{
 				throw new ApiException(LoginErrorCode.LOGIN_400_023);
 			}
 		}
+	}
+
+	/**
+	 * 가입 화면에서 함께 노출한 <b>선택약관</b>(006 연동 회사 제3자 제공 동의) 동의 기록
+	 * — 위치정보 동의철회·중지 S2 ⑤.
+	 *
+	 * <h3>★동의('Y')한 경우에만 기록한다 — 미동의는 <b>기록하지 않는다</b></h3>
+	 * 006 의 로그인 후 게이트는 해제 판정을 <b>"응답 행 존재"(Y/N 무관)</b> 로 한다
+	 * ({@code ConsentMapper}). 가입 시 미동의를 {@code 'N'} 으로 적어 두면
+	 * <b>나중에 그 사업장이 새로 연동돼도 게이트가 다시 뜨지 않아</b> 하청 직원 전원이
+	 * 미동의로 굳고 연동 기능이 무력화된다. 동의만 기록하면 물어볼 기회가 보존된다.
+	 * (선택 동의는 미동의가 기본값이므로 '동의하지 않음'을 적극적으로 기록할 필요도 없다.)
+	 *
+	 * <p>★{@code ConsentHistoryRecorder} 를 경유한다 — 선택약관 동의는 PII 반출의 법적 근거라
+	 * 전이 이력 없이 기록되면 안 된다(필수약관 경로와 달리 직접 INSERT 하지 않는 이유).
+	 *
+	 * <p>006 이 미배포/미사용이면 현재버전이 null 이라 조용히 건너뛴다(무해).
+	 */
+	private void recordOptionalJoinConsent(String cmpnyCd, String userCd, List<String> agrTermsIdList) {
+
+		if (agrTermsIdList == null
+				|| !agrTermsIdList.contains(ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID)) {
+			return;
+		}
+
+		String version = consentMapper.selectOptionalTermsCurrentVersion(
+				ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID);
+		if (version == null || version.isBlank()) {
+			return;
+		}
+
+		consentHistoryRecorder.recordAndUpsert(
+				cmpnyCd, userCd, ConsentConst.THIRD_PARTY_CONSENT_TERMS_ID, version
+				, "Y", ConsentConst.SOURCE_JOIN, cmpnyCd, userCd);
 	}
 
 	/** 재활용 가능한 점유 행인지 — 같은 회사의 '07 가입거부' 행만 해당된다. */
