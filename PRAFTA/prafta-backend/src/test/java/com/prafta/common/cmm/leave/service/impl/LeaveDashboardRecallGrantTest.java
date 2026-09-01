@@ -25,6 +25,7 @@ import org.springframework.dao.DuplicateKeyException;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
@@ -59,7 +60,7 @@ class LeaveDashboardRecallGrantTest {
         LeavePolicyService policy = mock(LeavePolicyService.class);
         LeaveGrantEngineService engine = mock(LeaveGrantEngineService.class);
         // 경력인정 이원화 Phase 2 §2-2: 차액 조회 게이트 의존성 추가(본 테스트 경로(회수)와 무관 — mock 주입만)
-        svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper(),
+        svc = new LeaveDashboardServiceImpl(dash, mock(FileService.class), policy, engine, new ObjectMapper(),
                 mock(LeaveConversionPolicyService.class),
                 mock(SiteAccessService.class));
 

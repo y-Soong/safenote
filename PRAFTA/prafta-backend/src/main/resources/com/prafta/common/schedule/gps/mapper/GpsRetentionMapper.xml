@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.common.schedule.gps.mapper.GpsRetentionMapper">
+
+    <!-- ============================================================
+         위치정보(GPS 좌표) 3년 보존기간 파기 — 위치기반서비스 이용약관 제7조 ①
+
+         ★행을 지우지 않는다. 좌표 컬럼만 NULL 로 만든다.
+           세 테이블 모두 외근 사유·교육 이수 등 파기 대상이 아닌 업무 기록을 함께 담고 있어,
+           행을 지우면 고객사의 법정 보존 의무(근로기준법·산업안전보건법 3년)를 깨뜨린다.
+
+         ★평문/암호문 쌍을 함께 지운다. 읽기 fallback 규칙이 "암호문이 NULL 이면 평문 컬럼" 이라
+           암호문만 지우면 파기했다고 생각한 좌표가 되살아난다(GpsCoordCrypto).
+
+         ★파기는 batch LIMIT 로 나눈다. 한 문장으로 대량 UPDATE 하면 긴 트랜잭션과 넓은 락으로
+           근태 체크·TBM 입실 흐름이 그 뒤에 줄을 선다.
+
+         ★"좌표가 아직 남아 있는 행" 조건이 곧 진행 조건이다. 파기한 행은 다음 회차에
+           조건에서 빠지므로 배치 루프가 반드시 수렴한다(멱등).
+
+         ★기준 시각은 전부 DB NOW() 다. 애플리케이션 시계와 섞지 않는다.
+         ============================================================ -->
+
+    <!-- ================= 1. 출퇴근(출역) 좌표 ================= -->
+
+    <!-- 기준 컬럼 API_CALL_DATE(측정일자 varchar(8) YYYYMMDD, NOT NULL) = 약관이 말하는 "수집일".
+         idx_gps_purge(API_CALL_DATE) 인덱스 정합 - 없으면 풀스캔이므로 DDL 에서 함께 추가했다. -->
+    <select id="countExpiredAttdGps" resultType="int">
+    /* GpsRetentionMapper.countExpiredAttdGps */
+    SELECT COUNT(*)
+      FROM TB_USER_ATTD_GPS
+     WHERE API_CALL_DATE <![CDATA[ < ]]> DATE_FORMAT(DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH), '%Y%m%d')
+       AND (LAT IS NOT NULL OR LON IS NOT NULL OR LAT_ENC IS NOT NULL OR LON_ENC IS NOT NULL)
+    </select>
+
+    <update id="purgeAttdGps">
+    /* GpsRetentionMapper.purgeAttdGps */
+    UPDATE TB_USER_ATTD_GPS
+       SET LAT     = NULL
+         , LON     = NULL
+         , LAT_ENC = NULL
+         , LON_ENC = NULL
+     WHERE API_CALL_DATE <![CDATA[ < ]]> DATE_FORMAT(DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH), '%Y%m%d')
+       AND (LAT IS NOT NULL OR LON IS NOT NULL OR LAT_ENC IS NOT NULL OR LON_ENC IS NOT NULL)
+     LIMIT #{batchSize}
+    </update>
+
+    <!-- ================= 2. TBM 입실(참석자) 좌표 ================= -->
+
+    <!-- 기준 컬럼 INSERT_DATE(NOT NULL). ENTRY_AT 은 nullable 이라 기준으로 쓰면
+         NULL 인 행이 영원히 파기되지 않는다.
+         ★DEL_YN 을 조건에 넣지 않는다 - 삭제 표시된 행에도 좌표가 남아 있을 수 있고,
+           보존기간이 지난 좌표는 행의 상태와 무관하게 파기 대상이다. -->
+    <select id="countExpiredTbmAttendanceGps" resultType="int">
+    /* GpsRetentionMapper.countExpiredTbmAttendanceGps */
+    SELECT COUNT(*)
+      FROM TB_TBM_ATTENDANCE
+     WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
+       AND (ENTRY_GPS_LAT IS NOT NULL OR ENTRY_GPS_LON IS NOT NULL
+            OR ENTRY_GPS_LAT_ENC IS NOT NULL OR ENTRY_GPS_LON_ENC IS NOT NULL)
+    </select>
+
+    <update id="purgeTbmAttendanceGps">
+    /* GpsRetentionMapper.purgeTbmAttendanceGps */
+    UPDATE TB_TBM_ATTENDANCE
+       SET ENTRY_GPS_LAT     = NULL
+         , ENTRY_GPS_LON     = NULL
+         , ENTRY_GPS_LAT_ENC = NULL
+         , ENTRY_GPS_LON_ENC = NULL
+     WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
+       AND (ENTRY_GPS_LAT IS NOT NULL OR ENTRY_GPS_LON IS NOT NULL
+            OR ENTRY_GPS_LAT_ENC IS NOT NULL OR ENTRY_GPS_LON_ENC IS NOT NULL)
+     LIMIT #{batchSize}
+    </update>
+
+    <!-- ================= 3. TBM 세션 개설(관리자) 좌표 ================= -->
+
+    <!-- 기준 컬럼 INSERT_DATE(NOT NULL). OPENED_AT 은 nullable 이며,
+         INSERT_DATE 는 OPENED_AT 보다 이르거나 같으므로 파기가 늦어지지 않는다.
+         ★ENTRY_DISTANCE_M / GPS_VERIFY_RADIUS_M 등 거리·설정값은 좌표가 아니므로 남긴다. -->
+    <select id="countExpiredTbmSessionGps" resultType="int">
+    /* GpsRetentionMapper.countExpiredTbmSessionGps */
+    SELECT COUNT(*)
+      FROM TB_TBM_SESSION
+     WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
+       AND (MANAGER_GPS_LAT IS NOT NULL OR MANAGER_GPS_LON IS NOT NULL
+            OR MANAGER_GPS_LAT_ENC IS NOT NULL OR MANAGER_GPS_LON_ENC IS NOT NULL)
+    </select>
+
+    <update id="purgeTbmSessionGps">
+    /* GpsRetentionMapper.purgeTbmSessionGps */
+    UPDATE TB_TBM_SESSION
+       SET MANAGER_GPS_LAT     = NULL
+         , MANAGER_GPS_LON     = NULL
+         , MANAGER_GPS_LAT_ENC = NULL
+         , MANAGER_GPS_LON_ENC = NULL
+     WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
+       AND (MANAGER_GPS_LAT IS NOT NULL OR MANAGER_GPS_LON IS NOT NULL
+            OR MANAGER_GPS_LAT_ENC IS NOT NULL OR MANAGER_GPS_LON_ENC IS NOT NULL)
+     LIMIT #{batchSize}
+    </update>
+
+</mapper>

@@ -22,6 +22,7 @@ import org.junit.jupiter.api.Test;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.prafta.common.cmm.leave.mapper.LeaveDashboardMapper;
+import com.prafta.common.cmm.file.service.FileService;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveGrantEngineService;
 import com.prafta.common.cmm.leave.service.LeavePolicyService;
@@ -59,7 +60,7 @@ class LeaveDashboardShortfallListTest {
         policy = mock(LeavePolicyService.class);
         engine = mock(LeaveGrantEngineService.class);
         SiteAccessService siteAccessService = mock(SiteAccessService.class);
-        svc = new LeaveDashboardServiceImpl(dash, policy, engine, new ObjectMapper(),
+        svc = new LeaveDashboardServiceImpl(dash, mock(FileService.class), policy, engine, new ObjectMapper(),
                 mock(LeaveConversionPolicyService.class), siteAccessService);
     }
 
