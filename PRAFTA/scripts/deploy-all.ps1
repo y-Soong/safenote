@@ -49,12 +49,18 @@ $commonArgs = @('-Ref', $Ref)
 if ($UseWorkingTree) { $commonArgs += '-UseWorkingTree' }
 if ($SkipFetch)      { $commonArgs += '-SkipFetch' }
 
+# ★PowerShell 함정: 함수는 return 값만 돌려주는 게 아니라 "출력 스트림에 쌓인 전부"를 돌려준다.
+#   종전에는 하위 스크립트의 stdout 이 그대로 스트림에 실려, 호출부의 $code 가 int 가 아니라
+#   [출력 수백 줄 + 종료코드] 배열이 됐다. 그 상태에서 `if ($code -eq 0)` 은 비교가 아니라 필터라
+#   결과가 @(0) 이 되고, 원소 하나짜리 배열은 그 원소(0)로 평가돼 falsy → 성공을 실패로 오판했다.
+#   (2026-09-01 실제 사고: 백엔드가 정상 배포됐는데 FAIL 로 판정돼 웹 배포가 통째로 스킵됨)
+#   → 하위 스크립트 출력은 Out-Host 로 콘솔에 직접 흘리고, 출력 스트림에는 종료코드만 남긴다.
 function Invoke-DeployScript([string]$label, [string]$dir, [string]$scriptRelPath, [string[]]$extraArgs) {
     Write-Stage $label
     Push-Location $dir
     try {
-        & powershell -ExecutionPolicy Bypass -File $scriptRelPath @commonArgs @extraArgs
-        return $LASTEXITCODE
+        & powershell -ExecutionPolicy Bypass -File $scriptRelPath @commonArgs @extraArgs | Out-Host
+        return [int]$LASTEXITCODE
     } finally {
         Pop-Location
     }
@@ -65,7 +71,7 @@ if ($SkipBackend) {
     Write-Stage "1/3 백엔드 — 건너뜀(-SkipBackend)"
     $results['backend'] = 'SKIPPED'
 } else {
-    $code = Invoke-DeployScript '1/3 백엔드' $backendDir '.\scripts\deploy-backend.ps1' @()
+    [int]$code = Invoke-DeployScript '1/3 백엔드' $backendDir '.\scripts\deploy-backend.ps1' @()
     if ($code -eq 0) {
         $results['backend'] = 'OK'
     } else {
@@ -82,7 +88,7 @@ if ($SkipWeb) {
     Write-Stage "2/3 웹 — 건너뜀(-SkipWeb)"
     $results['web'] = 'SKIPPED'
 } else {
-    $code = Invoke-DeployScript '2/3 웹(관리자)' $webDir '.\scripts\deploy-web.ps1' @()
+    [int]$code = Invoke-DeployScript '2/3 웹(관리자)' $webDir '.\scripts\deploy-web.ps1' @()
     if ($code -eq 0) {
         $results['web'] = 'OK'
     } elseif ($code -eq 1) {
@@ -102,7 +108,7 @@ if ($SkipApp) {
     Write-Stage "3/3 앱 — 건너뜀(-SkipApp)"
     $results['app'] = 'SKIPPED'
 } else {
-    $code = Invoke-DeployScript '3/3 앱(웹뷰 콘텐츠)' $appDir '.\scripts\deploy-app-web.ps1' @()
+    [int]$code = Invoke-DeployScript '3/3 앱(웹뷰 콘텐츠)' $appDir '.\scripts\deploy-app-web.ps1' @()
     if ($code -eq 0) {
         $results['app'] = 'OK'
     } elseif ($code -eq 1) {
