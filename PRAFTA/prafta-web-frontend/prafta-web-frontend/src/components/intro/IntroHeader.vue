@@ -33,7 +33,7 @@
         <!-- 시작하기 = 서비스 로그인 진입(/safenote). 신규 문의(도입문의)와 성격이 달라
              primary 를 겹치지 않게 ghost 로 둔다. -->
         <IntroButton
-          :to="SERVICE_LOGIN_PATH"
+          :to="SERVICE_BASE"
           variant="ghost"
           size="sm"
           class="intro-header__cta intro-header__cta--mobile"
@@ -46,7 +46,7 @@
         <IntroButton to="/contact" variant="primary" size="sm"
           >도입문의</IntroButton
         >
-        <IntroButton :to="SERVICE_LOGIN_PATH" variant="ghost" size="sm"
+        <IntroButton :to="SERVICE_BASE" variant="ghost" size="sm"
           >시작하기</IntroButton
         >
       </div>
@@ -70,12 +70,10 @@
 import { ref } from "vue";
 import { useRoute } from "vue-router";
 import IntroButton from "./IntroButton.vue";
+import { SERVICE_BASE } from "@/router";
 
 const route = useRoute();
 const mobileMenuOpen = ref(false);
-
-// 서비스(관리자/근로자) 로그인 진입 경로. router 의 SERVICE_BASE 와 같은 값이다.
-const SERVICE_LOGIN_PATH = "/safenote";
 
 // 노출 순서 = 배열 순서. 회사소개(=루트)를 맨 앞에 둔다(2026-08-31 사용자 지시).
 const navLinks = [

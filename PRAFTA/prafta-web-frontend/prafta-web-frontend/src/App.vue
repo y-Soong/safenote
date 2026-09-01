@@ -18,7 +18,7 @@ import { useUserStore } from "@/stores/userStore";
 import { jwtDecode } from "jwt-decode";
 import { useLoadingStore } from "@/stores/loadingStore";
 import { registerAlertHandler } from "@/utils/alertUtil";
-import router from "@/router";
+import router, { SERVICE_BASE } from "@/router";
 import api from "@/api/axios";
 import {
   refreshAccessToken,
@@ -183,11 +183,23 @@ async function syncTokenIfNeeded() {
     console.log("[TAB-SYNC] Token refreshed and synced to sessionStorage");
   } catch (e) {
     console.error("[TAB-SYNC] Refresh failed:", e);
-    // refresh 실패 → 정리 후 로그인 페이지로 (현재 로그인 화면이 아니라면)
+    // refresh 실패 → 세션 정리. 단 로그인 화면으로 보내는 것은 "세션이 필요한 화면"에서만 한다.
+    //   이 훅은 전 화면에서 실행되므로, 종전처럼 무조건 이동시키면 회사소개·근태/안전 소개 같은
+    //   비로그인 공개 화면에 들어온 방문자까지 로그인으로 튕긴다. 브라우저에 만료된 refreshToken
+    //   이 남아 있으면(과거 로그인 이력) 재현되며, 한 번 튕기면 토큰이 지워져 다음부터는 정상이라
+    //   간헐적으로 보였다. refresh 실패는 "로그인 세션이 없다"는 뜻일 뿐이고,
+    //   공개 화면은 비로그인 열람이 정상 동작이다.
     await forceLogout();
     userStore.logout();
-    if (router.currentRoute.value.path !== "/safenote") {
-      router.push("/safenote");
+
+    const cur = router.currentRoute.value;
+    const needsSession =
+      cur.matched.some((r) => r.meta?.requiresAuth) ||
+      cur.path === SERVICE_BASE ||
+      cur.path.startsWith(`${SERVICE_BASE}/`);
+
+    if (needsSession && cur.path !== SERVICE_BASE) {
+      router.push(SERVICE_BASE);
     }
   }
 }

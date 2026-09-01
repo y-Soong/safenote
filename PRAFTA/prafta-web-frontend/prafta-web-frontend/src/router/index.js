@@ -16,7 +16,9 @@ import {
 //   '/'          → 회사소개 랜딩(공개)            = prafta.com/
 //   '/safenote'  → SafeNote 서비스(로그인/관리자) = prafta.com/safenote/...
 // SafeNote 서비스의 모든 경로는 '/safenote' 프리픽스 아래에 둔다.
-const SERVICE_BASE = "/safenote";
+// 서비스(로그인 이후) 영역의 루트 경로. 이 아래가 아니면 비로그인 공개 화면이다.
+// App.vue / IntroHeader 등이 함께 쓰므로 export 한다(문자열 중복 선언 금지).
+export const SERVICE_BASE = "/safenote";
 
 // 초기 고정 라우트만 선언 (동적 화면은 나중에 주입)
 const routes = [
