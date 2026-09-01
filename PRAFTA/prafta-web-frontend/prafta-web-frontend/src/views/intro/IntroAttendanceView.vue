@@ -6,7 +6,7 @@
       <div class="page-head__inner">
         <p class="page-head__kicker">ATTENDANCE</p>
         <h1 class="page-head__title">
-          근태관리 — 출근 한 번이면, 마감까지 빈틈없이
+          근태관리 출근 한 번이면, 마감까지 빈틈없이
         </h1>
       </div>
     </section>
@@ -16,7 +16,7 @@
     <IntroFeatureSection
       id="clock"
       axis="attd"
-      heading="GPS 지오펜스로, 현장에서의 출퇴근을 정확하게"
+      heading="GPS 기반, 신뢰성 있는 출퇴근 기록"
       :bullets="clockBullets"
     />
 
@@ -54,16 +54,13 @@
           마감된 근태 데이터는 앞으로 급여 처리 시스템과의 연동 등으로 확장될 수
           있습니다.
         </p>
-        <p class="feature-note feature-note--strong">
-          마감이 곧 검증입니다. 빠진 기록이 있는 채로는 닫히지 않습니다.
-        </p>
       </template>
     </IntroFeatureSection>
 
     <IntroFeatureSection
       id="daily-worker"
       axis="attd"
-      heading="QR 한 번으로 출역 등록부터 근로계약 체결·교부·3년 보존까지"
+      heading="일용직 관리 - 휴대폰 없는 근로자까지, 전자계약으로 안전하게"
       :bullets="dailyWorkerBullets"
       :images="dailyWorkerImages"
       reverse
@@ -95,11 +92,10 @@ const tabs = [
 ];
 
 const clockBullets = [
-  '사업장별 지오펜스 반경 설정, 범위 밖은 "근무지 외" 태그',
-  "외근은 사유 입력으로 등록",
-  'GPS 미확인 건은 "확인 필요"로 관리되어 마감 전 반드시 해소',
+  '사업장별 Geofence 유효거리 설정',
+  "외근관리 기능 제공",
   "하루 2구간 근무·재출근 지원",
-  "스케줄 대비 지각·조퇴·초과근무 자동 판정과 인정시간 산출",
+  "스케줄 기반 초과근무 관리, 지각·조퇴 자동 판정과 인정시간 산출",
 ];
 const scheduleBullets = [
   "근무 유형(시간·휴게·구간) 정의",
@@ -116,16 +112,14 @@ const leaveBullets = [
 ];
 const approvalBullets = [
   "스케줄 수정·근태 보정·초과근무·연차 4탭 통합 승인함",
-  "마감 임박 건 D-day 표시",
-  "다단 결재·HR 최종 승인 설정",
-  "승인·반려 사유 필수, 전 이력 보존",
-  "관리자 동시 처리 충돌 방지(선점)",
+  "다단 결재 및 결재선 프리셋 기능 제공",
+  "반려 사유 필수 입력 및 전 이력 보존",
+  "관리자 동시 처리 충돌 방지",
 ];
 const closingBullets = [
-  "시간 표준화(시작 올림·종료 내림)",
-  "자동 휴게 공제",
-  "마감 차단 3조건(미결 요청·GPS 미확인·미승인 추가근무) — 해소 전 마감 불가",
-  "마감 후 데이터가 급여·인사 기준",
+  "근무 타입별 휴게시간 자동 공제",
+  "마감 차단 조건(미결 요청·미승인 추가근무) - 해소 전 마감 불가",
+  "마감 후 데이터가 급여·인사 기준 ",
   "현황 조회·엑셀 다운로드",
 ];
 const dailyWorkerBullets = [
@@ -134,7 +128,7 @@ const dailyWorkerBullets = [
   "근로계약서 자동 작성·전자서명(사업장별 양식·버전 관리)",
   "서명본 SHA-256 무결성·추가 전용 저장",
   "앱 상시 열람(근로기준법 제17조)·3년 보존(제42조)",
-  "현장별 슬롯 관리, 당일 자정 자동 만료",
+  "현장별 슬롯 관리 및 당일 자정 자동 만료",
 ];
 const dailyWorkerImages = [
   { src: contractEsign, alt: "근로계약서 전자서명 화면", variant: "phone" },
