@@ -16,6 +16,10 @@ public enum BaimErrorCode implements ApiErrorCode {
     , BAIM_400_007(HttpStatus.BAD_REQUEST, "슬롯에 소속부서가 지정되지 않아 계정을 매칭할 수 없습니다.\n소속부서를 먼저 지정해 주세요.")
     , BAIM_400_008(HttpStatus.BAD_REQUEST, "점유 중인 계정 슬롯이 있어 활성 계정 수를 줄일 수 없습니다.\n해당 슬롯을 먼저 비운 뒤 변경해 주세요.")
     , BAIM_400_009(HttpStatus.BAD_REQUEST, "해당 사업장에서 사용할 수 없는 근무타입입니다.\n근무타입을 다시 확인해 주세요.")
+    // 위치정보 동의철회·중지 도입 S1: 사업장 지오펜스 필수화.
+    //   좌표나 반경이 비면 서버 지오펜스 판정이 '항상 사업장 안'으로 폴백되어 위치 확인이 무력화된다.
+    , BAIM_400_010(HttpStatus.BAD_REQUEST, "사업장 주소로부터 좌표를 확인하지 못했습니다.\n주소를 다시 검색해 좌표를 확정한 뒤 저장해 주세요.")
+    , BAIM_400_011(HttpStatus.BAD_REQUEST, "출퇴근 유효범위(GPS 반경)를 확인해 주세요.\n10m 이상 10,000m 이하의 숫자로 입력해야 합니다.")
     , BAIM_403_001(HttpStatus.FORBIDDEN, "해당 사업장에 대한 접근 권한이 없습니다.")
     , BAIM_403_002(HttpStatus.FORBIDDEN, "관리자 권한이 필요합니다.")
     , BAIM_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "약관 데이터 생성 오류 !\n관리자에게 문의해주세요.")

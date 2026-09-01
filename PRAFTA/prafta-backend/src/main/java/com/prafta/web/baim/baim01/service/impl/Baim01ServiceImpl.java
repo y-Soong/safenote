@@ -105,6 +105,11 @@ public class Baim01ServiceImpl implements Baim01Service{
 				siteCd = baim01Mapper.selectSiteCd(model.gvCmpnyCd());
 			}
 
+			// 위치정보 동의철회·중지 도입 S1: 지오펜스 필수 검증.
+			//   ★미러(연동) 사업장은 위 분기에서 continue 되므로 여기 도달하지 않는다 — 미러는 원본
+			//     소유사가 채워 전파하는 값이라 미러 회사가 고칠 수 없고, 검증 대상도 아니다.
+			assertGeofenceConfigured(model);
+
 			// 초기 1 depth 노드 생서
 			baim01Mapper.insertSiteNodeInfo(SiteNodeInfoCommand.from(model, siteCd));
 
@@ -141,6 +146,49 @@ public class Baim01ServiceImpl implements Baim01Service{
 					baim01Mapper.mergeSiteAdminSiteAuth(SiteAdminSiteAuthCommand.from(model, siteCd));
 				}
 			}
+		}
+	}
+
+	/** 출퇴근 유효범위(GPS 반경) 하한(m). 0m 는 모든 출근을 외근으로 뒤집으므로 막는다. */
+	private static final int GPS_RANGE_MIN_M = 10;
+
+	/** 출퇴근 유효범위(GPS 반경) 상한(m). 대형 현장을 감안한 값 — 오타(예: 100000) 차단이 목적. */
+	private static final int GPS_RANGE_MAX_M = 10000;
+
+	/**
+	 * 사업장 지오펜스 필수 검증 — 위치정보 동의철회·중지 도입 S1.
+	 *
+	 * <h3>★왜 서버에서 막는가</h3>
+	 * 화면(SiteInfoPop)이 종전에는 좌표 결측을 <b>confirm 으로 경고만 하고 통과</b>시켰고, 그 결과
+	 * 운영 사업장 13곳 중 7곳에 중심좌표가 없다. 좌표나 반경이 비면 근태 지오펜스 판정이
+	 * <b>"항상 사업장 안(온사이트)"</b> 으로 폴백되어({@code AppAttd01ServiceImpl} 폴백 A안)
+	 * 위치 확인 자체가 무력화된다. 화면 검증만으로는 EP 직접 호출을 막지 못하므로 서버에서 막는다.
+	 *
+	 * <p>★반경 {@code '0'} 도 거부한다. 반경 0m 는 <b>모든 출근을 외근으로 판정</b>하는데,
+	 * 운영에 실제로 활성 사업장 1곳이 이 값을 갖고 있었다.
+	 */
+	private void assertGeofenceConfigured(SiteInfoModel model) {
+
+		if (model.lat() == null || model.lon() == null) {
+			log.warn("사업장 저장 거부: 중심좌표 결측 - gvCmpnyCd={}, siteNm={}"
+					, model.gvCmpnyCd(), model.siteNm());
+			throw new ApiException(BaimErrorCode.BAIM_400_010);
+		}
+
+		// GPS_RANGE 는 varchar 라 NULL·빈문자·비숫자가 모두 유입될 수 있다(운영 실측: NULL 3, '' 3, '0' 1).
+		String gpsRange = model.gpsRange() == null ? "" : model.gpsRange().trim();
+		int rangeM;
+		try {
+			rangeM = Integer.parseInt(gpsRange);
+		} catch (NumberFormatException e) {
+			log.warn("사업장 저장 거부: GPS 반경 형식 오류 - gvCmpnyCd={}, siteNm={}"
+					, model.gvCmpnyCd(), model.siteNm());
+			throw new ApiException(BaimErrorCode.BAIM_400_011);
+		}
+		if (rangeM < GPS_RANGE_MIN_M || rangeM > GPS_RANGE_MAX_M) {
+			log.warn("사업장 저장 거부: GPS 반경 범위 초과 - gvCmpnyCd={}, siteNm={}, range={}m"
+					, model.gvCmpnyCd(), model.siteNm(), rangeM);
+			throw new ApiException(BaimErrorCode.BAIM_400_011);
 		}
 	}
 

@@ -162,7 +162,7 @@
                   id="gpsRange"
                   style="width: 5rem"
                   v-model="gpsRange"
-                  maxlength="4"
+                  maxlength="5"
                   :disabled="isMirror"
                   @input="handleGpsRangeInput"
                   @blur="focusKill"
@@ -329,7 +329,12 @@ const siteAdminNm = ref("");
 const siteAdminSrchBtnFcs = ref("");
 const telNo = ref("");
 const telNoFcs = ref("");
-const gpsRange = ref("");
+// 위치정보 S1: GPS 반경 기본값 100m. 신규 사업장은 이 값으로 시작하고,
+//   기존 사업장에 값이 없으면 로드 시 같은 값으로 프리필해 사용자가 보고 조정하게 한다.
+const GPS_RANGE_DEFAULT = "100";
+const GPS_RANGE_MIN_M = 10;
+const GPS_RANGE_MAX_M = 10000;
+const gpsRange = ref(GPS_RANGE_DEFAULT);
 const siteDesc = ref("");
 const siteDescFcs = ref("");
 
@@ -673,14 +678,14 @@ onBeforeUnmount(() => {
   geocoder = null;
 });
 
-// GPS 반경 입력 제한 (4자리 숫자만)
+// GPS 반경 입력 제한 (5자리 숫자만 — 상한 10,000m 입력 가능)
 const handleGpsRangeInput = (e) => {
   let value = e.target.value;
   // 숫자가 아닌 문자 제거
   value = value.replace(/[^0-9]/g, "");
-  // 4자리 제한
-  if (value.length > 4) {
-    value = value.slice(0, 4);
+  // 5자리 제한
+  if (value.length > 5) {
+    value = value.slice(0, 5);
   }
   gpsRange.value = value;
   e.target.value = value;
@@ -767,7 +772,17 @@ const fnGetSiteInfo = async (siteCd) => {
         endDate.value = toYmdDash(response.data?.siteInfoList[0].endDate);
         useYn.value = response.data?.siteInfoList[0].useYn;
         telNo.value = response.data?.siteInfoList[0].telNo;
-        gpsRange.value = response.data?.siteInfoList[0].gpsRange;
+        // 위치정보 S1: 기존 사업장에 반경이 없으면(NULL/''/'0') 기본값을 프리필한다.
+        //   조용히 저장되는 게 아니라 화면에 보이므로 사용자가 현장에 맞게 조정할 수 있다.
+        {
+          const loadedRange = String(
+            response.data?.siteInfoList[0].gpsRange ?? ""
+          ).trim();
+          gpsRange.value =
+            loadedRange === "" || Number(loadedRange) < GPS_RANGE_MIN_M
+              ? GPS_RANGE_DEFAULT
+              : loadedRange;
+        }
         siteDesc.value = response.data?.siteInfoList[0].siteDesc;
         siteAdminCd.value = response.data?.siteInfoList[0].siteAdminCd;
         siteAdminNm.value = response.data?.siteInfoList[0].siteAdminNm;
@@ -819,16 +834,36 @@ const fnSiteSave = async () => {
       await geocodePromise;
     }
 
-    // 좌표 미확보 시 저장 여부를 사용자가 선택한다.
-    //   좌표(LAT/LON)가 NULL 이면 서버 지오펜스 판정이 '항상 사업장 안'으로 폴백되어
-    //   GPS 반경 체크가 무력화된다 → 경고만 띄우고 통과시키지 않고 명시적 동의를 받는다.
-    if (proxy.$util.isEmpty(lat.value) || proxy.$util.isEmpty(lon.value)) {
-      const ok = await proxy.$confirm(
+    // 위치정보 S1: 좌표 미확보 시 저장을 거부한다(종전에는 confirm 으로 통과시켰다).
+    //   좌표(LAT/LON)가 NULL 이면 서버 지오펜스 판정이 '항상 사업장 안'으로 폴백되어 GPS 반경
+    //   체크가 무력화된다. 종전 confirm 통과를 허용한 결과 운영 사업장 13곳 중 7곳에 좌표가 없다.
+    //   ★미러(연동) 사업장은 잠금 필드라 사용자가 고칠 수 없으므로 검증 대상에서 제외한다
+    //     (서버도 미러 분기에서 SITE_ADMIN_CD 단독 저장으로 우회한다).
+    if (
+      !isMirror.value &&
+      (proxy.$util.isEmpty(lat.value) || proxy.$util.isEmpty(lon.value))
+    ) {
+      fnAlertMsg(
         "주소로부터 좌표를 가져오지 못했습니다.\n" +
-          "좌표 없이 저장하면 이 사업장의 출퇴근 유효범위(GPS 반경) 체크가 동작하지 않습니다.\n\n" +
-          "[확인] 좌표 없이 저장 · [취소] 저장 취소 후 주소 다시 선택"
+          "좌표가 없으면 이 사업장의 출퇴근 유효범위(GPS 반경) 체크가 동작하지 않습니다.\n\n" +
+          "주소찾기로 주소를 다시 선택해 좌표를 확정한 뒤 저장해 주세요."
       );
-      if (!ok) {
+      return;
+    }
+
+    // 위치정보 S1: GPS 반경 필수 + 범위 검증.
+    //   ★'0' 을 막는 이유 — 반경 0m 는 모든 출근을 외근으로 뒤집는다(운영에 활성 사업장 1곳 실재).
+    if (!isMirror.value) {
+      const rangeM = Number(String(gpsRange.value ?? "").trim());
+      if (
+        !Number.isInteger(rangeM) ||
+        rangeM < GPS_RANGE_MIN_M ||
+        rangeM > GPS_RANGE_MAX_M
+      ) {
+        fnAlertMsg(
+          "출퇴근 유효범위(GPS 반경)를 확인해 주세요.\n" +
+            `${GPS_RANGE_MIN_M}m 이상 ${GPS_RANGE_MAX_M.toLocaleString()}m 이하의 숫자로 입력해야 합니다.`
+        );
         return;
       }
     }
