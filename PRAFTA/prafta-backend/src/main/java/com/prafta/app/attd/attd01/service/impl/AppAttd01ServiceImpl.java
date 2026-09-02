@@ -61,6 +61,7 @@ import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.error.attd.AttdErrorCode;
+import com.prafta.common.error.location.LocationErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
 import com.prafta.common.util.AttdOverlapMessages;
@@ -1060,6 +1061,15 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
         log.info("[attd01] 셀프 퇴근 진입 (userCd={}, today={}, workYmd={})", userCd, today, param.workYmd());
 
+        // ★위치정보 동의 게이트(S4) — 퇴근은 <b>진행 중인 근태의 후속 동작</b>이라 ForOngoing 을 쓴다.
+        //   약관 시행 시점이 자정이라(STR_DATE 가 날짜) 오버나이트 근무자는 개정 때마다 퇴근에서 걸린다.
+        //   재동의 대기(회사 사정)면 퇴근까지는 허용하고, 본인 의사인 중지·철회는 차단한다.
+        //   ★차단 시 퇴근이 열린 채로 남으므로 앱이 즉시 재동의로 유도해야 한다(관리자 보정 방지).
+        if (!locationConsentService.isCollectAllowedForOngoing(cmpnyCd, userCd)) {
+            log.info("[attd01] 셀프 퇴근 거부: 위치정보 미동의 (userCd={})", userCd);
+            throw new ApiException(LocationErrorCode.LOCATION_403_001);
+        }
+
         // 1) prafta-app-026: 재퇴근 대상 = D+1 윈도우 내 최신 출근행(CHECK_OUT_TIME 유무 무관) tail 슬롯 1건.
         //    workYmd 우선(Low-1), 미전달이면 D+1 윈도우 하한 최신 폴백. 이미 퇴근한 슬롯도 대상에 포함되어
         //    "마지막 퇴근시각으로 덮어쓰기(last-write-wins)"가 가능하다(오탭 보정).
@@ -1320,6 +1330,14 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         String cmpnyCd = param.cmpnyCd();
         String siteCd = param.siteCd();
         String userCd = param.userCd();
+
+        // ★위치정보 동의 게이트(S4) — 동의(AGREED) 상태가 아니면 출근을 차단한다.
+        //   전용 오류코드(LOCATION_403_001)를 던져 앱이 안내 팝업 → 재동의 화면으로 분기하게 한다.
+        //   ★로그인은 막지 않는다(005 는 LOGIN_GATE_YN='N'). 앱에 들어와야 재동의를 할 수 있다.
+        if (!locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
+            log.info("[attd01] 셀프 출근 거부: 위치정보 미동의 (userCd={})", userCd);
+            throw new ApiException(LocationErrorCode.LOCATION_403_001);
+        }
 
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         String today = now.format(YMD);

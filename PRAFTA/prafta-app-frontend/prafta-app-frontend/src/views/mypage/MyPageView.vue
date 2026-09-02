@@ -221,6 +221,50 @@
           </nav>
         </template>
 
+        <!-- 위치정보 동의(005) — 상태 표시 + 일시중지/철회/재동의.
+             ★법 제24조①②의 행사 수단. 철회는 되돌릴 수 없으므로 중지와 버튼부터 분리한다
+               (버튼이 철회 하나뿐이면 "앞으로만 그만"을 원한 사람이 과거 기록을 날린다). -->
+        <template v-if="locationConsent.consentState">
+          <p class="mp-group-label">위치정보 동의</p>
+          <nav class="mp-menu">
+            <div class="mp-loc">
+              <div class="mp-loc__head">
+                <span class="mp-loc__state">{{ locationStateLabel }}</span>
+              </div>
+              <p class="mp-loc__desc">{{ locationStateDesc }}</p>
+              <div class="mp-loc__actions">
+                <template v-if="isLocationAgreed">
+                  <button
+                    type="button"
+                    class="mp-loc__btn"
+                    :disabled="isLocationSaving"
+                    @click="onSuspendLocation"
+                  >
+                    일시 중지
+                  </button>
+                  <button
+                    type="button"
+                    class="mp-loc__btn mp-loc__btn--danger"
+                    :disabled="isLocationSaving"
+                    @click="onWithdrawLocation"
+                  >
+                    동의 철회
+                  </button>
+                </template>
+                <button
+                  v-else
+                  type="button"
+                  class="mp-loc__btn mp-loc__btn--primary"
+                  :disabled="isLocationSaving"
+                  @click="onResumeLocation"
+                >
+                  다시 동의하기
+                </button>
+              </div>
+            </div>
+          </nav>
+        </template>
+
         <!-- 로그아웃 (풀폭 secondary 버튼) -->
         <button type="button" class="mp-logout" @click="onLogoutClick">
           <svg class="icon" width="18" height="18" aria-hidden="true">
@@ -322,6 +366,12 @@ import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leave
 import { splitLeaveDaysOnly, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
 // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
 import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
+import {
+  LOCATION_STATE_LABEL,
+  LOCATION_STATE_DESC,
+  LOCATION_WITHDRAW_CONFIRM,
+  LOCATION_SUSPEND_CONFIRM,
+} from '@/utils/locationConsent'
 import { getShellInfo } from '@/utils/shellCapability'
 
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
@@ -417,6 +467,19 @@ const buildLabel = computed(() => {
 // 선택약관 동의 설정 — GET /appApi/terms01/optional-terms 응답(현재버전 + agrYn).
 //   비치명적: 실패 시 빈 목록(섹션 미노출). 토글은 POST /appApi/terms01/optional-terms-agree.
 const optionalTerms = ref([])
+
+// 위치정보 동의(005) 상태 — GET /comApi/consent/location-consent.
+//   consentState 가 비어 있으면(조회 실패) 섹션 자체를 그리지 않는다(비치명적).
+const locationConsent = ref({ consentState: '', termsVersion: '', collectAllowed: false })
+const isLocationSaving = ref(false)
+
+const locationStateLabel = computed(
+  () => LOCATION_STATE_LABEL[locationConsent.value.consentState] || '',
+)
+const locationStateDesc = computed(
+  () => LOCATION_STATE_DESC[locationConsent.value.consentState] || '',
+)
+const isLocationAgreed = computed(() => locationConsent.value.consentState === 'AGREED')
 // 토글 저장 직렬화 가드(동시 PUT 경합 방지).
 const isTermsSaving = ref(false)
 
@@ -676,6 +739,72 @@ const loadLeaveSummary = async () => {
 }
 
 // ───────────────────────────────────────────────────────────
+// 위치정보 동의(005) 상태 로드 (GET /comApi/consent/location-consent).
+//   비치명적: 실패하면 섹션 미노출. 전체 화면 에러로 키우지 않는다.
+// ───────────────────────────────────────────────────────────
+const loadLocationConsent = async () => {
+  try {
+    const { data } = await api.get('/comApi/consent/location-consent')
+    locationConsent.value = {
+      consentState: data?.consentState || '',
+      termsVersion: data?.termsVersion || '',
+      collectAllowed: !!data?.collectAllowed,
+    }
+  } catch (e) {
+    locationConsent.value = { consentState: '', termsVersion: '', collectAllowed: false }
+    console.warn('[MyPage] 위치정보 동의 상태 조회 실패:', e?.message)
+  }
+}
+
+// 위치정보 상태 전이 공통 호출기. 성공하면 서버가 돌려준 상태로 갱신한다
+//   (낙관적 갱신을 쓰지 않는다 — 철회는 파기를 동반해 되돌릴 수 없으므로 서버 확정값만 믿는다).
+const callLocationConsent = async (path, successMsg) => {
+  if (isLocationSaving.value) return
+  isLocationSaving.value = true
+  try {
+    const { data } = await api.post(`/comApi/consent/location-consent/${path}`)
+    locationConsent.value = {
+      consentState: data?.consentState || '',
+      termsVersion: data?.termsVersion || '',
+      collectAllowed: !!data?.collectAllowed,
+    }
+    await showAlert(typeof successMsg === 'function' ? successMsg(data) : successMsg)
+  } catch (e) {
+    console.warn('[MyPage] 위치정보 동의 전이 실패:', e?.message)
+    showAlert(e?.response?.data?.message || '처리하지 못했어요. 잠시 후 다시 시도해 주세요.')
+  } finally {
+    isLocationSaving.value = false
+  }
+}
+
+// 일시 중지 — 과거 기록은 유지된다(법 제24조②).
+const onSuspendLocation = async () => {
+  const ok = await showConfirm(LOCATION_SUSPEND_CONFIRM)
+  if (!ok) return
+  await callLocationConsent(
+    'suspend',
+    '위치정보 수집을 중지했어요. 지금까지의 기록은 그대로 있어요.',
+  )
+}
+
+// 동의 철회 — ★수집된 위치정보를 전부 파기한다. 되돌릴 수 없으므로 사전 확인이 필수다.
+const onWithdrawLocation = async () => {
+  const ok = await showConfirm(LOCATION_WITHDRAW_CONFIRM)
+  if (!ok) return
+  await callLocationConsent('withdraw', (data) => {
+    const purged = Number(data?.purgedRows || 0)
+    return purged > 0
+      ? `동의를 철회하고 위치정보 ${purged}건을 삭제했어요.`
+      : '동의를 철회했어요. 삭제할 위치정보는 없었어요.'
+  })
+}
+
+// 재동의 — 철회로 파기된 좌표는 복구되지 않는다.
+const onResumeLocation = async () => {
+  await callLocationConsent('resume', '위치정보 제공에 다시 동의했어요.')
+}
+
+// ───────────────────────────────────────────────────────────
 // 선택약관 동의 설정 로드 (GET /appApi/terms01/optional-terms).
 //   비치명적: 실패하면 빈 목록(섹션 미노출). 전체 화면 에러로 키우지 않음.
 // ───────────────────────────────────────────────────────────
@@ -748,6 +877,7 @@ const loadAll = async ({ showLoading = true } = {}) => {
   const pendingP = loadPendingApprovalCount()
   const leaveP = loadLeaveSummary()
   const termsP = loadOptionalTerms()
+  const locConsentP = loadLocationConsent()
   // PRAFTA-005(기본근무타입-승인제): 근무 정보 메뉴 배지(비치명적).
   const defaultSchPendingP = loadPendingDefaultSchChangeReq()
 
@@ -778,7 +908,7 @@ const loadAll = async ({ showLoading = true } = {}) => {
   }
 
   // 비치명적 5종 완료 대기(내부에서 예외 흡수되어 reject 없음).
-  await Promise.all([adminP, pendingP, leaveP, termsP, defaultSchPendingP])
+  await Promise.all([adminP, pendingP, leaveP, termsP, locConsentP, defaultSchPendingP])
 }
 
 onMounted(() => {
@@ -815,6 +945,8 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
   --color-primary-tint-border: #dcfce7;
   --color-danger: #ef4444;
   --color-on-danger: #ffffff;
+  /* 위치정보 동의 S4: primary 버튼 전경색(기존 on-danger 와 짝). */
+  --color-on-primary: #ffffff;
   --color-text-primary: #111827;
   --color-text-secondary: #6b7280;
   --color-text-tertiary: #9ca3af;
@@ -1098,6 +1230,58 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 }
 
 /* 약관 동의 설정 — 선택약관 토글 행(PushSettingView 스위치 패턴 차용). */
+/* 위치정보 동의(005) 블록 — 상태 + 설명 + 액션 버튼.
+   ★색상/간격은 전부 CSS 변수만 사용한다(하드코딩 금지). */
+.mp-loc {
+  padding: var(--space-md) var(--space-lg);
+}
+.mp-loc__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.mp-loc__state {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+.mp-loc__desc {
+  margin: var(--space-xs) 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  word-break: keep-all;
+}
+.mp-loc__actions {
+  display: flex;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+}
+.mp-loc__btn {
+  flex: 1;
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.mp-loc__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mp-loc__btn--primary {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+}
+.mp-loc__btn--danger {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
 .mp-terms-row {
   min-height: 56px;
   display: flex;

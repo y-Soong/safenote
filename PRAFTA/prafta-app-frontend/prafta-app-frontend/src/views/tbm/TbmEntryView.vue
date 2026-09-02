@@ -112,7 +112,12 @@
             />
           </label>
 
-          <button v-if="QR_ENTRY_ENABLED" type="button" class="btn btn--ghost" @click="onScanQrToExit">
+          <button
+            v-if="QR_ENTRY_ENABLED"
+            type="button"
+            class="btn btn--ghost"
+            @click="onScanQrToExit"
+          >
             <svg class="icon" width="18" height="18" aria-hidden="true">
               <use href="#i-tbm-qr" />
             </svg>
@@ -216,6 +221,11 @@
 <script setup>
 import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import {
+  isLocationConsentError,
+  LOCATION_CONSENT_GUIDE,
+  LOCATION_CONSENT_ROUTE,
+} from '@/utils/locationConsent'
 
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
@@ -223,7 +233,14 @@ import { requestForegroundSec } from '@/utils/foregroundBridge'
 
 const route = useRoute()
 const router = useRouter()
+
 const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 위치정보 동의 유도 confirm 폴백(앱 전역 $confirm 우선) — S4.
+const askLocationConsent = async (message) => {
+  if (proxy?.$confirm) return await proxy.$confirm(message)
+  return window.confirm(message)
+}
 
 // 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — MyAttendanceView 패턴 동일
 const showAlert = (message) => {
@@ -522,6 +539,12 @@ const onSubmitEnter = async () => {
     }
   } catch (e) {
     console.error('[TbmEntry] enter 실패:', e?.message)
+    // ★위치정보 미동의 차단(S4) — 안내 후 동의 설정으로 유도한다.
+    if (isLocationConsentError(e)) {
+      const goSetting = await askLocationConsent(LOCATION_CONSENT_GUIDE)
+      if (goSetting) router.push(LOCATION_CONSENT_ROUTE)
+      return
+    }
     // 비번 불일치/잠금/상태/거리초과 등은 서버 errorCode 메시지를 인라인 표시.
     const msg = e?.response?.data?.message || '입실하지 못했어요. 잠시 후 다시 시도해 주세요.'
     entryError.value = msg

@@ -60,6 +60,7 @@ import com.prafta.common.cmm.location.service.LocationConsentService;
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
+import com.prafta.common.error.location.LocationErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.FileUrlSigner;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
@@ -189,6 +190,16 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         //   exit/leaveBefore/withdraw 에는 적용하지 않는다(입실만 게이트).
         //   타사 세션이어도 본인은 자기 회사 근무 상태 기준으로 판정한다(무변경).
         worktimeGateService.assertWorking(token);
+
+        // ★위치정보 동의 게이트(S4) — 동의(AGREED) 상태가 아니면 입실을 차단한다.
+        //   ★GPS 검증을 쓰지 않는 세션(DISABLED/MANUAL)도 함께 차단한다 — 사용자 확정 설계상
+        //     "미동의면 서비스 이용 불가"이고, 세션 유형에 따라 통과 여부가 갈리면 사용자가
+        //     자기 상태를 이해할 수 없다(같은 화면에서 어떤 TBM 은 되고 어떤 건 안 되는 상태).
+        //   전용 오류코드로 앱이 안내 팝업 → 재동의 화면으로 분기한다.
+        if (!locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
+            log.info("[tbm01] 입실 거부: 위치정보 미동의 (userCd={}, sessionCd={})", userCd, sessionCd);
+            throw new ApiException(LocationErrorCode.LOCATION_403_001);
+        }
 
         // PRAFTA-SUBCON-T5 공통 게이트(P1): 참석자 소속 회사 ∈ {개설사} ∪ SHARE 체인.
         //   출결 INSERT 를 수행하는 모든 경로가 통과해야 하는 단일 지점(요청서 §3.2).

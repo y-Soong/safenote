@@ -151,6 +151,11 @@
 <script setup>
 import { ref, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  isLocationConsentError,
+  LOCATION_CONSENT_GUIDE,
+  LOCATION_CONSENT_ROUTE,
+} from '@/utils/locationConsent'
 
 import api from '@/api/axios'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
@@ -497,6 +502,14 @@ const callCheckInOut = async (mode, ctx) => {
   } catch (e) {
     const errorCode = e?.response?.data?.errorCode
     const message = e?.response?.data?.message
+
+    // ★위치정보 미동의 차단(S4) — 안내 후 동의 설정으로 유도한다.
+    //   메시지만 띄우면 "왜 안 되는지"는 알아도 "어디서 푸는지"를 모른다.
+    if (isLocationConsentError(e)) {
+      const goSetting = await askConfirm(LOCATION_CONSENT_GUIDE)
+      if (goSetting) router.push(LOCATION_CONSENT_ROUTE)
+      return
+    }
 
     // 086: 외근 사유 필요 → 사유 시트 오픈(좌표·기존 ctx 유지하여 제출 시 재호출).
     if (errorCode === 'ATTD_400_086') {

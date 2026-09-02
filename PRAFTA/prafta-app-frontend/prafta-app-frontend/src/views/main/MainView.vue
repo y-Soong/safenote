@@ -55,7 +55,8 @@
           <span class="consent-banner__icon" aria-hidden="true">!</span>
           <span class="consent-banner__text">
             관리자가 요청한 연차 변경/삭제 동의가
-            <strong>{{ consentPendingCount }}</strong>건 있어요
+            <strong>{{ consentPendingCount }}</strong
+            >건 있어요
           </span>
         </button>
 
@@ -199,6 +200,11 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  isLocationConsentError,
+  LOCATION_CONSENT_GUIDE,
+  LOCATION_CONSENT_ROUTE,
+} from '@/utils/locationConsent'
 
 import api from '@/api/axios'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
@@ -755,16 +761,19 @@ const onTransferNoticeOpenEvent = () => {
 //   공통 컴포저블(usePullToRefresh)로 추출. 제스처/인디케이터 동작은 동일.
 // ───────────────────────────────────────────────────────────
 const mainEl = ref(null)
-const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(mainEl, async () => {
-  applySessionHeader()
-  // 홈 요약 + 공지 카드 + 연차 변경 동의 배너를 함께 갱신(각 실패는 자체 폴백/격리).
-  //   새로고침에서는 동의 팝업 자동 오픈 안 함(배너 수만 갱신) — autoOpen 생략.
-  await Promise.all([
-    loadHomeSummary({ showLoading: false }),
-    loadMyNotices(),
-    loadPendingConsents(),
-  ])
-})
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  mainEl,
+  async () => {
+    applySessionHeader()
+    // 홈 요약 + 공지 카드 + 연차 변경 동의 배너를 함께 갱신(각 실패는 자체 폴백/격리).
+    //   새로고침에서는 동의 팝업 자동 오픈 안 함(배너 수만 갱신) — autoOpen 생략.
+    await Promise.all([
+      loadHomeSummary({ showLoading: false }),
+      loadMyNotices(),
+      loadPendingConsents(),
+    ])
+  },
+)
 
 onMounted(() => {
   applySessionHeader()
@@ -889,6 +898,14 @@ const callCheckInOut = async (mode, ctx) => {
   } catch (e) {
     const errorCode = e?.response?.data?.errorCode
     const message = e?.response?.data?.message
+
+    // ★위치정보 미동의 차단(S4) — 안내 후 동의 설정으로 유도한다.
+    //   메시지만 띄우면 "왜 안 되는지"는 알아도 "어디서 푸는지"를 모른다.
+    if (isLocationConsentError(e)) {
+      const goSetting = await askConfirm(LOCATION_CONSENT_GUIDE)
+      if (goSetting) router.push(LOCATION_CONSENT_ROUTE)
+      return
+    }
 
     // 086: 외근 사유 필요 → 사유 시트 오픈(좌표·기존 ctx 유지하여 제출 시 재호출).
     if (errorCode === 'ATTD_400_086') {
@@ -1229,5 +1246,4 @@ const onNoticeRow = (noticeId) => {
 .consent-banner__text strong {
   font-weight: 700;
 }
-
 </style>

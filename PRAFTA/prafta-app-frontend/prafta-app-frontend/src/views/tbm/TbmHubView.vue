@@ -60,11 +60,7 @@
         ref="inProgressListRef"
         @select="onSelectInProgress"
       />
-      <TbmCompletedList
-        v-else
-        ref="completedListRef"
-        @select="onSelectCompleted"
-      />
+      <TbmCompletedList v-else ref="completedListRef" @select="onSelectCompleted" />
     </main>
 
     <!-- 하단 탭바 (TBM 활성) — prafta-app-025 J1-2: 1뎁스 허브이므로 공통 탭바 장착(라우팅 중앙화). -->
@@ -101,6 +97,11 @@
 <script setup>
 import { ref, getCurrentInstance } from 'vue'
 import { useRouter } from 'vue-router'
+import {
+  isLocationConsentError,
+  LOCATION_CONSENT_GUIDE,
+  LOCATION_CONSENT_ROUTE,
+} from '@/utils/locationConsent'
 
 import api from '@/api/axios'
 import { requestGps } from '@/utils/gpsBridge'
@@ -114,7 +115,14 @@ import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
+
 const { proxy } = getCurrentInstance() || { proxy: null }
+
+// 위치정보 동의 유도 confirm 폴백(앱 전역 $confirm 우선) — S4.
+const askLocationConsent = async (message) => {
+  if (proxy?.$confirm) return await proxy.$confirm(message)
+  return window.confirm(message)
+}
 
 // 공통: alert 폴백(앱 전역 $alert 우선, 없으면 window.alert) — MainView/TbmEntryView 패턴 동일
 const showAlert = (message) => {
@@ -264,8 +272,17 @@ const onEntrySubmit = async ({ entryPwd }) => {
     })
   } catch (e) {
     console.error('[TbmHub] enter 실패:', e?.message)
+    // ★위치정보 미동의 차단(S4) — 시트를 닫고 동의 설정으로 유도한다.
+    //   인라인 오류로만 두면 "어디서 푸는지"를 알 수 없다.
+    if (isLocationConsentError(e)) {
+      entrySheetOpen.value = false
+      const goSetting = await askLocationConsent(LOCATION_CONSENT_GUIDE)
+      if (goSetting) router.push(LOCATION_CONSENT_ROUTE)
+      return
+    }
     // 비번 불일치/잠금/상태/거리초과 등은 서버 메시지를 시트 인라인으로 표시.
-    entryError.value = e?.response?.data?.message || '입실하지 못했어요. 잠시 후 다시 시도해 주세요.'
+    entryError.value =
+      e?.response?.data?.message || '입실하지 못했어요. 잠시 후 다시 시도해 주세요.'
   } finally {
     entrySubmitting.value = false
   }
