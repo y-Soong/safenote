@@ -4,7 +4,7 @@
 
     <!-- 출근/퇴근/전체 필터 — 출근·퇴근 좌표가 겹쳐 가려질 때 개별 확인용 -->
     <div
-      v-if="!loading && !mapError && validTrail.length > 0"
+      v-if="!loading && !mapError && drawableTrail.length > 0"
       class="gps-panel__filter"
     >
       <button
@@ -38,8 +38,18 @@
     <!-- loading -->
     <div v-if="loading" class="gps-panel__empty">GPS 정보를 불러오는 중...</div>
 
+    <!-- empty(파기): 행은 있는데 좌표가 파기된 경우 — 원인을 밝힌다.
+         ★"수집된 좌표가 없습니다"로 뭉뚱그리면 관리자가 애초에 기록이 없었던 것으로 오해한다.
+           외근 판정 자체는 유효하고 좌표만 사라진 것이다. -->
+    <div
+      v-else-if="drawableTrail.length === 0 && purgedCount > 0"
+      class="gps-panel__empty gps-panel__empty--purged"
+    >
+      {{ purgeMessage }}
+    </div>
+
     <!-- empty: 수집 좌표 0건 또는 유효(01/02) 좌표가 하나도 없을 때 -->
-    <div v-else-if="validTrail.length === 0" class="gps-panel__empty">
+    <div v-else-if="drawableTrail.length === 0" class="gps-panel__empty">
       수집된 GPS 좌표가 없습니다.
     </div>
 
@@ -51,11 +61,18 @@
     <!-- success: 카카오맵 캔버스 -->
     <div v-else ref="mapContainer" class="gps-panel__canvas"></div>
 
-    <div v-if="validTrail.length > 0 && !loading" class="gps-panel__summary">
-      총 <b>{{ validTrail.length }}</b
+    <div
+      v-if="(drawableTrail.length > 0 || purgedCount > 0) && !loading"
+      class="gps-panel__summary"
+    >
+      총 <b>{{ drawableTrail.length }}</b
       >건
       <span v-if="mockedCount > 0" class="gps-panel__mocked-warn">
         (Mock 좌표 {{ mockedCount }}건 포함)
+      </span>
+      <!-- 일부만 파기된 경우: 지도에 안 보이는 건이 있다는 사실을 알린다. -->
+      <span v-if="purgedCount > 0" class="gps-panel__purged-badge">
+        {{ purgeBadgeLabel }} {{ purgedCount }}건
       </span>
     </div>
   </div>
@@ -89,6 +106,38 @@ const mapError = ref(false);
 //   여기서도 제외해, 그런 좌표만 있을 때 빈 캔버스 대신 안내 문구가 노출되게 한다.
 const validTrail = computed(() =>
   props.trail.filter((g) => g.gpsInfoType === "01" || g.gpsInfoType === "02")
+);
+
+// 실제 지도에 그릴 수 있는 좌표(숫자 lat/lon 보유) — renderMap 의 판정과 동일 기준.
+//   ★위치정보 S5: 파기된 행은 validTrail 에는 남지만 좌표가 null 이라 그려지지 않는다.
+//     빈 상태 판정을 validTrail 로 하면 "빈 지도"가 뜨고 사용자는 이유를 알 수 없다.
+const drawableTrail = computed(() =>
+  validTrail.value.filter(
+    (g) =>
+      !isNaN(Number(g.lat)) &&
+      !isNaN(Number(g.lon)) &&
+      g.lat != null &&
+      g.lon != null
+  )
+);
+
+// 좌표가 파기된 건수 + 사유(위치정보 동의철회·중지 S5).
+const purgedTrail = computed(() =>
+  validTrail.value.filter((g) => !!g.gpsPurgeReasonCd)
+);
+const purgedCount = computed(() => purgedTrail.value.length);
+const purgeReasonCd = computed(
+  () => purgedTrail.value[0]?.gpsPurgeReasonCd || ""
+);
+const purgeBadgeLabel = computed(() =>
+  purgeReasonCd.value === "RETENTION"
+    ? "보존기간 경과 삭제"
+    : "동의 철회로 삭제"
+);
+const purgeMessage = computed(() =>
+  purgeReasonCd.value === "RETENTION"
+    ? "보존기간(3년)이 지나 위치정보가 삭제되었습니다.\n외근 판정과 사유는 그대로 남아 있습니다."
+    : "본인이 위치정보 동의를 철회하여 좌표가 삭제되었습니다.\n외근 판정과 사유는 그대로 남아 있습니다."
 );
 
 // Mock 좌표 건수 (실제 지도에 표시되는 유효 좌표 기준)
@@ -393,6 +442,22 @@ onBeforeUnmount(() => {
   background: var(--color-bg);
   border: 1px dashed var(--color-border);
   border-radius: var(--input-radius);
+}
+
+/* 위치정보 S5: 좌표 파기 안내/배지 — 색상은 CSS 변수만 사용한다. */
+.gps-panel__empty--purged {
+  color: var(--color-text-secondary, #6b7280);
+  white-space: pre-line;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+.gps-panel__purged-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: var(--color-bg-muted, #f3f4f6);
+  color: var(--color-text-secondary, #6b7280);
 }
 
 .gps-panel__empty--error {

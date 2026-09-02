@@ -217,6 +217,7 @@ public class Attd08ServiceImpl implements Attd08Service {
                     , row.apiCallTime()
                     , row.isMocked()
                     , row.gpsInfoType()
+                    , row.gpsPurgeReasonCd()
             ));
         }
 

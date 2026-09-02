@@ -17,6 +17,10 @@ public enum LocationErrorCode implements ApiErrorCode {
     LOCATION_400_001(HttpStatus.BAD_REQUEST, "요청한 동의 상태가 올바르지 않습니다.")
     , LOCATION_400_002(HttpStatus.BAD_REQUEST, "이미 동의를 철회한 상태입니다.\n중지로 되돌릴 수 없으며, 다시 이용하려면 재동의가 필요합니다.")
     , LOCATION_403_001(HttpStatus.FORBIDDEN, "위치정보 제공 및 이용에 동의해야 이용할 수 있는 기능입니다.\n위치정보 동의 후 다시 시도해 주세요.")
+    // S5: 위치정보 동의 현황 조회(Location_01) 권한 게이트.
+    //   ★대상이 조회 범위 밖일 때도 이 코드를 쓴다 — "권한 없음"과 "대상 없음"을 구분해 응답하면
+    //     userCd 를 바꿔가며 특정 직원의 소속을 탐색할 수 있다(존재 여부 노출 방지).
+    , LOCATION_403_002(HttpStatus.FORBIDDEN, "위치정보 동의 현황을 조회할 권한이 없습니다.")
     , LOCATION_500_001(HttpStatus.INTERNAL_SERVER_ERROR, "위치기반서비스 약관 정보를 확인할 수 없습니다.\n관리자에게 문의해주세요.")
     ;
 

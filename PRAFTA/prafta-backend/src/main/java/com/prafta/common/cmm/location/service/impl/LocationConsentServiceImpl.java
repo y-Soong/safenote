@@ -1,5 +1,6 @@
 package com.prafta.common.cmm.location.service.impl;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,6 +35,26 @@ public class LocationConsentServiceImpl implements LocationConsentService {
     private final ConsentHistoryRecorder consentHistoryRecorder;
     private final LocationPurgeMapper locationPurgeMapper;
 
+    /**
+     * 이벤트 차단 게이트 — <b>기본 false(차단하지 않음)</b>.
+     *
+     * <h3>★왜 토글이 필요한가 (2026-09-02 운영 실사고)</h3>
+     * 종전에는 로그인 게이트가 005 미동의자를 잡아 재동의를 강요했다. S2 에서 005 를
+     * 게이트에서 빼자 그 강제가 사라졌고, 그 상태로 S4 이벤트 차단을 켜니
+     * <b>약관 개정 후 재동의하지 않은 기존 사용자</b>가 출퇴근을 하지 못하게 됐다.
+     * 운영 실측: 활성 40명 중 21명이 현재버전(v3) 동의 행 없음
+     * (v2 만 동의 10명 + 005 행 자체가 없는 계정 11명).
+     *
+     * <p>이들은 "철회한 사람"이 아니라 <b>재동의 대기</b>일 뿐이다. 앱의 재동의 유도 UX 가
+     * 실기기에서 검증되기 전까지는 차단을 켜지 않는다.
+     *
+     * <p>★수집 차단({@link #isCollectAllowed})은 이 토글과 <b>무관하게 항상 동작</b>한다 —
+     * 미동의자의 좌표를 저장하지 않는 것은 법적 요건이라 게이트로 끄지 않는다.
+     * 이 토글이 끄는 것은 "이벤트 자체를 막을지" 뿐이다.
+     */
+    @Value("${prafta.location.consent.event-block.enabled:false}")
+    private boolean eventBlockEnabled;
+
     @Override
     public LocationConsentStatusResult resolveStatus(String cmpnyCd, String userCd) {
         String version = resolveCurrentVersion();
@@ -44,6 +65,23 @@ public class LocationConsentServiceImpl implements LocationConsentService {
     public boolean isCollectAllowed(String cmpnyCd, String userCd) {
         return LocationConsentConst.STATE_AGREED.equals(
                 resolveState(cmpnyCd, userCd, resolveCurrentVersion()));
+    }
+
+    @Override
+    public boolean isEventAllowed(String cmpnyCd, String userCd) {
+        // ★게이트가 꺼져 있으면 이벤트를 막지 않는다(수집 차단은 별개로 계속 동작).
+        if (!eventBlockEnabled) {
+            return true;
+        }
+        return isCollectAllowed(cmpnyCd, userCd);
+    }
+
+    @Override
+    public boolean isEventAllowedForOngoing(String cmpnyCd, String userCd) {
+        if (!eventBlockEnabled) {
+            return true;
+        }
+        return isCollectAllowedForOngoing(cmpnyCd, userCd);
     }
 
     @Override

@@ -196,7 +196,7 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
         //     "미동의면 서비스 이용 불가"이고, 세션 유형에 따라 통과 여부가 갈리면 사용자가
         //     자기 상태를 이해할 수 없다(같은 화면에서 어떤 TBM 은 되고 어떤 건 안 되는 상태).
         //   전용 오류코드로 앱이 안내 팝업 → 재동의 화면으로 분기한다.
-        if (!locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
+        if (!locationConsentService.isEventAllowed(cmpnyCd, userCd)) {
             log.info("[tbm01] 입실 거부: 위치정보 미동의 (userCd={}, sessionCd={})", userCd, sessionCd);
             throw new ApiException(LocationErrorCode.LOCATION_403_001);
         }

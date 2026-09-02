@@ -22,5 +22,9 @@ public record AttdGpsTrailRow(
     , String apiCallTime
     , String isMocked
     , String gpsInfoType
+    // 위치정보 동의철회·중지 S5: 좌표 파기 사유[WITHDRAW/RETENTION]. NULL = 파기되지 않음.
+    //   ★좌표가 NULL 인데 이 값도 NULL 이면 "원래 좌표가 안 잡힌 행"(기기 사정)이다.
+    //     셋을 구분하지 못하면 관리자가 기기 결측까지 "철회됨"으로 오해한다.
+    , String gpsPurgeReasonCd
 ) {
 }

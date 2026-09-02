@@ -30,5 +30,7 @@ public class EmployeeGpsTrailResponse {
         private final String apiCallTime;
         private final String isMocked;
         private final String gpsInfoType;
+        /** S5: 좌표 파기 사유[WITHDRAW/RETENTION]. NULL = 미파기 — 화면이 배지를 구분해 그린다. */
+        private final String gpsPurgeReasonCd;
     }
 }

@@ -18,5 +18,7 @@ public record GpsInfoResult(
     , BigDecimal accuracy // 정확도(m, TBM 은 NULL)
     , String mockedYn     // Mock위치여부 Y/N (TBM 은 수집 시 미판정 — 'N' 고정, 화면 '-' 표시)
     , String ipAddr       // 수집 시 IP(TBM 은 NULL)
+    // S5: 좌표 파기 사유[WITHDRAW/RETENTION]. NULL = 미파기 — 화면이 배지를 구분해 그린다.
+    , String gpsPurgeReasonCd
 ) {
 }

@@ -242,6 +242,7 @@ public class PlatformLocationServiceImpl implements PlatformLocationService {
                     , row.accuracy()
                     , row.mockedYn()
                     , row.ipAddr()
+                    , row.gpsPurgeReasonCd()
             ));
         }
 

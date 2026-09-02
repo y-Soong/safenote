@@ -1065,7 +1065,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         //   약관 시행 시점이 자정이라(STR_DATE 가 날짜) 오버나이트 근무자는 개정 때마다 퇴근에서 걸린다.
         //   재동의 대기(회사 사정)면 퇴근까지는 허용하고, 본인 의사인 중지·철회는 차단한다.
         //   ★차단 시 퇴근이 열린 채로 남으므로 앱이 즉시 재동의로 유도해야 한다(관리자 보정 방지).
-        if (!locationConsentService.isCollectAllowedForOngoing(cmpnyCd, userCd)) {
+        if (!locationConsentService.isEventAllowedForOngoing(cmpnyCd, userCd)) {
             log.info("[attd01] 셀프 퇴근 거부: 위치정보 미동의 (userCd={})", userCd);
             throw new ApiException(LocationErrorCode.LOCATION_403_001);
         }
@@ -1334,7 +1334,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
         // ★위치정보 동의 게이트(S4) — 동의(AGREED) 상태가 아니면 출근을 차단한다.
         //   전용 오류코드(LOCATION_403_001)를 던져 앱이 안내 팝업 → 재동의 화면으로 분기하게 한다.
         //   ★로그인은 막지 않는다(005 는 LOGIN_GATE_YN='N'). 앱에 들어와야 재동의를 할 수 있다.
-        if (!locationConsentService.isCollectAllowed(cmpnyCd, userCd)) {
+        if (!locationConsentService.isEventAllowed(cmpnyCd, userCd)) {
             log.info("[attd01] 셀프 출근 거부: 위치정보 미동의 (userCd={})", userCd);
             throw new ApiException(LocationErrorCode.LOCATION_403_001);
         }

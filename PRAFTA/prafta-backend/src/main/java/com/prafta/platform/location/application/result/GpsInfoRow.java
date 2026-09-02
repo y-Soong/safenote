@@ -23,5 +23,7 @@ public record GpsInfoRow(
     , BigDecimal accuracy // 정확도(m, TBM 은 NULL)
     , String mockedYn     // Mock위치여부 Y/N (TBM 은 'N' 고정)
     , String ipAddr       // 수집 시 IP(TBM 은 NULL)
+    // S5: 좌표 파기 사유[WITHDRAW:동의철회/RETENTION:보존기간경과]. NULL = 미파기.
+    , String gpsPurgeReasonCd
 ) {
 }

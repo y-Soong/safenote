@@ -130,6 +130,8 @@
             , G.API_CALL_TIME  AS apiCallTime
             , G.IS_MOCKED      AS isMocked
             , G.GPS_INFO_TYPE  AS gpsInfoType
+            /* S5: 좌표 파기 사유 — 화면이 "철회로 사라짐 / 보존기간 경과 / 원래 없음"을 구분한다. */
+            , G.GPS_PURGE_REASON_CD AS gpsPurgeReasonCd
         FROM TB_USER_ATTD_GPS G
         WHERE G.CMPNY_CD = #{gvCmpnyCd}
           AND G.ATTD_ID  = #{attdId}

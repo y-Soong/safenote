@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.prafta.web.location.location01.mapper.Location01Mapper">
+
+    <!-- ============================================================
+         위치정보 동의 현황(Location_01) — 조회 전용
+
+         ★인가는 서비스가 강제한다(AuthRoleUtils.isManager + canManageNode).
+           매퍼는 서비스가 확정한 scopeNodeCd 만 받는다 — 클라 값으로 범위를 넓힐 수 없다.
+
+         ★일용직(TB_DAILY_USER)도 UNION 으로 포함한다. 동의 이력 테이블이 두 계통을 모두
+           대상으로 하므로, 일용직이 빠지면 "전원 확인"이 되지 않는다.
+
+         ★부서 술어에 SITE_CD 를 반드시 포함한다 — NODE_CD 는 사업장마다 중복된다('n1' 등).
+         ============================================================ -->
+
+    <!-- 상태 판정 규칙(서비스 LocationConsentServiceImpl.resolveState 와 동일해야 한다):
+           현재버전 행 있음 ┬ CONSENT_STATE 있음 → 그 값
+                           └ 없음 → AGR_YN='Y' ? AGREED : WITHDRAWN
+           현재버전 행 없음 → PENDING_REAGREE
+         ★두 곳의 규칙이 갈리면 "화면에는 동의로 보이는데 출근이 막히는" 상태가 된다. -->
+    <sql id="consentStateExpr">
+        CASE
+            WHEN M.USER_CD IS NULL THEN 'PENDING_REAGREE'
+            WHEN M.CONSENT_STATE IS NOT NULL AND TRIM(M.CONSENT_STATE) <![CDATA[ <> ]]> '' THEN M.CONSENT_STATE
+            WHEN IFNULL(M.AGR_YN, 'N') = 'Y' THEN 'AGREED'
+            ELSE 'WITHDRAWN'
+        END
+    </sql>
+
+    <select id="selectConsentStatusList" resultType="com.prafta.web.location.location01.result.LocationConsentStatusRow">
+    /* Location01Mapper.selectConsentStatusList */
+    SELECT X.userCd
+         , X.userNm
+         , X.userTypeCd
+         , X.nodeCd
+         , X.nodeNm
+         , X.consentState
+         , X.lastActionDtime
+         , X.purgeCount
+    FROM (
+        SELECT U.USER_CD        AS userCd
+             , U.USER_NM        AS userNm
+             , 'REGULAR'        AS userTypeCd
+             , U.NODE_CD        AS nodeCd
+             , N.NODE_NM        AS nodeNm
+             , <include refid="consentStateExpr" /> AS consentState
+             , DATE_FORMAT(H.LAST_DTIME, '%Y-%m-%d %H:%i') AS lastActionDtime
+             , IFNULL(P.CNT, 0) AS purgeCount
+        FROM TB_USER U
+             LEFT OUTER JOIN TB_SITE_NODE N
+                ON (N.CMPNY_CD = U.CMPNY_CD AND N.SITE_CD = U.SITE_CD AND N.NODE_CD = U.NODE_CD)
+             LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT M
+                ON (M.CMPNY_CD = U.CMPNY_CD AND M.USER_CD = U.USER_CD
+                    AND M.TERMS_ID = '005' AND M.TERMS_VERSION = #{termsVersion})
+             LEFT OUTER JOIN (
+                SELECT CMPNY_CD, USER_CD, MAX(ACTION_DTIME) AS LAST_DTIME
+                FROM TB_TERMS_USER_AGR_HIST
+                WHERE CMPNY_CD = #{cmpnyCd} AND TERMS_ID = '005'
+                GROUP BY CMPNY_CD, USER_CD
+             ) H ON (H.CMPNY_CD = U.CMPNY_CD AND H.USER_CD = U.USER_CD)
+             LEFT OUTER JOIN (
+                SELECT CMPNY_CD, USER_CD, COUNT(*) AS CNT
+                FROM TB_LOCATION_PURGE_HIST
+                WHERE CMPNY_CD = #{cmpnyCd}
+                GROUP BY CMPNY_CD, USER_CD
+             ) P ON (P.CMPNY_CD = U.CMPNY_CD AND P.USER_CD = U.USER_CD)
+        WHERE U.CMPNY_CD = #{cmpnyCd}
+          AND U.SITE_CD  = #{siteCd}
+          AND U.USE_YN   = 'Y'
+          <if test="scopeNodeCd != null and scopeNodeCd != ''">
+          AND U.NODE_CD = #{scopeNodeCd}
+          </if>
+
+        UNION ALL
+
+        /* 일용직 계통 — 부서 개념이 없어 nodeCd/nodeNm 은 NULL 이다.
+           scopeNodeCd 가 지정된 경우(부서 관리자)에는 대상에서 제외한다(부서 스코프 밖). */
+        SELECT D.USER_CD
+             , D.USER_NM
+             , 'DAILY'
+             , NULL
+             , NULL
+             , <include refid="consentStateExpr" />
+             , DATE_FORMAT(H.LAST_DTIME, '%Y-%m-%d %H:%i')
+             , IFNULL(P.CNT, 0)
+        FROM TB_DAILY_USER D
+             LEFT OUTER JOIN TB_TERMS_USER_AGR_MGMT M
+                ON (M.CMPNY_CD = D.CMPNY_CD AND M.USER_CD = D.USER_CD
+                    AND M.TERMS_ID = '005' AND M.TERMS_VERSION = #{termsVersion})
+             LEFT OUTER JOIN (
+                SELECT CMPNY_CD, USER_CD, MAX(ACTION_DTIME) AS LAST_DTIME
+                FROM TB_TERMS_USER_AGR_HIST
+                WHERE CMPNY_CD = #{cmpnyCd} AND TERMS_ID = '005'
+                GROUP BY CMPNY_CD, USER_CD
+             ) H ON (H.CMPNY_CD = D.CMPNY_CD AND H.USER_CD = D.USER_CD)
+             LEFT OUTER JOIN (
+                SELECT CMPNY_CD, USER_CD, COUNT(*) AS CNT
+                FROM TB_LOCATION_PURGE_HIST
+                WHERE CMPNY_CD = #{cmpnyCd}
+                GROUP BY CMPNY_CD, USER_CD
+             ) P ON (P.CMPNY_CD = D.CMPNY_CD AND P.USER_CD = D.USER_CD)
+        WHERE D.CMPNY_CD = #{cmpnyCd}
+          AND D.SITE_CD  = #{siteCd}
+          AND D.USE_YN   = 'Y'
+          <if test="scopeNodeCd != null and scopeNodeCd != ''">
+          AND 1 = 0
+          </if>
+    ) X
+    <if test="stateFilter != null and stateFilter == 'ISSUE'">
+    /* 확인이 필요한 사람만 — 동의 상태가 아닌 전원(중지·재동의대기·철회). */
+    WHERE X.consentState <![CDATA[ <> ]]> 'AGREED'
+    </if>
+    ORDER BY CASE X.consentState
+                WHEN 'WITHDRAWN' THEN 1
+                WHEN 'SUSPENDED' THEN 2
+                WHEN 'PENDING_REAGREE' THEN 3
+                ELSE 4
+             END
+           , X.userNm
+    </select>
+
+    <!-- ============================================================
+         전이 이력(최신순). 005 한정.
+         ★상태 컬럼 도입 이전 행은 BEFORE_STATE/AFTER_STATE 가 NULL 이다 —
+           화면은 그 경우 AGR_YN 으로 표시한다(이력을 소급 조작하지 않는다).
+         ============================================================ -->
+    <select id="selectConsentHistList" resultType="com.prafta.web.location.location01.result.LocationConsentHistRow">
+    /* Location01Mapper.selectConsentHistList */
+    SELECT H.HIST_ID          AS histId
+         , H.TERMS_VERSION    AS termsVersion
+         , H.BEFORE_STATE     AS beforeState
+         , H.AFTER_STATE      AS afterState
+         , H.BEFORE_AGR_YN    AS beforeAgrYn
+         , H.AFTER_AGR_YN     AS afterAgrYn
+         , H.AGR_SOURCE       AS agrSource
+         , H.ACTOR_USER_CD    AS actorUserCd
+         , DATE_FORMAT(H.ACTION_DTIME, '%Y-%m-%d %H:%i:%s') AS actionDtime
+    FROM TB_TERMS_USER_AGR_HIST H
+    WHERE H.CMPNY_CD = #{cmpnyCd}
+      AND H.USER_CD  = #{userCd}
+      AND H.TERMS_ID = '005'
+    ORDER BY H.ACTION_DTIME DESC, H.HIST_ID DESC
+    LIMIT 200
+    </select>
+
+    <!-- ============================================================
+         파기 이력(최신순). ★좌표는 테이블에 애초에 없다.
+         ============================================================ -->
+    <select id="selectPurgeHistList" resultType="com.prafta.web.location.location01.result.LocationPurgeHistRow">
+    /* Location01Mapper.selectPurgeHistList */
+    SELECT P.PURGE_ID            AS purgeId
+         , P.PURGE_REASON_CD     AS purgeReasonCd
+         , P.TERMS_VERSION       AS termsVersion
+         , P.ATTD_GPS_ROWS       AS attdGpsRows
+         , P.TBM_ATTENDANCE_ROWS AS tbmAttendanceRows
+         , P.TBM_SESSION_ROWS    AS tbmSessionRows
+         , P.OLDEST_COLLECTED    AS oldestCollected
+         , P.LATEST_COLLECTED    AS latestCollected
+         , P.ACTOR_USER_CD       AS actorUserCd
+         , DATE_FORMAT(P.ACTION_DTIME, '%Y-%m-%d %H:%i:%s') AS actionDtime
+    FROM TB_LOCATION_PURGE_HIST P
+    WHERE P.CMPNY_CD = #{cmpnyCd}
+      AND P.USER_CD  = #{userCd}
+    ORDER BY P.ACTION_DTIME DESC, P.PURGE_ID DESC
+    LIMIT 200
+    </select>
+
+    <!-- ============================================================
+         상세 조회 IDOR 가드 — 대상이 조회 범위 안에 있는지.
+         목록과 상세가 다른 EP 라, 이 검증이 없으면 userCd 만 바꿔
+         범위 밖 직원의 철회 이력을 열람할 수 있다.
+         ============================================================ -->
+    <select id="countUserInScope" resultType="int">
+    /* Location01Mapper.countUserInScope */
+    SELECT COUNT(1)
+    FROM (
+        SELECT U.USER_CD
+        FROM TB_USER U
+        WHERE U.CMPNY_CD = #{cmpnyCd}
+          AND U.SITE_CD  = #{siteCd}
+          AND U.USER_CD  = #{userCd}
+          <if test="scopeNodeCd != null and scopeNodeCd != ''">
+          AND U.NODE_CD = #{scopeNodeCd}
+          </if>
+
+        UNION ALL
+
+        SELECT D.USER_CD
+        FROM TB_DAILY_USER D
+        WHERE D.CMPNY_CD = #{cmpnyCd}
+          AND D.SITE_CD  = #{siteCd}
+          AND D.USER_CD  = #{userCd}
+          <if test="scopeNodeCd != null and scopeNodeCd != ''">
+          AND 1 = 0
+          </if>
+    ) X
+    </select>
+
+</mapper>

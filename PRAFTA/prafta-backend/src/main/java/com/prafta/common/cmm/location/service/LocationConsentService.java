@@ -45,6 +45,22 @@ public interface LocationConsentService {
     boolean isCollectAllowedForOngoing(String cmpnyCd, String userCd);
 
     /**
+     * <b>이벤트(출근·TBM 입실)를 허용할 것인가</b> — 게이트 토글 적용.
+     *
+     * <p>{@link #isCollectAllowed}(좌표를 저장할 것인가)와 <b>의도적으로 분리</b>한다.
+     * 좌표 미저장은 법적 요건이라 항상 동작하고, 이벤트 차단은
+     * {@code prafta.location.consent.event-block.enabled} 로 켜고 끈다.
+     *
+     * <p>★분리한 이유(2026-09-02 운영 실사고): 약관 개정 후 재동의하지 않은 기존 사용자까지
+     * 출퇴근이 막혔다. 이들은 철회자가 아니라 재동의 대기일 뿐이고, 앱의 재동의 유도 UX 가
+     * 실기기에서 검증되기 전에는 막으면 안 된다.
+     */
+    boolean isEventAllowed(String cmpnyCd, String userCd);
+
+    /** 진행 중인 근태의 후속 동작(퇴근) 이벤트 허용 판정 — ② 오버나이트 예외 + 게이트 토글. */
+    boolean isEventAllowedForOngoing(String cmpnyCd, String userCd);
+
+    /**
      * 동의 철회(법 제24조①) — <b>수집된 위치정보를 전부 파기</b>하고 상태를 {@code WITHDRAWN} 으로 전이.
      *
      * <p>법 문언이 "수집된 개인위치정보"로 과거형이고 기간 단서가 없어, 마감 여부와 무관하게

@@ -41,7 +41,7 @@
 
         <div class="eegm__body">
           <!-- 출근/퇴근/전체 필터 -->
-          <div v-if="!isLoading && !mapError && validTrail.length > 0" class="eegm__filter">
+          <div v-if="!isLoading && !mapError && drawableTrail.length > 0" class="eegm__filter">
             <button
               type="button"
               class="eegm-filter-btn"
@@ -75,8 +75,14 @@
             <p class="eegm__map-fallback">GPS 정보를 불러오는 중...</p>
           </div>
 
+          <!-- empty(파기): 행은 있는데 좌표가 파기된 경우 — 원인을 밝힌다(위치정보 S5).
+               ★"수집된 좌표가 없습니다"로 뭉뚱그리면 관리자가 애초에 기록이 없었던 것으로 오해한다. -->
+          <div v-else-if="drawableTrail.length === 0 && purgedCount > 0" class="eegm__map-wrap">
+            <p class="eegm__map-fallback eegm__map-fallback--purged">{{ purgeMessage }}</p>
+          </div>
+
           <!-- empty: 좌표 0건(외근이 아닌 인원을 열었을 때도 이 경로) -->
-          <div v-else-if="validTrail.length === 0" class="eegm__map-wrap">
+          <div v-else-if="drawableTrail.length === 0" class="eegm__map-wrap">
             <p class="eegm__map-fallback">수집된 GPS 좌표가 없습니다.</p>
           </div>
 
@@ -96,11 +102,17 @@
             ></div>
           </div>
 
-          <p v-if="validTrail.length > 0 && !isLoading" class="eegm__summary">
-            총 <b>{{ validTrail.length }}</b
+          <p
+            v-if="(drawableTrail.length > 0 || purgedCount > 0) && !isLoading"
+            class="eegm__summary"
+          >
+            총 <b>{{ drawableTrail.length }}</b
             >건
             <span v-if="mockedCount > 0" class="eegm__mocked-warn"
               >(Mock 좌표 {{ mockedCount }}건 포함)</span
+            >
+            <span v-if="purgedCount > 0" class="eegm__purged-badge"
+              >{{ purgeBadgeLabel }} {{ purgedCount }}건</span
             >
           </p>
         </div>
@@ -135,6 +147,28 @@ const trail = ref([])
 // gpsInfoType 이 '01'(출근)/'02'(퇴근) 인 유효 좌표만 — AttdGpsCoordPanel.validTrail 동일 규칙
 const validTrail = computed(() =>
   trail.value.filter((g) => g.gpsInfoType === '01' || g.gpsInfoType === '02'),
+)
+
+// 실제 지도에 그릴 수 있는 좌표(숫자 lat/lon 보유) — 위치정보 S5.
+//   ★파기된 행은 validTrail 에는 남지만 좌표가 null 이라 그려지지 않는다.
+//     빈 상태 판정을 validTrail 로 하면 빈 지도가 뜨고 사용자는 이유를 알 수 없다.
+const drawableTrail = computed(() =>
+  validTrail.value.filter(
+    (g) => g.lat != null && g.lon != null && !isNaN(Number(g.lat)) && !isNaN(Number(g.lon)),
+  ),
+)
+
+// 좌표 파기 건수 + 사유 — 웹 AttdGpsCoordPanel 과 동일 판정.
+const purgedTrail = computed(() => validTrail.value.filter((g) => !!g.gpsPurgeReasonCd))
+const purgedCount = computed(() => purgedTrail.value.length)
+const purgeReasonCd = computed(() => purgedTrail.value[0]?.gpsPurgeReasonCd || '')
+const purgeBadgeLabel = computed(() =>
+  purgeReasonCd.value === 'RETENTION' ? '보존기간 경과 삭제' : '동의 철회로 삭제',
+)
+const purgeMessage = computed(() =>
+  purgeReasonCd.value === 'RETENTION'
+    ? '보존기간(3년)이 지나 위치정보가 삭제되었습니다.\n외근 판정과 사유는 그대로 남아 있습니다.'
+    : '본인이 위치정보 동의를 철회하여 좌표가 삭제되었습니다.\n외근 판정과 사유는 그대로 남아 있습니다.',
 )
 const mockedCount = computed(
   () => validTrail.value.filter((g) => g.isMocked === 'Y' || g.isMocked === true).length,
@@ -480,6 +514,19 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 12px;
   color: var(--color-text-secondary);
+}
+.eegm__map-fallback--purged {
+  white-space: pre-line;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+.eegm__purged-badge {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: #f3f4f6;
+  color: #6b7280;
 }
 .eegm__mocked-warn {
   color: var(--color-danger);

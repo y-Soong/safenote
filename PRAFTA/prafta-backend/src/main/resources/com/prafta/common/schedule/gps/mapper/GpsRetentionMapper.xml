@@ -40,6 +40,8 @@
          , LON     = NULL
          , LAT_ENC = NULL
          , LON_ENC = NULL
+         /* S5: 파기 사유 기록 — 조회 화면이 "보존기간 경과 / 철회 / 원래 없음"을 구분하는 근거. */
+         , GPS_PURGE_REASON_CD = 'RETENTION'
      WHERE API_CALL_DATE <![CDATA[ < ]]> DATE_FORMAT(DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH), '%Y%m%d')
        AND (LAT IS NOT NULL OR LON IS NOT NULL OR LAT_ENC IS NOT NULL OR LON_ENC IS NOT NULL)
      LIMIT #{batchSize}
@@ -67,6 +69,7 @@
          , ENTRY_GPS_LON     = NULL
          , ENTRY_GPS_LAT_ENC = NULL
          , ENTRY_GPS_LON_ENC = NULL
+         , ENTRY_GPS_PURGE_REASON_CD = 'RETENTION'
      WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
        AND (ENTRY_GPS_LAT IS NOT NULL OR ENTRY_GPS_LON IS NOT NULL
             OR ENTRY_GPS_LAT_ENC IS NOT NULL OR ENTRY_GPS_LON_ENC IS NOT NULL)
@@ -94,6 +97,7 @@
          , MANAGER_GPS_LON     = NULL
          , MANAGER_GPS_LAT_ENC = NULL
          , MANAGER_GPS_LON_ENC = NULL
+         , MANAGER_GPS_PURGE_REASON_CD = 'RETENTION'
      WHERE INSERT_DATE <![CDATA[ < ]]> DATE_SUB(NOW(), INTERVAL #{retentionMonths} MONTH)
        AND (MANAGER_GPS_LAT IS NOT NULL OR MANAGER_GPS_LON IS NOT NULL
             OR MANAGER_GPS_LAT_ENC IS NOT NULL OR MANAGER_GPS_LON_ENC IS NOT NULL)

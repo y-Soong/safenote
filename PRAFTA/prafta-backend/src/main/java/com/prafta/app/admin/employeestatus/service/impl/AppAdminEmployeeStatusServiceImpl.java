@@ -188,6 +188,7 @@ public class AppAdminEmployeeStatusServiceImpl implements AppAdminEmployeeStatus
                     .apiCallTime(row.apiCallTime())
                     .isMocked(row.isMocked())
                     .gpsInfoType(row.gpsInfoType())
+                    .gpsPurgeReasonCd(row.gpsPurgeReasonCd())
                     .build());
         }
 

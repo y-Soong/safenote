@@ -203,6 +203,8 @@
         , G.ACCURACY      AS accuracy
         , G.IS_MOCKED     AS mockedYn
         , G.IP_ADDR       AS ipAddr
+        <!-- S5: 좌표 파기 사유 — 화면이 "파기됨"과 "원래 좌표 없음"을 구분한다. -->
+        , G.GPS_PURGE_REASON_CD AS gpsPurgeReasonCd
     FROM TB_USER_ATTD_GPS G
     WHERE G.CMPNY_CD      = #{cmpnyCd}
       AND G.SITE_CD       = #{siteCd}
@@ -222,6 +224,7 @@
         , NULL            AS accuracy
         , 'N'             AS mockedYn
         , NULL            AS ipAddr
+        , A.ENTRY_GPS_PURGE_REASON_CD AS gpsPurgeReasonCd
     FROM TB_TBM_ATTENDANCE A
     INNER JOIN TB_TBM_SESSION S
         ON  S.CMPNY_CD   = A.CMPNY_CD
@@ -229,7 +232,11 @@
     WHERE A.CMPNY_CD = #{cmpnyCd}
       AND S.SITE_CD  = #{siteCd}
       AND A.DEL_YN   = 'N'
-      AND (A.ENTRY_GPS_LAT IS NOT NULL OR A.ENTRY_GPS_LAT_ENC IS NOT NULL)
+      <!-- S5: 파기된 행도 목록에 남긴다. 좌표만 지웠을 뿐 "그 시각 입실했다"는 사실은 유효하고,
+           조용히 사라지면 열람자가 기록 자체가 없었던 것으로 오해한다(LBS 열람 화면).
+           ★파기사유가 없는 좌표 결측 행(GPS 미사용 세션)은 종전대로 제외한다. -->
+      AND (A.ENTRY_GPS_LAT IS NOT NULL OR A.ENTRY_GPS_LAT_ENC IS NOT NULL
+           OR A.ENTRY_GPS_PURGE_REASON_CD IS NOT NULL)
       <!-- 일자 필터도 KST 기준으로 판정(measureTime 과 동일 사유 - 자정 전후 건의 일자 밀림 방지). -->
       AND DATE_FORMAT(CONVERT_TZ(A.ENTRY_AT, @@SESSION.time_zone, '+09:00'), '%Y%m%d') = #{date}
     ORDER BY measureTime ASC

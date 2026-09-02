@@ -156,8 +156,18 @@
                     <td style="text-align: center">
                       {{ fnGpsTypeLabel(gps.gpsInfoType) }}
                     </td>
-                    <td>{{ gps.lat }}</td>
-                    <td>{{ gps.lon }}</td>
+                    <!-- 위치정보 S5: 좌표가 파기된 행은 빈 칸 대신 사유 배지를 보인다.
+                         ★목록에서 조용히 빼거나 공백으로 두면 열람자가 "기록이 없었다"고 오해한다.
+                           수집 사실과 시각은 유효하고 좌표만 파기된 것이다. -->
+                    <td v-if="gps.gpsPurgeReasonCd" colspan="2">
+                      <span class="p04-badge p04-badge--purged">
+                        {{ fnPurgeLabel(gps.gpsPurgeReasonCd) }}
+                      </span>
+                    </td>
+                    <template v-else>
+                      <td>{{ gps.lat }}</td>
+                      <td>{{ gps.lon }}</td>
+                    </template>
                     <td style="text-align: right">{{ gps.accuracy ?? "-" }}</td>
                     <td style="text-align: center">
                       <span
@@ -737,6 +747,12 @@ function fnCleanupMap() {
 }
 
 /* SYS028 GPS유형 라벨 (TBM 수집분은 유형 없음 → '-', 미해석 시 코드 원값) */
+// 위치정보 S5: 좌표 파기 사유 라벨.
+//   WITHDRAW = 본인 철회, RETENTION = 3년 보존기간 경과.
+function fnPurgeLabel(reasonCd) {
+  return reasonCd === "RETENTION" ? "보존기간 경과 삭제" : "동의 철회로 삭제";
+}
+
 function fnGpsTypeLabel(gpsInfoType) {
   if (!gpsInfoType) return "-";
   const found = (systCodeArr.value.SYS028 || []).find(
@@ -847,6 +863,10 @@ function fnFormatRemain(sec) {
 }
 .p04-badge--mock {
   background: var(--color-danger);
+}
+.p04-badge--purged {
+  background: var(--color-bg-muted, #f3f4f6);
+  color: var(--color-text-secondary, #6b7280);
 }
 .p04-badge--attd {
   background: var(--color-primary);
