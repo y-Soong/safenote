@@ -194,79 +194,76 @@
           </nav>
         </template>
 
-        <!-- 약관 동의 설정 — 선택약관 토글 + 위치정보 동의(005)를 같은 목록에 둔다.
-             ★둘 다 사용자가 스스로 켜고 끄는 동의라 형태를 통일한다. 다만 위치정보는
-               상태가 4가지(동의/일시중지/재동의필요/철회)라 토글 대신 배지 + 액션으로 표현한다.
-               철회는 되돌릴 수 없어 토글 한 번으로 처리하면 안 되기 때문이다. -->
+        <!-- 약관 동의 설정 — 선택약관 + 위치정보 동의(005)를 같은 목록에 둔다.
+             ★2026-09-02 UI 통일: 두 행 모두 [체크박스][(선택) 약관명][보기] 순서로 왼쪽 정렬한다.
+               종전에는 006 만 우측 스위치, 005 는 좌측 들여쓰기 + 하단 버튼 2개라 같은 성격의
+               동의인데 조작 형태가 서로 달랐다.
+             ★위치정보의 '일시 중지 ↔ 재동의'는 되돌릴 수 있으므로 체크박스가 맡는다.
+               반면 '동의 철회'는 좌표 파기를 동반해 되돌릴 수 없으므로 체크박스에 싣지 않고
+               별도 버튼으로 남긴다(오조작 1회로 파기되면 복구 수단이 없다). -->
         <template v-if="optionalTerms.length > 0 || locationConsent.consentState">
           <p class="mp-group-label">약관 동의 설정</p>
           <nav class="mp-menu">
             <div v-for="terms in optionalTerms" :key="terms.termsId" class="mp-terms-row">
-              <div class="mp-terms-row__text">
-                <span class="mp-terms-row__label">{{ '(선택) ' + terms.termsNm }}</span>
-                <button type="button" class="mp-terms-row__view" @click="onViewTerms(terms)">
-                  보기
-                </button>
-              </div>
               <button
                 type="button"
-                role="switch"
-                class="mp-switch"
-                :class="{ 'mp-switch--on': terms.agrYn === 'Y' }"
+                role="checkbox"
+                class="mp-terms-check"
+                :class="{ 'mp-terms-check--on': terms.agrYn === 'Y' }"
                 :aria-checked="terms.agrYn === 'Y' ? 'true' : 'false'"
                 :aria-label="terms.termsNm + ' 동의'"
                 :disabled="isTermsSaving"
                 @click="onToggleOptionalTerms(terms)"
               >
-                <span class="mp-switch__knob" aria-hidden="true"></span>
+                <span class="mp-terms-check__box" aria-hidden="true">
+                  <svg class="mp-terms-check__mark" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M5 13l4 4L19 7" />
+                  </svg>
+                </span>
+                <span class="mp-terms-check__label">{{ '(선택) ' + terms.termsNm }}</span>
+              </button>
+              <button type="button" class="mp-terms-row__view" @click="onViewTerms(terms)">
+                보기
               </button>
             </div>
 
-            <!-- 위치정보 동의(005) — 006 과 동일한 행 구조(라벨 + 보기 + 우측 상태).
-                 우측만 토글 대신 상태 배지이고, 액션은 아래 줄에 둔다. -->
+            <!-- 위치정보 동의(005) — 위 선택약관 행과 동일한 [체크박스][라벨][보기] 구조.
+                 상태가 4가지(동의/일시중지/재동의필요/철회)라, 체크 해제 상태의 사유만
+                 우측 배지로 덧붙인다.
+                 ★해제(체크 해제)는 [일시 중지](되돌릴 수 있음)와 [동의 철회](좌표 파기, 복구
+                   불가) 중 하나를 골라야 하므로, 행에 버튼을 늘어놓지 않고 해제 시트를 띄운다
+                   (2026-09-02). 되돌리는 방향(재동의)만 행 버튼으로 남긴다. -->
             <div v-if="locationConsent.consentState" class="mp-terms-row mp-terms-row--stack">
               <div class="mp-terms-row__head">
-                <div class="mp-terms-row__text">
-                  <span class="mp-terms-row__label">
-                    {{ '(선택) ' + (locationConsent.termsNm || '위치기반서비스 이용약관') }}
+                <button
+                  type="button"
+                  role="checkbox"
+                  class="mp-terms-check"
+                  :class="{ 'mp-terms-check--on': isLocationAgreed }"
+                  :aria-checked="isLocationAgreed ? 'true' : 'false'"
+                  :aria-label="(locationConsent.termsNm || '위치기반서비스 이용약관') + ' 동의'"
+                  :disabled="isLocationSaving"
+                  @click="onToggleLocationConsent"
+                >
+                  <span class="mp-terms-check__box" aria-hidden="true">
+                    <svg class="mp-terms-check__mark" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
                   </span>
-                  <button type="button" class="mp-terms-row__view" @click="onViewLocationTerms">
-                    보기
-                  </button>
-                </div>
+                  <span class="mp-terms-check__label">{{
+                    '(선택) ' + (locationConsent.termsNm || '위치기반서비스 이용약관')
+                  }}</span>
+                </button>
+                <button type="button" class="mp-terms-row__view" @click="onViewLocationTerms">
+                  보기
+                </button>
+              </div>
+              <!-- 상태 배지는 라벨 줄이 아니라 아랫줄에 둔다 — 같은 줄에 두면 배지 폭만큼
+                   자리를 뺏겨 약관명이 두 줄로 접힌다(2026-09-02 실기기 확인). -->
+              <div v-if="!isLocationAgreed" class="mp-loc__state">
                 <span class="mp-loc-badge" :class="locationBadgeClass">
                   {{ locationStateLabel }}
                 </span>
-              </div>
-              <p class="mp-loc__desc">{{ locationStateDesc }}</p>
-              <div class="mp-loc__actions">
-                <template v-if="isLocationAgreed">
-                  <button
-                    type="button"
-                    class="mp-loc__btn"
-                    :disabled="isLocationSaving"
-                    @click="onSuspendLocation"
-                  >
-                    일시 중지
-                  </button>
-                  <button
-                    type="button"
-                    class="mp-loc__btn mp-loc__btn--danger"
-                    :disabled="isLocationSaving"
-                    @click="onWithdrawLocation"
-                  >
-                    동의 철회
-                  </button>
-                </template>
-                <button
-                  v-else
-                  type="button"
-                  class="mp-loc__btn mp-loc__btn--primary"
-                  :disabled="isLocationSaving"
-                  @click="onResumeLocation"
-                >
-                  다시 동의하기
-                </button>
               </div>
             </div>
           </nav>
@@ -310,6 +307,15 @@
       :presets="defaultSchPresets"
       :approval-context="defaultSchApprovalContext"
       @requested="onDefaultSchRequested"
+    />
+
+    <!-- 위치정보 동의 해제 방식 선택 시트 — 체크박스를 해제할 때 열린다(2026-09-02).
+         닫으면 아무 전이도 일어나지 않으므로 체크는 그대로 유지된다. -->
+    <LocationConsentOffSheet
+      v-model="locationOffSheetOpen"
+      :saving="isLocationSaving"
+      @suspend="onSheetSuspendLocation"
+      @withdraw="onSheetWithdrawLocation"
     />
 
     <!-- 인라인 SVG sprite (본 화면 전용) -->
@@ -373,9 +379,10 @@ import { leaveFeatureVisible, ensureLeaveFeatureVisibility } from '@/utils/leave
 import { splitLeaveDaysOnly, splitLeaveDaysWithHourly } from '@/utils/leaveFormat'
 // PRAFTA-SUBCON-T4: 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용.
 import { THIRD_PARTY_CONSENT_TERMS_ID } from '@/utils/termsGate'
+// ★상태 부연 설명(구 LOCATION_STATE_DESC)은 2026-09-02 UI 정리로 상시 노출을 폐지했다 —
+//   중지/철회의 차이는 해제 시트(LocationConsentOffSheet)가 그 시점에 설명한다.
 import {
   LOCATION_STATE_LABEL,
-  LOCATION_STATE_DESC,
   LOCATION_WITHDRAW_CONFIRM,
   LOCATION_SUSPEND_CONFIRM,
 } from '@/utils/locationConsent'
@@ -384,6 +391,7 @@ import { getShellInfo } from '@/utils/shellCapability'
 import LogoutConfirmDialog from './components/LogoutConfirmDialog.vue'
 import WithdrawalConfirmDialog from './components/WithdrawalConfirmDialog.vue'
 import DefaultSchEditSheet from './components/DefaultSchEditSheet.vue'
+import LocationConsentOffSheet from './components/LocationConsentOffSheet.vue'
 import AppBottomTabBar from '@/components/common/AppBottomTabBar.vue'
 
 const router = useRouter()
@@ -489,12 +497,9 @@ const isLocationSaving = ref(false)
 const locationStateLabel = computed(
   () => LOCATION_STATE_LABEL[locationConsent.value.consentState] || '',
 )
-const locationStateDesc = computed(
-  () => LOCATION_STATE_DESC[locationConsent.value.consentState] || '',
-)
 const isLocationAgreed = computed(() => locationConsent.value.consentState === 'AGREED')
 
-// 상태 배지 색 — 006 토글과 나란히 놓이므로 시각 무게를 맞춘다(작은 pill).
+// 상태 배지 색 — 체크박스 옆에 놓이므로 시각 무게를 맞춘다(작은 pill).
 const locationBadgeClass = computed(() => ({
   'is-agreed': locationConsent.value.consentState === 'AGREED',
   'is-suspended': locationConsent.value.consentState === 'SUSPENDED',
@@ -798,8 +803,9 @@ const loadLocationConsent = async () => {
 
 // 위치정보 상태 전이 공통 호출기. 성공하면 서버가 돌려준 상태로 갱신한다
 //   (낙관적 갱신을 쓰지 않는다 — 철회는 파기를 동반해 되돌릴 수 없으므로 서버 확정값만 믿는다).
+//   반환값 = 전이 성공 여부. 해제 시트는 이 값이 true 일 때만 닫는다(실패 시 다시 고를 수 있게).
 const callLocationConsent = async (path, successMsg) => {
-  if (isLocationSaving.value) return
+  if (isLocationSaving.value) return false
   isLocationSaving.value = true
   try {
     const { data } = await api.post(`/comApi/consent/location-consent/${path}`)
@@ -812,39 +818,63 @@ const callLocationConsent = async (path, successMsg) => {
       termsNm: data?.termsNm || locationConsent.value.termsNm,
     }
     await showAlert(typeof successMsg === 'function' ? successMsg(data) : successMsg)
+    return true
   } catch (e) {
     console.warn('[MyPage] 위치정보 동의 전이 실패:', e?.message)
     showAlert(e?.response?.data?.message || '처리하지 못했어요. 잠시 후 다시 시도해 주세요.')
+    return false
   } finally {
     isLocationSaving.value = false
   }
 }
 
+// 해제 시트 열림 상태 — 체크를 해제하려 할 때만 연다.
+const locationOffSheetOpen = ref(false)
+
 // 일시 중지 — 과거 기록은 유지된다(법 제24조②).
-const onSuspendLocation = async () => {
-  const ok = await showConfirm(LOCATION_SUSPEND_CONFIRM)
-  if (!ok) return
-  await callLocationConsent(
+//   철회와 마찬가지로 실행 전 확인을 받는다(오탭 방지). 취소하면 시트는 열린 채로 남는다.
+const onSheetSuspendLocation = async () => {
+  const confirmed = await showConfirm(LOCATION_SUSPEND_CONFIRM)
+  if (!confirmed) return
+  const ok = await callLocationConsent(
     'suspend',
-    '위치정보 수집을 중지했어요. 지금까지의 기록은 그대로 있어요.',
+    // ★두 문장을 줄로 나눠 보여 준다(모달이 white-space:pre-line 이라 \n 이 개행으로 렌더링됨).
+    '위치정보 수집을 중지했어요.\n지금까지의 기록은 그대로 있어요.',
   )
+  if (ok) locationOffSheetOpen.value = false
 }
 
-// 동의 철회 — ★수집된 위치정보를 전부 파기한다. 되돌릴 수 없으므로 사전 확인이 필수다.
-const onWithdrawLocation = async () => {
-  const ok = await showConfirm(LOCATION_WITHDRAW_CONFIRM)
-  if (!ok) return
-  await callLocationConsent('withdraw', (data) => {
+// 동의 철회 — ★수집된 위치정보를 전부 파기한다. 되돌릴 수 없으므로 시트 설명과 별개로
+//   확인 팝업을 유지한다(파기 직전 마지막 관문). 취소하면 시트는 열린 채로 남는다.
+const onSheetWithdrawLocation = async () => {
+  const confirmed = await showConfirm(LOCATION_WITHDRAW_CONFIRM)
+  if (!confirmed) return
+  const ok = await callLocationConsent('withdraw', (data) => {
     const purged = Number(data?.purgedRows || 0)
     return purged > 0
       ? `동의를 철회하고 위치정보 ${purged}건을 삭제했어요.`
       : '동의를 철회했어요. 삭제할 위치정보는 없었어요.'
   })
+  if (ok) locationOffSheetOpen.value = false
 }
 
 // 재동의 — 철회로 파기된 좌표는 복구되지 않는다.
 const onResumeLocation = async () => {
   await callLocationConsent('resume', '위치정보 제공에 다시 동의했어요.')
+}
+
+// 체크박스 토글 — 선택약관 행과 조작 형태를 맞춘 진입점(2026-09-02 UI 통일).
+//   ★체크 해제는 그 자리에서 처리하지 않는다. 중지(되돌릴 수 있음)와 철회(파기, 복구 불가)는
+//     결과가 전혀 달라 사용자가 골라야 하기 때문이다 → 해제 시트를 띄운다.
+//   체크(재동의)는 잃는 것이 없으므로 즉시 처리한다.
+const onToggleLocationConsent = async () => {
+  if (isLocationSaving.value) return
+  if (isLocationAgreed.value) {
+    locationOffSheetOpen.value = true
+  } else {
+    // SUSPENDED / PENDING_REAGREE / WITHDRAWN 어느 상태에서도 resume 가능(서버 계약).
+    await onResumeLocation()
+  }
 }
 
 // ───────────────────────────────────────────────────────────
@@ -1272,25 +1302,17 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
   color: var(--color-text-tertiary);
 }
 
-/* 약관 동의 설정 — 선택약관 토글 행(PushSettingView 스위치 패턴 차용). */
-/* 위치정보 동의(005) — 006 토글 행과 같은 목록 안에 놓이는 행.
-   ★행 기본 구조(.mp-terms-row)를 그대로 쓰고, 세로로 쌓이는 변형만 추가한다.
+/* 약관 동의 설정 — 선택약관(006 등) + 위치정보(005) 공통 행.
+   ★2026-09-02 UI 통일: 두 행 모두 [체크박스][(선택) 약관명][보기] 를 왼쪽 정렬한다.
+     종전에는 006 만 우측 스위치였고, 005 는 하단 버튼 2개라 조작 형태가 서로 달랐다.
      색상/간격은 화면 루트에 선언한 CSS 변수만 사용한다(하드코딩 금지). */
-.mp-terms-row--stack {
-  flex-direction: column;
-  align-items: stretch;
-  gap: var(--space-xs);
-  padding-top: var(--space-md);
-  padding-bottom: var(--space-md);
-}
-.mp-terms-row__head {
+/* 상태 배지 줄 — 체크 해제 사유(중지/재동의필요/철회)를 라벨 아랫줄에 왼쪽 정렬로 둔다.
+   ★라벨과 같은 줄에 두지 않는다(배지 폭만큼 자리를 뺏겨 약관명이 접힌다). */
+.mp-loc__state {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  min-height: 24px;
+  justify-content: flex-start;
+  margin-top: var(--space-xs);
 }
-/* 상태 배지 — 006 토글 스위치와 시각 무게를 맞춘 작은 pill. */
 .mp-loc-badge {
   flex-shrink: 0;
   padding: 2px 10px;
@@ -1313,48 +1335,13 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
   background: var(--color-border-light);
   color: var(--color-danger);
 }
-.mp-loc__desc {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
-  word-break: keep-all;
-}
-.mp-loc__actions {
-  display: flex;
-  gap: var(--space-sm);
-  margin-top: var(--space-xs);
-}
-.mp-loc__btn {
-  flex: 1;
-  min-height: 36px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  color: var(--color-text-primary);
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-}
-.mp-loc__btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.mp-loc__btn--primary {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: var(--color-on-primary);
-}
-.mp-loc__btn--danger {
-  border-color: var(--color-danger);
-  color: var(--color-danger);
-}
+/* (행 액션 버튼 .mp-loc__btn 3종은 2026-09-02 에 전부 사라졌다 —
+   중지/철회는 해제 시트로, 재동의는 체크박스 자체로 흡수되어 사용처가 없다.) */
 
 .mp-terms-row {
   min-height: 56px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-sm);
   padding: var(--space-sm) var(--space-lg);
   border-bottom: 1px solid var(--color-border-light);
@@ -1362,15 +1349,82 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 .mp-terms-row:last-child {
   border-bottom: 0;
 }
-.mp-terms-row__text {
+/* 위치정보 행 — 설명/버튼이 아래로 쌓이는 변형.
+   ★반드시 .mp-terms-row 뒤에 선언한다. 특이도가 같아 앞에 두면 base 의
+     align-items:center 가 이겨 버리고, 컬럼 방향에서 그 값은 자식을 가로 중앙에
+     밀어 넣는다(= 2026-09-02 이전까지 위치정보 행만 좌측 정렬이 안 되던 원인). */
+.mp-terms-row--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-xs);
+  padding-top: var(--space-md);
+  padding-bottom: var(--space-md);
+}
+/* 라벨 줄은 행 폭을 다 써야 [보기]·상태 배지가 제자리에 놓인다. */
+.mp-terms-row--stack > * {
+  width: 100%;
+}
+.mp-terms-row__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  min-height: 24px;
+}
+/* 체크박스(role=checkbox 버튼) — 박스와 라벨을 한 버튼으로 묶어 탭 영역을 넓힌다.
+   [보기]는 중첩 버튼이 될 수 없어 이 버튼 밖 형제로 둔다. */
+.mp-terms-check {
   display: flex;
   align-items: center;
   gap: var(--space-sm);
   min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.mp-terms-row__label {
+.mp-terms-check:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mp-terms-check__box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--color-switch-off);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.mp-terms-check--on .mp-terms-check__box {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+.mp-terms-check__mark {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: var(--color-on-primary);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.mp-terms-check--on .mp-terms-check__mark {
+  opacity: 1;
+}
+.mp-terms-check__label {
   font-size: 15px;
   color: var(--color-text-primary);
+  word-break: keep-all;
 }
 .mp-terms-row__view {
   flex-shrink: 0;
@@ -1384,39 +1438,7 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
   font-family: inherit;
 }
 
-/* 스위치 (role=switch 버튼) — PushSettingView .ps-switch 와 동일 규격. */
-.mp-switch {
-  position: relative;
-  flex-shrink: 0;
-  width: 48px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--color-switch-off);
-  cursor: pointer;
-  transition: background 0.18s ease;
-}
-.mp-switch--on {
-  background: var(--color-primary);
-}
-.mp-switch:disabled {
-  cursor: default;
-}
-.mp-switch__knob {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-full);
-  background: var(--color-surface);
-  box-shadow: var(--shadow-sm);
-  transition: transform 0.18s ease;
-}
-.mp-switch--on .mp-switch__knob {
-  transform: translateX(20px);
-}
+/* (구 .mp-switch 스위치 스타일은 2026-09-02 체크박스 전환으로 제거 — 사용처 0.) */
 
 .mp-sprite {
   position: absolute;
