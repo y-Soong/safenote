@@ -16,6 +16,9 @@ public record LocationPurgeHistRow(
     , String oldestCollected
     , String latestCollected
     , String actorUserCd
+    // 수행자 표시용. 배치(SYSTEM) 실행분은 null 이라 화면이 actorUserCd 를 그대로 보여준다.
+    , String actorUserId
+    , String actorUserNm
     , String actionDtime
 ) {
 }

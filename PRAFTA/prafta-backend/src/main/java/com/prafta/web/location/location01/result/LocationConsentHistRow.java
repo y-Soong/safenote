@@ -17,6 +17,9 @@ public record LocationConsentHistRow(
     , String afterAgrYn
     , String agrSource
     , String actorUserCd
+    // 수행자 표시용. 계정이 삭제됐거나 SYSTEM 이면 null → 화면은 actorUserCd 로 폴백한다.
+    , String actorUserId
+    , String actorUserNm
     , String actionDtime
 ) {
 }

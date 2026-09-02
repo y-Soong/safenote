@@ -6,6 +6,10 @@
     책임 추궁은 둘을 대조할 수 있을 때 성립한다.
   - ★파기 이력에는 좌표가 없다(테이블 자체에 담지 않는다). 남는 것은 건수·기간·사유·주체뿐이다.
   - 조회 전용. 이 팝업에서 상태를 바꾸는 동작은 제공하지 않는다.
+  - 레이아웃: 표준 팝업 셸(modal-overlay prafta-modal-popup → modal-content-normal →
+    modal-header / modal-body / modal-footer)을 따른다. 대상자 메타 행은 SchInfoHistPop 의
+    hist-info-row, 섹션 표는 목록 화면과 같은 subtitle-pane + table-box + data-grid,
+    상태 표시는 Location_01 과 동일한 .status-badge 를 쓴다.
 -->
 <template>
   <Teleport to="body">
@@ -18,108 +22,170 @@
         @click.self="onClose"
         @keydown.esc="onClose"
       >
-        <div class="lch-pop" role="dialog" aria-modal="true">
-          <div class="lch-pop__header">
-            <span class="lch-pop__title">
-              위치정보 동의 이력
-              <span v-if="userNm_p" class="lch-pop__sub">· {{ userNm_p }}</span>
-            </span>
+        <div
+          class="modal-content-normal lch-pop"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div class="modal-header">
+            <span>위치정보 동의 이력</span>
             <button
-              class="lch-pop__close"
+              class="icon-button"
               type="button"
               aria-label="닫기"
               @click="onClose"
             >
               <svg
-                width="16"
-                height="16"
-                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
                 fill="none"
+                viewBox="0 0 24 24"
+                stroke-width="1.5"
                 stroke="currentColor"
-                stroke-width="2.5"
-                stroke-linecap="round"
+                class="w-6 h-6"
               >
-                <path d="M18 6L6 18M6 6l12 12" />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
 
-          <div class="lch-pop__body">
-            <p v-if="loading" class="lch-empty">불러오는 중...</p>
+          <div class="modal-body lch-body">
+            <!-- 대상자 메타 (SchInfoHistPop hist-info-row 패턴) -->
+            <div class="hist-info-row">
+              <span class="hist-label">대상자</span>
+              <span class="hist-value">{{ userNm_p || "-" }}</span>
+            </div>
+
+            <p v-if="loading" class="lch-state">불러오는 중...</p>
 
             <template v-else>
               <!-- 동의 전이 이력 -->
-              <h4 class="lch-sec">동의 상태 변경 이력</h4>
-              <div class="tableWrap">
-                <table class="tableList">
-                  <thead>
-                    <tr>
-                      <th>일시</th>
-                      <th>변경</th>
-                      <th>약관 버전</th>
-                      <th>경로</th>
-                      <th>수행자</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="consentHistList.length === 0">
-                      <td colspan="5" class="noData">변경 이력이 없습니다.</td>
-                    </tr>
-                    <tr v-for="h in consentHistList" :key="h.histId">
-                      <td style="text-align: center">{{ h.actionDtime }}</td>
-                      <td style="text-align: center">
-                        {{ transitionLabel(h) }}
-                      </td>
-                      <td style="text-align: center">v{{ h.termsVersion }}</td>
-                      <td style="text-align: center">
-                        {{ sourceLabel(h.agrSource) }}
-                      </td>
-                      <td style="text-align: center">{{ h.actorUserCd }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="table-wrapper subtitle-pane">
+                <div class="subtitle-row">
+                  <div class="subtitle">
+                    <span class="subtitle-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+                      </svg>
+                    </span>
+                    <span class="subtitle-text">동의 상태 변경 이력</span>
+                  </div>
+                </div>
+                <div class="table-box" style="--box-h: auto; --box-ox: auto">
+                  <table class="data-grid w-full table-fixed text-sm text-left">
+                    <thead>
+                      <tr>
+                        <th style="text-align: center; width: 22%">일시</th>
+                        <th style="text-align: center; width: 32%">변경</th>
+                        <th style="text-align: center; width: 12%">
+                          약관 버전
+                        </th>
+                        <th style="text-align: center; width: 18%">경로</th>
+                        <th style="text-align: center; width: 16%">수행자</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="consentHistList.length === 0">
+                        <td colspan="5" class="edu-grid-empty">
+                          변경 이력이 없습니다.
+                        </td>
+                      </tr>
+                      <tr v-for="h in consentHistList" :key="h.histId">
+                        <td style="text-align: center">{{ h.actionDtime }}</td>
+                        <td style="text-align: center">
+                          <span
+                            class="status-badge"
+                            :class="stateOf(h.beforeState, h.beforeAgrYn).cls"
+                          >
+                            {{ stateOf(h.beforeState, h.beforeAgrYn).label }}
+                          </span>
+                          <span class="lch-arrow" aria-hidden="true">→</span>
+                          <span
+                            class="status-badge"
+                            :class="stateOf(h.afterState, h.afterAgrYn).cls"
+                          >
+                            {{ stateOf(h.afterState, h.afterAgrYn).label }}
+                          </span>
+                        </td>
+                        <td style="text-align: center">
+                          v{{ h.termsVersion }}
+                        </td>
+                        <td style="text-align: center">
+                          {{ sourceLabel(h.agrSource) }}
+                        </td>
+                        <td style="text-align: center">{{ actorLabel(h) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
 
               <!-- 파기 이력 -->
-              <h4 class="lch-sec">위치정보 파기 이력</h4>
-              <p class="lch-note">
-                파기 이력에는 좌표가 저장되지 않습니다. 언제·무엇을·몇 건
-                지웠는지만 남습니다.
-              </p>
-              <div class="tableWrap">
-                <table class="tableList">
-                  <thead>
-                    <tr>
-                      <th>일시</th>
-                      <th>사유</th>
-                      <th>출퇴근</th>
-                      <th>TBM 입실</th>
-                      <th>TBM 개설</th>
-                      <th>대상 기간</th>
-                      <th>수행자</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="purgeHistList.length === 0">
-                      <td colspan="7" class="noData">파기 이력이 없습니다.</td>
-                    </tr>
-                    <tr v-for="p in purgeHistList" :key="p.purgeId">
-                      <td style="text-align: center">{{ p.actionDtime }}</td>
-                      <td style="text-align: center">
-                        {{ reasonLabel(p.purgeReasonCd) }}
-                      </td>
-                      <td style="text-align: right">{{ p.attdGpsRows }}</td>
-                      <td style="text-align: right">
-                        {{ p.tbmAttendanceRows }}
-                      </td>
-                      <td style="text-align: right">{{ p.tbmSessionRows }}</td>
-                      <td style="text-align: center">{{ periodLabel(p) }}</td>
-                      <td style="text-align: center">{{ p.actorUserCd }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+              <div class="table-wrapper subtitle-pane">
+                <div class="subtitle-row">
+                  <div class="subtitle">
+                    <span class="subtitle-icon" aria-hidden="true">
+                      <svg viewBox="0 0 24 24" width="18" height="18">
+                        <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+                      </svg>
+                    </span>
+                    <span class="subtitle-text">위치정보 파기 이력</span>
+                  </div>
+                </div>
+                <p class="hint">
+                  파기 이력에는 좌표가 저장되지 않습니다. 언제·무엇을·몇 건
+                  지웠는지만 남습니다.
+                </p>
+                <div class="table-box" style="--box-h: auto; --box-ox: auto">
+                  <table class="data-grid w-full table-fixed text-sm text-left">
+                    <thead>
+                      <tr>
+                        <th style="text-align: center; width: 20%">일시</th>
+                        <th style="text-align: center; width: 14%">사유</th>
+                        <th style="text-align: center; width: 9%">출퇴근</th>
+                        <th style="text-align: center; width: 9%">TBM 입실</th>
+                        <th style="text-align: center; width: 9%">TBM 개설</th>
+                        <th style="text-align: center; width: 25%">
+                          대상 기간
+                        </th>
+                        <th style="text-align: center; width: 14%">수행자</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="purgeHistList.length === 0">
+                        <td colspan="7" class="edu-grid-empty">
+                          파기 이력이 없습니다.
+                        </td>
+                      </tr>
+                      <tr v-for="p in purgeHistList" :key="p.purgeId">
+                        <td style="text-align: center">{{ p.actionDtime }}</td>
+                        <td style="text-align: center">
+                          {{ reasonLabel(p.purgeReasonCd) }}
+                        </td>
+                        <td style="text-align: right">{{ p.attdGpsRows }}</td>
+                        <td style="text-align: right">
+                          {{ p.tbmAttendanceRows }}
+                        </td>
+                        <td style="text-align: right">
+                          {{ p.tbmSessionRows }}
+                        </td>
+                        <td style="text-align: center">{{ periodLabel(p) }}</td>
+                        <td style="text-align: center">{{ actorLabel(p) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </template>
+          </div>
+
+          <div class="modal-footer">
+            <button class="btn btn-second" type="button" @click="onClose">
+              닫기
+            </button>
           </div>
         </div>
       </div>
@@ -146,23 +212,22 @@ const overlayRef = ref(null);
 
 const onClose = () => emit("close");
 
-const STATE_LABEL = {
-  AGREED: "동의",
-  SUSPENDED: "일시 중지",
-  PENDING_REAGREE: "재동의 필요",
-  WITHDRAWN: "동의 철회",
+// 4-state 라벨/배지 클래스 — Location_01 과 동일한 표기·색을 쓴다.
+const STATE_VIEW = {
+  AGREED: { label: "동의", cls: "is-agreed" },
+  SUSPENDED: { label: "일시 중지", cls: "is-suspended" },
+  PENDING_REAGREE: { label: "재동의 필요", cls: "is-pending" },
+  WITHDRAWN: { label: "동의 철회", cls: "is-withdrawn" },
 };
 
 // 상태 컬럼 도입 이전 행은 BEFORE/AFTER_STATE 가 NULL 이다 —
 //   그 경우 AGR_YN 으로 표시한다(이력을 소급 조작하지 않는다).
 const stateOf = (state, agrYn) => {
-  if (state) return STATE_LABEL[state] || state;
-  if (agrYn === "Y") return "동의";
-  if (agrYn === "N") return "미동의";
-  return "-";
+  if (state) return STATE_VIEW[state] || { label: state, cls: "" };
+  if (agrYn === "Y") return STATE_VIEW.AGREED;
+  if (agrYn === "N") return { label: "미동의", cls: "is-pending" };
+  return { label: "-", cls: "" };
 };
-const transitionLabel = (h) =>
-  `${stateOf(h.beforeState, h.beforeAgrYn)} → ${stateOf(h.afterState, h.afterAgrYn)}`;
 
 const SOURCE_LABEL = {
   GATE: "로그인 게이트",
@@ -172,6 +237,16 @@ const SOURCE_LABEL = {
   ADMIN: "관리자",
 };
 const sourceLabel = (src) => SOURCE_LABEL[src] || src || "-";
+
+// 수행자 표기 — "사용자명(사용자ID)".
+//   ★계정이 삭제됐거나 시스템(약관 버전업 자동 전이)·배치 실행분은 이름/ID 가 없다 →
+//     사용자코드를 그대로 보인다(이력을 임의로 가공하지 않는다).
+const actorLabel = (row) => {
+  const nm = row?.actorUserNm || "";
+  const id = row?.actorUserId || "";
+  if (nm && id) return `${nm}(${id})`;
+  return nm || id || row?.actorUserCd || "-";
+};
 
 const reasonLabel = (cd) =>
   cd === "RETENTION"
@@ -217,70 +292,84 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.4);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
+/* 팝업 폭 — 표준 modal-content-normal(최대 1000px) 안에서 내용 폭에 맞춘다 */
 .lch-pop {
-  width: min(56rem, 92vw);
-  max-height: 86vh;
+  width: min(92vw, 60rem);
+}
+
+/* 본문: 메타 행 → 섹션 표 2개를 세로로 쌓는다 (SchInfoHistPop modal-body-hist 패턴) */
+.lch-body {
   display: flex;
   flex-direction: column;
-  background: var(--color-surface, #fff);
-  border-radius: 0.5rem;
-  overflow: hidden;
+  gap: 1rem;
+  min-width: 0;
 }
-.lch-pop__header {
-  flex: 0 0 auto;
+
+/* 대상자 메타 행 (SchInfoHistPop hist-info-row 차용) */
+.hist-info-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--color-border);
 }
-.lch-pop__title {
-  font-weight: 600;
+.hist-label {
+  font-weight: 500;
+  color: var(--color-text-strong, #111827);
+  min-width: 5rem;
 }
-.lch-pop__sub {
-  font-weight: 400;
-  color: var(--color-text-secondary);
+.hist-value {
+  color: var(--color-text, #374151);
 }
-.lch-pop__close {
-  background: transparent;
-  border: 0;
-  cursor: pointer;
-  color: var(--color-text-secondary);
+
+/* 로딩 상태 문구 */
+.lch-state {
+  margin: 0;
+  padding: var(--card-padding, 20px);
+  text-align: center;
+  color: var(--color-text-muted, #4b5563);
 }
-.lch-pop__body {
-  flex: 1 1 auto;
-  overflow: auto;
-  padding: 1rem;
-}
-.lch-sec {
+
+/* 안내 문구 (소제목 바 아래) */
+.hint {
   margin: 0 0 0.5rem;
-  font-size: 0.9375rem;
-}
-.lch-sec + .tableWrap {
-  margin-bottom: 1.25rem;
-}
-.lch-note {
-  margin: -0.25rem 0 0.5rem;
   font-size: 0.75rem;
-  color: var(--color-text-secondary);
+  line-height: 1.5;
+  color: var(--color-text-muted, #4b5563);
   word-break: keep-all;
 }
-.lch-empty {
-  padding: 2rem 0;
+
+/* 전이 표기: [이전 배지] → [이후 배지] */
+.lch-arrow {
+  margin: 0 0.35rem;
+  color: var(--color-text-muted, #4b5563);
+}
+
+/* 상태 배지 — Location_01 과 동일 */
+.status-badge {
+  display: inline-block;
+  min-width: 48px;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--btn-radius, 8px);
+  font-size: var(--btn-font-sm, 11px);
+  font-weight: 600;
+  line-height: 1.4;
   text-align: center;
-  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.status-badge.is-agreed {
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
+}
+.status-badge.is-suspended {
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+}
+.status-badge.is-pending {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-muted, #4b5563);
+  border: 1px solid var(--color-border, #e5e7eb);
+}
+.status-badge.is-withdrawn {
+  background: var(--color-danger, #ef4444);
+  color: var(--color-surface, #ffffff);
 }
 </style>

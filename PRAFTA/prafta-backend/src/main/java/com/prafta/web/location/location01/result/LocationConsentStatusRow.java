@@ -12,6 +12,8 @@ package com.prafta.web.location.location01.result;
  */
 public record LocationConsentStatusRow(
       String userCd
+    // 화면 표시는 "사용자명(사용자ID)" — 동명이인 구분을 위해 ID 를 함께 내린다.
+    , String userId
     , String userNm
     , String userTypeCd
     , String nodeCd

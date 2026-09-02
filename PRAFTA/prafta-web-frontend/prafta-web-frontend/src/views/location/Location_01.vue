@@ -8,6 +8,9 @@
     철회는 되돌릴 수 없는 파기를 동반하므로 본인만 수행한다.
   - 인가: 서버가 assertSiteAccess + isManager(master/hr) + canManageNode 로 3중 강제한다.
     LNB 미노출은 방어가 아니므로 화면 쪽 가드에 의존하지 않는다.
+  - 레이아웃: 표준 목록 화면 구조(viewSearch → viewBody → table-wrapper/subtitle-pane →
+    table-box → data-grid)를 따른다. 조회 조건 체크박스는 Attd_08/11/15·User_05 의
+    .checkbox-label 패턴, 상태 배지는 Subcon_01/Attd_14 의 .status-badge 패턴을 차용한다.
 -->
 <template>
   <div class="viewComm">
@@ -42,81 +45,96 @@
         />
       </div>
       <div>
-        <label class="loc-check">
+        <label class="checkbox-label">
           <input type="checkbox" v-model="issueOnly" />
           확인이 필요한 사람만 보기
         </label>
       </div>
     </div>
 
-    <!-- 목록 -->
-    <div class="viewContents">
-      <p class="loc-guide">
-        위치정보 제공·이용 동의를 <b>철회</b>하거나 <b>중지</b>한 근로자는
-        출퇴근·TBM 참석을 이용할 수 없습니다. 재동의는 본인만 할 수 있습니다.
-      </p>
+    <!-- 본문: 사용자 1명 = 1행 (동의 4-state 현황) -->
+    <div class="viewBody">
+      <div class="table-wrapper subtitle-pane">
+        <!-- 소제목 바 (User_01 패턴 차용) -->
+        <div class="subtitle-row">
+          <div class="subtitle">
+            <span class="subtitle-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18">
+                <path d="M4 4h16v4H4zM4 10h10v10H4z" />
+              </svg>
+            </span>
+            <span class="subtitle-text">위치정보 동의 현황</span>
+          </div>
+        </div>
 
-      <div class="tableWrap">
-        <table class="tableList">
-          <colgroup>
-            <col style="width: 4rem" />
-            <col style="width: 9rem" />
-            <col style="width: 6rem" />
-            <col style="width: 10rem" />
-            <col style="width: 9rem" />
-            <col style="width: 11rem" />
-            <col style="width: 7rem" />
-            <col style="width: 6rem" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th>No</th>
-              <th>이름</th>
-              <th>구분</th>
-              <th>부서</th>
-              <th>동의 상태</th>
-              <th>최근 변경</th>
-              <th>파기 이력</th>
-              <th>상세</th>
-            </tr>
-          </thead>
-          <tbody>
-            <template v-if="!statusList || statusList.length === 0">
+        <p class="hint">
+          위치정보 제공·이용 동의를 <b>철회</b>하거나 <b>중지</b>한 근로자는
+          출퇴근·TBM 참석을 이용할 수 없습니다. 재동의는 본인만 할 수 있습니다.
+        </p>
+
+        <div
+          class="table-box"
+          style="--box-h: 70vh; --box-sticky-top: 1px; --box-ox: auto"
+        >
+          <table class="data-grid w-full table-fixed text-sm text-left">
+            <thead>
               <tr>
-                <td colspan="8" class="noData">조회된 내역이 없습니다.</td>
+                <th style="text-align: center; width: 4%">No</th>
+                <th style="width: 18%">사용자</th>
+                <th style="text-align: center; width: 8%">구분</th>
+                <th style="width: 16%">부서</th>
+                <th style="text-align: center; width: 12%">동의 상태</th>
+                <th style="text-align: center; width: 18%">최근 변경</th>
+                <th style="text-align: center; width: 12%">파기 이력</th>
+                <th style="text-align: center; width: 12%">상세</th>
               </tr>
-            </template>
-            <template v-else>
-              <tr
-                v-for="(row, idx) in statusList"
-                :key="row.userTypeCd + row.userCd"
-              >
-                <td style="text-align: center">{{ idx + 1 }}</td>
-                <td>{{ row.userNm }}</td>
-                <td style="text-align: center">
-                  {{ row.userTypeCd === "DAILY" ? "일용직" : "정규" }}
-                </td>
-                <td>{{ row.nodeNm || "-" }}</td>
-                <td style="text-align: center">
-                  <span class="loc-badge" :class="stateClass(row.consentState)">
-                    {{ stateLabel(row.consentState) }}
-                  </span>
-                </td>
-                <td style="text-align: center">
-                  {{ row.lastActionDtime || "-" }}
-                </td>
-                <td style="text-align: center">
-                  {{ row.purgeCount > 0 ? row.purgeCount + "건" : "-" }}
-                </td>
-                <td style="text-align: center">
-                  <button class="btn btn-sm" @click="fnOpenHist(row)">
-                    이력
-                  </button>
-                </td>
-              </tr>
-            </template>
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              <template v-if="!statusList || statusList.length === 0">
+                <tr>
+                  <td colspan="8" class="edu-grid-empty">
+                    조회된 내역이 없습니다.
+                  </td>
+                </tr>
+              </template>
+              <template v-else>
+                <tr
+                  v-for="(row, idx) in statusList"
+                  :key="row.userTypeCd + row.userCd"
+                >
+                  <td style="text-align: center">{{ idx + 1 }}</td>
+                  <td>{{ userLabel(row) }}</td>
+                  <td style="text-align: center">
+                    {{ row.userTypeCd === "DAILY" ? "일용직" : "정규" }}
+                  </td>
+                  <td>{{ row.nodeNm || "-" }}</td>
+                  <td style="text-align: center">
+                    <span
+                      class="status-badge"
+                      :class="stateClass(row.consentState)"
+                    >
+                      {{ stateLabel(row.consentState) }}
+                    </span>
+                  </td>
+                  <td style="text-align: center">
+                    {{ row.lastActionDtime || "-" }}
+                  </td>
+                  <td style="text-align: center">
+                    {{ row.purgeCount > 0 ? row.purgeCount + "건" : "-" }}
+                  </td>
+                  <td style="text-align: center">
+                    <button
+                      class="btn btn-sm btn-second"
+                      @click="fnOpenHist(row)"
+                    >
+                      이력
+                    </button>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
@@ -172,6 +190,15 @@ const STATE_LABEL = {
   PENDING_REAGREE: "재동의 필요",
   WITHDRAWN: "동의 철회",
 };
+// 사용자 표기 — "사용자명(사용자ID)". 동명이인 구분을 위해 ID 를 함께 보인다.
+//   ID 가 없으면(구 데이터) 이름만, 이름도 없으면 사용자코드로 폴백한다.
+const userLabel = (row) => {
+  const nm = row?.userNm || "";
+  const id = row?.userId || "";
+  if (nm && id) return `${nm}(${id})`;
+  return nm || id || row?.userCd || "-";
+};
+
 const stateLabel = (state) => STATE_LABEL[state] || state || "-";
 const stateClass = (state) => ({
   "is-agreed": state === "AGREED",
@@ -282,43 +309,65 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.loc-check {
+/* ── 조회 영역 체크박스 (Attd_08/11/15·User_05 패턴 차용) ─────────── */
+.checkbox-label {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  font-size: 0.875rem;
-  color: var(--color-text-primary);
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted, #6b7280);
   cursor: pointer;
+  user-select: none;
+  margin-left: -1rem;
+  margin-right: 0.4rem;
+  white-space: nowrap;
 }
-.loc-guide {
+.checkbox-label input[type="checkbox"] {
+  width: 13px;
+  height: 13px;
+  cursor: pointer;
+  accent-color: var(--color-primary, #16a34a);
+  flex-shrink: 0;
+}
+
+/* ── 안내 문구 (소제목 바 아래) ──────────────────────────────────── */
+.hint {
   margin: 0 0 0.5rem;
-  font-size: 0.8125rem;
-  line-height: 1.6;
-  color: var(--color-text-secondary);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--color-text-muted, #4b5563);
   word-break: keep-all;
 }
-.loc-badge {
+
+/* ── 동의 상태 배지 (Subcon_01/Attd_14 .status-badge 패턴 차용) ─────
+   동의=primary 연한 배경, 일시 중지=warning, 재동의 필요=중립(테두리),
+   동의 철회=danger 강조. */
+.status-badge {
   display: inline-block;
-  padding: 1px 8px;
-  border-radius: 10px;
-  font-size: 0.75rem;
-  background: var(--color-border-light, #f3f4f6);
-  color: var(--color-text-secondary);
+  min-width: 48px;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--btn-radius, 8px);
+  font-size: var(--btn-font-sm, 11px);
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+  white-space: nowrap;
 }
-.loc-badge.is-agreed {
-  background: #ecfdf5;
-  color: #047857;
+.status-badge.is-agreed {
+  background: var(--color-primary-bg, #dcfce7);
+  color: var(--color-primary, #16a34a);
 }
-.loc-badge.is-suspended {
-  background: #fffbeb;
-  color: #b45309;
+.status-badge.is-suspended {
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
 }
-.loc-badge.is-pending {
-  background: #eff6ff;
-  color: #1d4ed8;
+.status-badge.is-pending {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-muted, #4b5563);
+  border: 1px solid var(--color-border, #e5e7eb);
 }
-.loc-badge.is-withdrawn {
-  background: #fef2f2;
-  color: #b91c1c;
+.status-badge.is-withdrawn {
+  background: var(--color-danger, #ef4444);
+  color: var(--color-surface, #ffffff);
 }
 </style>

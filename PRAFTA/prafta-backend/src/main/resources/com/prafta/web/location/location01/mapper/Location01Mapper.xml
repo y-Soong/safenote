@@ -31,6 +31,7 @@
     <select id="selectConsentStatusList" resultType="com.prafta.web.location.location01.result.LocationConsentStatusRow">
     /* Location01Mapper.selectConsentStatusList */
     SELECT X.userCd
+         , X.userId
          , X.userNm
          , X.userTypeCd
          , X.nodeCd
@@ -40,6 +41,7 @@
          , X.purgeCount
     FROM (
         SELECT U.USER_CD        AS userCd
+             , U.USER_ID        AS userId
              , U.USER_NM        AS userNm
              , 'REGULAR'        AS userTypeCd
              , U.NODE_CD        AS nodeCd
@@ -77,6 +79,7 @@
         /* 일용직 계통 — 부서 개념이 없어 nodeCd/nodeNm 은 NULL 이다.
            scopeNodeCd 가 지정된 경우(부서 관리자)에는 대상에서 제외한다(부서 스코프 밖). */
         SELECT D.USER_CD
+             , D.USER_ID
              , D.USER_NM
              , 'DAILY'
              , NULL
@@ -135,8 +138,16 @@
          , H.AFTER_AGR_YN     AS afterAgrYn
          , H.AGR_SOURCE       AS agrSource
          , H.ACTOR_USER_CD    AS actorUserCd
+         /* 수행자 표시용 — 정규/일용직 두 계통을 각각 조인해 먼저 잡히는 쪽을 쓴다.
+            ★계정이 삭제됐거나 SYSTEM(약관 버전업) 이면 둘 다 NULL 이고, 화면이 코드로 폴백한다. */
+         , COALESCE(AU.USER_ID, AD.USER_ID) AS actorUserId
+         , COALESCE(AU.USER_NM, AD.USER_NM) AS actorUserNm
          , DATE_FORMAT(H.ACTION_DTIME, '%Y-%m-%d %H:%i:%s') AS actionDtime
     FROM TB_TERMS_USER_AGR_HIST H
+         LEFT OUTER JOIN TB_USER AU
+            ON (AU.CMPNY_CD = H.ACTOR_CMPNY_CD AND AU.USER_CD = H.ACTOR_USER_CD)
+         LEFT OUTER JOIN TB_DAILY_USER AD
+            ON (AD.CMPNY_CD = H.ACTOR_CMPNY_CD AND AD.USER_CD = H.ACTOR_USER_CD)
     WHERE H.CMPNY_CD = #{cmpnyCd}
       AND H.USER_CD  = #{userCd}
       AND H.TERMS_ID = '005'
@@ -158,8 +169,15 @@
          , P.OLDEST_COLLECTED    AS oldestCollected
          , P.LATEST_COLLECTED    AS latestCollected
          , P.ACTOR_USER_CD       AS actorUserCd
+         /* 수행자 표시용 — 배치(SYSTEM) 실행분은 계정이 없어 NULL 이고, 화면이 코드로 폴백한다. */
+         , COALESCE(AU.USER_ID, AD.USER_ID) AS actorUserId
+         , COALESCE(AU.USER_NM, AD.USER_NM) AS actorUserNm
          , DATE_FORMAT(P.ACTION_DTIME, '%Y-%m-%d %H:%i:%s') AS actionDtime
     FROM TB_LOCATION_PURGE_HIST P
+         LEFT OUTER JOIN TB_USER AU
+            ON (AU.CMPNY_CD = P.ACTOR_CMPNY_CD AND AU.USER_CD = P.ACTOR_USER_CD)
+         LEFT OUTER JOIN TB_DAILY_USER AD
+            ON (AD.CMPNY_CD = P.ACTOR_CMPNY_CD AND AD.USER_CD = P.ACTOR_USER_CD)
     WHERE P.CMPNY_CD = #{cmpnyCd}
       AND P.USER_CD  = #{userCd}
     ORDER BY P.ACTION_DTIME DESC, P.PURGE_ID DESC
