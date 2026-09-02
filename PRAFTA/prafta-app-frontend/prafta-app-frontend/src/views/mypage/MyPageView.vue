@@ -194,8 +194,11 @@
           </nav>
         </template>
 
-        <!-- 약관 동의 설정 (선택약관 on/off) — 선택약관이 1개 이상일 때만 노출. -->
-        <template v-if="optionalTerms.length > 0">
+        <!-- 약관 동의 설정 — 선택약관 토글 + 위치정보 동의(005)를 같은 목록에 둔다.
+             ★둘 다 사용자가 스스로 켜고 끄는 동의라 형태를 통일한다. 다만 위치정보는
+               상태가 4가지(동의/일시중지/재동의필요/철회)라 토글 대신 배지 + 액션으로 표현한다.
+               철회는 되돌릴 수 없어 토글 한 번으로 처리하면 안 되기 때문이다. -->
+        <template v-if="optionalTerms.length > 0 || locationConsent.consentState">
           <p class="mp-group-label">약관 동의 설정</p>
           <nav class="mp-menu">
             <div v-for="terms in optionalTerms" :key="terms.termsId" class="mp-terms-row">
@@ -218,18 +221,22 @@
                 <span class="mp-switch__knob" aria-hidden="true"></span>
               </button>
             </div>
-          </nav>
-        </template>
 
-        <!-- 위치정보 동의(005) — 상태 표시 + 일시중지/철회/재동의.
-             ★법 제24조①②의 행사 수단. 철회는 되돌릴 수 없으므로 중지와 버튼부터 분리한다
-               (버튼이 철회 하나뿐이면 "앞으로만 그만"을 원한 사람이 과거 기록을 날린다). -->
-        <template v-if="locationConsent.consentState">
-          <p class="mp-group-label">위치정보 동의</p>
-          <nav class="mp-menu">
-            <div class="mp-loc">
-              <div class="mp-loc__head">
-                <span class="mp-loc__state">{{ locationStateLabel }}</span>
+            <!-- 위치정보 동의(005) — 006 과 동일한 행 구조(라벨 + 보기 + 우측 상태).
+                 우측만 토글 대신 상태 배지이고, 액션은 아래 줄에 둔다. -->
+            <div v-if="locationConsent.consentState" class="mp-terms-row mp-terms-row--stack">
+              <div class="mp-terms-row__head">
+                <div class="mp-terms-row__text">
+                  <span class="mp-terms-row__label">
+                    {{ '(선택) ' + (locationConsent.termsNm || '위치기반서비스 이용약관') }}
+                  </span>
+                  <button type="button" class="mp-terms-row__view" @click="onViewLocationTerms">
+                    보기
+                  </button>
+                </div>
+                <span class="mp-loc-badge" :class="locationBadgeClass">
+                  {{ locationStateLabel }}
+                </span>
               </div>
               <p class="mp-loc__desc">{{ locationStateDesc }}</p>
               <div class="mp-loc__actions">
@@ -470,7 +477,13 @@ const optionalTerms = ref([])
 
 // 위치정보 동의(005) 상태 — GET /comApi/consent/location-consent.
 //   consentState 가 비어 있으면(조회 실패) 섹션 자체를 그리지 않는다(비치명적).
-const locationConsent = ref({ consentState: '', termsVersion: '', collectAllowed: false })
+const locationConsent = ref({
+  consentState: '',
+  termsVersion: '',
+  collectAllowed: false,
+  termsId: '',
+  termsNm: '',
+})
 const isLocationSaving = ref(false)
 
 const locationStateLabel = computed(
@@ -480,6 +493,25 @@ const locationStateDesc = computed(
   () => LOCATION_STATE_DESC[locationConsent.value.consentState] || '',
 )
 const isLocationAgreed = computed(() => locationConsent.value.consentState === 'AGREED')
+
+// 상태 배지 색 — 006 토글과 나란히 놓이므로 시각 무게를 맞춘다(작은 pill).
+const locationBadgeClass = computed(() => ({
+  'is-agreed': locationConsent.value.consentState === 'AGREED',
+  'is-suspended': locationConsent.value.consentState === 'SUSPENDED',
+  'is-pending': locationConsent.value.consentState === 'PENDING_REAGREE',
+  'is-withdrawn': locationConsent.value.consentState === 'WITHDRAWN',
+}))
+
+// 약관 전문 보기 — 006 의 onViewTerms 와 동일 경로/파라미터 계약.
+const onViewLocationTerms = () => {
+  router.push({
+    path: '/TermsDetail',
+    query: {
+      termsId_p: locationConsent.value.termsId || '005',
+      termsNm_p: locationConsent.value.termsNm || '위치기반서비스 이용약관',
+    },
+  })
+}
 // 토글 저장 직렬화 가드(동시 PUT 경합 방지).
 const isTermsSaving = ref(false)
 
@@ -749,9 +781,17 @@ const loadLocationConsent = async () => {
       consentState: data?.consentState || '',
       termsVersion: data?.termsVersion || '',
       collectAllowed: !!data?.collectAllowed,
+      termsId: data?.termsId || '',
+      termsNm: data?.termsNm || '',
     }
   } catch (e) {
-    locationConsent.value = { consentState: '', termsVersion: '', collectAllowed: false }
+    locationConsent.value = {
+      consentState: '',
+      termsVersion: '',
+      collectAllowed: false,
+      termsId: '',
+      termsNm: '',
+    }
     console.warn('[MyPage] 위치정보 동의 상태 조회 실패:', e?.message)
   }
 }
@@ -763,10 +803,13 @@ const callLocationConsent = async (path, successMsg) => {
   isLocationSaving.value = true
   try {
     const { data } = await api.post(`/comApi/consent/location-consent/${path}`)
+    // ★약관명은 전이 응답에 없을 수 있다 — 기존 값을 보존해 [보기] 버튼이 죽지 않게 한다.
     locationConsent.value = {
       consentState: data?.consentState || '',
       termsVersion: data?.termsVersion || '',
       collectAllowed: !!data?.collectAllowed,
+      termsId: data?.termsId || locationConsent.value.termsId,
+      termsNm: data?.termsNm || locationConsent.value.termsNm,
     }
     await showAlert(typeof successMsg === 'function' ? successMsg(data) : successMsg)
   } catch (e) {
@@ -1230,23 +1273,48 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 }
 
 /* 약관 동의 설정 — 선택약관 토글 행(PushSettingView 스위치 패턴 차용). */
-/* 위치정보 동의(005) 블록 — 상태 + 설명 + 액션 버튼.
-   ★색상/간격은 전부 CSS 변수만 사용한다(하드코딩 금지). */
-.mp-loc {
-  padding: var(--space-md) var(--space-lg);
+/* 위치정보 동의(005) — 006 토글 행과 같은 목록 안에 놓이는 행.
+   ★행 기본 구조(.mp-terms-row)를 그대로 쓰고, 세로로 쌓이는 변형만 추가한다.
+     색상/간격은 화면 루트에 선언한 CSS 변수만 사용한다(하드코딩 금지). */
+.mp-terms-row--stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-xs);
+  padding-top: var(--space-md);
+  padding-bottom: var(--space-md);
 }
-.mp-loc__head {
+.mp-terms-row__head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-sm);
+  min-height: 24px;
 }
-.mp-loc__state {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--color-text-primary);
+/* 상태 배지 — 006 토글 스위치와 시각 무게를 맞춘 작은 pill. */
+.mp-loc-badge {
+  flex-shrink: 0;
+  padding: 2px 10px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  line-height: 1.6;
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+.mp-loc-badge.is-agreed {
+  background: var(--color-primary-tint);
+  color: var(--color-primary);
+}
+.mp-loc-badge.is-suspended,
+.mp-loc-badge.is-pending {
+  background: var(--color-border-light);
+  color: var(--color-text-secondary);
+}
+.mp-loc-badge.is-withdrawn {
+  background: var(--color-border-light);
+  color: var(--color-danger);
 }
 .mp-loc__desc {
-  margin: var(--space-xs) 0 0;
+  margin: 0;
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-secondary);
@@ -1255,16 +1323,16 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
 .mp-loc__actions {
   display: flex;
   gap: var(--space-sm);
-  margin-top: var(--space-md);
+  margin-top: var(--space-xs);
 }
 .mp-loc__btn {
   flex: 1;
-  min-height: 40px;
+  min-height: 36px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
   color: var(--color-text-primary);
-  font-size: 14px;
+  font-size: 13px;
   font-family: inherit;
   cursor: pointer;
 }

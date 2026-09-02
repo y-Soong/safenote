@@ -7,6 +7,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.prafta.common.cmm.consent.ConsentConst;
 import com.prafta.common.cmm.consent.mapper.ConsentMapper;
 import com.prafta.common.cmm.consent.mapper.result.ConsentStateResult;
+import com.prafta.common.cmm.consent.mapper.result.ConsentTermsResult;
 import com.prafta.common.cmm.consent.service.ConsentHistoryRecorder;
 import com.prafta.common.cmm.location.LocationConsentConst;
 import com.prafta.common.cmm.location.application.command.LocationPurgeHistCommand;
@@ -58,7 +59,11 @@ public class LocationConsentServiceImpl implements LocationConsentService {
     @Override
     public LocationConsentStatusResult resolveStatus(String cmpnyCd, String userCd) {
         String version = resolveCurrentVersion();
-        return LocationConsentStatusResult.of(resolveState(cmpnyCd, userCd, version), version);
+        // 약관명(SYS008)은 화면의 [보기] 버튼용이다. 조회 실패해도 상태 응답을 막지 않는다.
+        ConsentTermsResult terms = consentMapper.selectActiveTerms(LocationConsentConst.LOCATION_TERMS_ID);
+        return LocationConsentStatusResult.of(
+                resolveState(cmpnyCd, userCd, version), version, 0
+                , terms == null ? null : terms.termsNm());
     }
 
     @Override

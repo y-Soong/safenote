@@ -15,16 +15,26 @@ public record LocationConsentStatusResult(
         , String termsVersion
         , boolean collectAllowed
         , int purgedRows
+        // 화면의 [보기] 버튼이 약관 전문 화면으로 넘길 값. 앱에 문구를 하드코딩하지 않기 위해 서버가 내린다.
+        , String termsId
+        , String termsNm
 ) {
     public static LocationConsentStatusResult of(String consentState, String termsVersion) {
-        return of(consentState, termsVersion, 0);
+        return of(consentState, termsVersion, 0, null);
     }
 
     public static LocationConsentStatusResult of(String consentState, String termsVersion, int purgedRows) {
+        return of(consentState, termsVersion, purgedRows, null);
+    }
+
+    public static LocationConsentStatusResult of(
+            String consentState, String termsVersion, int purgedRows, String termsNm) {
         return new LocationConsentStatusResult(
                 consentState
                 , termsVersion
                 , LocationConsentConst.STATE_AGREED.equals(consentState)
-                , purgedRows);
+                , purgedRows
+                , LocationConsentConst.LOCATION_TERMS_ID
+                , termsNm);
     }
 }
