@@ -364,6 +364,49 @@
                     관련 개선안이 없습니다. 다시 도출해 주세요.
                   </li>
                 </ul>
+                <!-- 관련 법령(원문 그대로) — 매칭된 조문이 있을 때만 렌더한다(prafta-062 · UI-062-B).
+                     ★조문은 서버가 DB 원문을 그대로 실어 보낸 값이며 LLM 을 거치지 않는다(정책서 §4.5).
+                       텍스트를 가공·요약·말줄임 하지 말 것(pre-wrap 전체 표시).
+                     ★매칭이 없으면 이 블록 자체가 렌더되지 않는다("법적 근거 없음" 등 부정 문구 금지). -->
+                <div v-if="hz.lawRefs && hz.lawRefs.length" class="ai-law">
+                  <div class="ai-law__title">관련 법령 (원문 그대로)</div>
+                  <ul class="ai-law__list">
+                    <li
+                      v-for="(lw, k) in hz.lawRefs"
+                      :key="'lw-' + k"
+                      class="ai-law__item"
+                    >
+                      <div class="ai-law__head">
+                        <span
+                          v-if="lw.evidenceTierLabel"
+                          class="ai-tier"
+                          :data-tier="lw.evidenceTier"
+                          >{{ lw.evidenceTierLabel }}</span
+                        >
+                        <span class="ai-law__name">{{ lw.lawName }}</span>
+                        <span class="ai-law__article">{{
+                          lw.articleLabel
+                        }}</span>
+                        <span v-if="lw.effectiveDateText" class="ai-law__eff">
+                          시행 {{ lw.effectiveDateText }}
+                        </span>
+                      </div>
+                      <p class="ai-law__body">{{ lw.content }}</p>
+                      <a
+                        v-if="lw.sourceUrl"
+                        :href="lw.sourceUrl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="ai-src-link ai-law__link"
+                        >국가법령정보센터에서 보기</a
+                      >
+                    </li>
+                  </ul>
+                  <p class="ai-law__note">
+                    조문은 원문 그대로 표시되며 AI 가 생성하지 않습니다. 개정
+                    여부·시행일은 국가법령정보센터에서 확인해 주세요.
+                  </p>
+                </div>
               </div>
             </li>
             <!-- verbatim 원문 유해요인(키 'vb-N' — LLM 미경유 패스스루, 원문 그대로 표시) -->
@@ -470,6 +513,13 @@
                     <span v-else class="ai-verbatim__source-name">{{
                       vr.sourceName
                     }}</span>
+                    <!-- 참고 원문에도 동일 층위 배지(prafta-062) — 신뢰등급/라이선스 배지 앞에 붙인다 -->
+                    <span
+                      v-if="vr.evidenceTierLabel"
+                      class="ai-tier"
+                      :data-tier="vr.evidenceTier"
+                      >{{ vr.evidenceTierLabel }}</span
+                    >
                     <span
                       v-if="vr.dataReliability"
                       class="ai-verbatim__badge"
@@ -524,6 +574,15 @@
                 <span v-else>{{ ct.sourceName }}</span>
                 <span v-if="ct.dataReliability"
                   >· {{ ct.dataReliability }}</span
+                >
+                <!-- 근거 층위 배지(prafta-062): 서버가 내려준 표시 문구만 렌더한다
+                     (층위 미지정이면 필드 자체가 없어 미표시 = 종전 동작).
+                     색 구분은 data-tier 속성 선택자로 처리 — 스크립트 분기 없음. -->
+                <span
+                  v-if="ct.evidenceTierLabel"
+                  class="ai-tier"
+                  :data-tier="ct.evidenceTier"
+                  >{{ ct.evidenceTierLabel }}</span
                 >
               </li>
             </ol>
@@ -1824,5 +1883,107 @@ onMounted(() => {
 .ai-panel__footer .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ── 근거 층위 배지(prafta-062): 기존 .ai-vb-badge / .ai-verbatim__badge 와 동일 치수.
+      ★층위 간 크기·굵기는 동일하게 두고 색만 구분한다 — 특정 층위가 더 중요해 보이는
+        착시를 만들지 않기 위함(요청서 설계원칙 4). ── */
+.ai-tier {
+  flex-shrink: 0;
+  display: inline-block;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--btn-radius, 6px);
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-bg, #ffffff);
+  vertical-align: baseline;
+}
+.ai-tier[data-tier="LAW"] {
+  color: var(--color-primary-strong, #15803d);
+  border-color: var(--color-primary, #16a34a);
+  background: var(--color-primary-soft, rgba(22, 163, 74, 0.06));
+}
+.ai-tier[data-tier="GUIDE"] {
+  color: var(--color-warning-text, #92400e);
+  border-color: var(--color-warning-text, #92400e);
+  background: var(--color-warning-bg, #fef3c7);
+}
+.ai-tier[data-tier="STAT"],
+.ai-tier[data-tier="CASE"],
+.ai-tier[data-tier="REF"] {
+  color: var(--color-text-muted, #6b7280);
+  border-color: var(--color-border, #e5e7eb);
+  background: var(--color-surface, #f9fafb);
+}
+
+/* ── 관련 법령 블록(prafta-062 · UI-062-B) ── */
+.ai-law {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--color-border, #e5e7eb);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ai-law__title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-strong, #111827);
+}
+.ai-law__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.ai-law__item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-left: 3px solid var(--color-primary, #16a34a);
+  border-radius: var(--input-radius, 4px);
+  background: var(--color-surface, #f9fafb);
+}
+.ai-law__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ai-law__name {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: var(--color-text-strong, #111827);
+}
+.ai-law__article {
+  font-size: 0.82rem;
+  color: var(--color-text, #374151);
+}
+.ai-law__eff {
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
+}
+/* 조문 원문: 줄바꿈·공백을 원문 그대로 보존한다(요약·말줄임 금지) */
+.ai-law__body {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--color-text, #374151);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ai-law__link {
+  font-size: 0.78rem;
+}
+.ai-law__note {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--color-text-muted, #6b7280);
 }
 </style>

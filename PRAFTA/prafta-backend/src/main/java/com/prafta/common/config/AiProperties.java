@@ -76,6 +76,15 @@ public class AiProperties {
          */
         private double deriveMinScore = 0.40d;
 
+        /**
+         * 법령 전용 트랙(prafta-062, riskai01 searchLawTrack) 최소 유사도(cosine, score=1-distance).
+         * 이 값 미만인 조문은 첨부하지 않는다(무관 조문 억지 첨부 방지 — 오인용이 신뢰를 깎는다).
+         * ★초기값은 deriveMinScore 와 동일한 0.40 으로 출발(D4=(b), 무회귀) — 법령 문체(추상적 조문)는
+         *   사례 코퍼스와 점수 분포가 다를 수 있어 별도 knob 로 분리, 관측 로그("법령 트랙 판정")의
+         *   최상위 점수 분포를 보고 조정한다.
+         */
+        private double lawMinScore = 0.40d;
+
         public int getDefaultTopK() {
             return defaultTopK;
         }
@@ -98,6 +107,14 @@ public class AiProperties {
 
         public void setDeriveMinScore(double deriveMinScore) {
             this.deriveMinScore = deriveMinScore;
+        }
+
+        public double getLawMinScore() {
+            return lawMinScore;
+        }
+
+        public void setLawMinScore(double lawMinScore) {
+            this.lawMinScore = lawMinScore;
         }
     }
 

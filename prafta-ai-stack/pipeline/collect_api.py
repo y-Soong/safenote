@@ -229,6 +229,10 @@ def main():
             continue
         if str(src.get("feed_type", "")).strip().upper() != "API":
             continue
+        # LAW_*(법령 조문)는 feed_type=API 지만 인증(OC)·응답(법령 XML)이 전혀 달라
+        # 이 수집기(data.go.kr serviceKey) 대상이 아니다 → 22_collect_law_articles.py 전용.
+        if sid.startswith("LAW_"):
+            continue
         if not is_checked(src.get("license_checked")):
             print(f"[게이트] {sid}: license_checked 아님 → 건너뜀(하드가드#1)")
             continue

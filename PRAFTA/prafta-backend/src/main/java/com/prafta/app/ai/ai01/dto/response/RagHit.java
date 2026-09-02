@@ -29,6 +29,8 @@ public class RagHit {
     private String sourceUrl;
     /** 라이선스 표기(v3.8 — tb_ai_corpus_source.license_type, 없으면 null). */
     private String licenseType;
+    /** 근거 층위 코드(prafta-062 — tb_ai_corpus_source.evidence_tier, LAW|GUIDE|STAT|CASE|REF, 미지정이면 null). */
+    private String evidenceTier;
     /** 신뢰등급(규범형|집계형|자율신고형). meta_json->>'data_reliability'. */
     private String dataReliability;
     /** 트랙(recompose|verbatim). meta_json->>'track'. */
@@ -49,6 +51,10 @@ public class RagHit {
     private String measureText;
     /** 원본 역추적 로케이터. */
     private String sourceLocator;
+    /** 조문시행일자(YYYYMMDD, prafta-062 배포 D — meta_json->>'article_effective_date', 법령 청크만·그 외 null). */
+    private String articleEffectiveDate;
+    /** 조문제목(prafta-062 배포 D — meta_json->>'article_title', 법령 청크만·그 외 null). */
+    private String articleTitle;
     /** 코사인 거리(embedding <=> query). 작을수록 유사. */
     private double distance;
     /** 유사도 점수(1 - distance). */

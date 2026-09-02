@@ -29,6 +29,7 @@ import com.prafta.app.ai.ai01.dto.response.RagHit;
 import com.prafta.app.ai.ai01.dto.response.RagSearchResponse;
 import com.prafta.app.ai.ai01.repository.AiCallRepository;
 import com.prafta.app.ai.ai01.service.Ai01Service;
+import com.prafta.common.cmm.ai.EvidenceTierLabels;
 import com.prafta.common.cmm.aiquota.service.AiQuotaService;
 import com.prafta.common.cmm.file.application.model.ImageBytesResult;
 import com.prafta.common.cmm.file.application.query.FileReadQuery;
@@ -47,6 +48,7 @@ import com.prafta.web.risk.riskai01.dto.response.ChatTurn;
 import com.prafta.web.risk.riskai01.dto.response.CitationItem;
 import com.prafta.web.risk.riskai01.dto.response.DerivedHazardGroup;
 import com.prafta.web.risk.riskai01.dto.response.DerivedItem;
+import com.prafta.web.risk.riskai01.dto.response.LawRefItem;
 import com.prafta.web.risk.riskai01.dto.response.RiskAiDerivationResponse;
 import com.prafta.web.risk.riskai01.dto.response.VerbatimRefItem;
 import com.prafta.web.risk.riskai01.mapper.RiskAi01Mapper;
@@ -116,6 +118,25 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     /** verbatim 선택 후보 검색 topK(중복 제거로 후보가 줄어들 것을 감안해 넓게 — Ai01Service maxTopK 클램프 내). */
     private static final int VERBATIM_CANDIDATE_TOP_K = 20;
 
+    /**
+     * 법령 신뢰등급 값(prafta-062). 법령 조문은 track=verbatim + data_reliability='법령' 으로 적재되어
+     * 기존 verbatim 경로(selectVerbatimRefs)에 SIF 사례와 섞여 들어오므로 부정 필터로 배제하고(D5),
+     * 법령 전용 검색(searchLawTrack)에서는 긍정 필터 축으로 사용한다.
+     */
+    private static final String LAW_RELIABILITY = "법령";
+
+    /** 법령 전용 검색 topK(prafta-062 — maxTopK=20 이내). */
+    private static final int LAW_SEARCH_TOP_K = 5;
+
+    /**
+     * 법령 사후 매핑 대상 유해요인 상한(prafta-062 배포 D). EmbeddingClient 는 단건 전용이라
+     * 유해요인 수만큼 TEI 왕복이 추가되므로 캡으로 지연을 방어한다(계측 로그로 관측 후 조정).
+     */
+    private static final int MAX_LAW_MAP_HAZARDS = 5;
+
+    /** 유해요인 1건당 첨부 조문 상한(prafta-062 배포 D). */
+    private static final int MAX_LAW_REFS_PER_HAZARD = 2;
+
     /** 라인 프로토콜 각주 마커 "[n]" 추출 정규식(v3.6 — parseDerive/extractMarkers). */
     private static final Pattern MARKER_PATTERN = Pattern.compile("\\[(\\d+)\\]");
 
@@ -128,7 +149,11 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     /** verbatim 선택 응답의 번호 추출 정규식(v3.9 — 숫자 외 텍스트는 전부 폐기). */
     private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+");
 
-    private static final String DISCLAIMER = "본 내용은 AI 가 제시한 참고 근거이며, 최종 판단은 담당자가 수행합니다.";
+    /* prafta-062 배포 D(D9 확정): 법령 조문 첨부 도입에 따른 면책 보강 — 긴 버전. */
+    private static final String DISCLAIMER =
+        "본 내용은 AI 가 제시한 참고 근거이며, 최종 판단은 담당자가 수행합니다. "
+        + "첨부된 법령 조문은 원문을 그대로 인용한 것으로 법률 자문이 아니며, "
+        + "개정 여부·시행일은 국가법령정보센터에서 확인해 주세요.";
 
     private static final String ROLE_USER = "user";
     private static final String ROLE_ASSISTANT = "assistant";
@@ -479,8 +504,9 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
 
         // RAG 검색(코퍼스 필수). ★그라운딩 개선 D: topK 5→10 확대(회수율 개선).
         //   LLM 컨텍스트에는 아래 잘라내기에서 recompose 상위 5건만 투입한다(프롬프트 길이 방어).
+        // prafta-062: reliabilityNotIn=null(부정 필터 미적용) — 사례 트랙 결과는 종전과 완전 동일(무회귀).
         RagSearchParam searchParam = new RagSearchParam(
-            query, DERIVE_SEARCH_TOP_K, null, null, null, param.gvUserCd(), param.gvCmpnyCd());
+            query, DERIVE_SEARCH_TOP_K, null, null, null, null, param.gvUserCd(), param.gvCmpnyCd());
         RagSearchResponse searchResp = ai01Service.search(searchParam);
         List<RagHit> hits = (searchResp.getHits() == null) ? List.of() : searchResp.getHits();
 
@@ -590,8 +616,14 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             }
         }
 
+        // prafta-062 배포 D(062-07): 유해요인별 법령 사후 매핑 — hazards/citations/abstained 확정 이후
+        //   확정된 유해요인에 조문을 additive 로 첨부만 한다(★유해요인 추가/삭제/재정렬 금지 = 핵심 회귀 축).
+        //   ABSTAINED(자유생성) 결과에도 동일 적용(D7=(a) — 조문은 LLM 산출물이 아닌 서버 첨부라 abstained 와 독립).
+        hazards = attachLawRefs(param, source, hazards);
+
         // 결과 저장(v3: HAZARD_JSON 그룹 구조 + CITATION_JSON + VERBATIM_JSON + ABSTAINED.
-        //   MEASURE_JSON 은 NULL 클리어. VERBATIM_JSON 은 재열람 복원용 — 개선 C).
+        //   MEASURE_JSON 은 NULL 클리어. VERBATIM_JSON 은 재열람 복원용 — 개선 C.
+        //   prafta-062: lawRefs 는 HAZARD_JSON(네이티브 json 타입 — 64KB 한도 없음, D8=(a))에 중첩 저장).
         riskAi01Mapper.updateDeriveResult(
             param.gvCmpnyCd(), param.siteCd(), param.processCd(), param.assessmentCd(),
             toJson(hazards), toJson(citations), toJson(verbatimRefs),
@@ -1012,9 +1044,11 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         //   ★중복 제거로 후보가 줄어들 것을 감안해 넓게 조회(Ai01Service maxTopK 클램프 내).
         List<RagHit> candidates;
         try {
+            // prafta-062 D5: 법령 조문(data_reliability='법령')은 참고 원문(SIF 사례) 후보에서 배제 —
+            //   법령은 전용 트랙(searchLawTrack)에서만 다룬다(도출 "참고 원문" 오염 방지 = 무회귀).
             RagSearchParam searchParam = new RagSearchParam(
                 query, VERBATIM_CANDIDATE_TOP_K, null, null, List.of(VERBATIM_TRACK),
-                param.gvUserCd(), param.gvCmpnyCd());
+                List.of(LAW_RELIABILITY), param.gvUserCd(), param.gvCmpnyCd());
             RagSearchResponse resp = ai01Service.search(searchParam);
             candidates = (resp.getHits() == null) ? List.of() : resp.getHits();
         } catch (Exception e) {
@@ -1100,12 +1134,174 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             String mergedMeasure = mergedMeasureLines.get(i).isEmpty()
                 ? h.getMeasureText()
                 : String.join("\n", mergedMeasureLines.get(i));
+            // prafta-062: 근거 층위(출처 단위) — 코드+표시 문구는 서버 대조값으로 채운다(LLM 값 미사용).
             out.add(new VerbatimRefItem(
                 h.getSourceName(), h.getDataReliability(),
                 h.getContent(), h.getHazardText(), mergedMeasure,
-                h.getSourceOrg(), h.getSourceUrl(), h.getLicenseType()));
+                h.getSourceOrg(), h.getSourceUrl(), h.getLicenseType(),
+                h.getEvidenceTier(), EvidenceTierLabels.labelOf(h.getEvidenceTier())));
         }
         return out;
+    }
+
+    // ==================================================================
+    // 내부 헬퍼 — 법령 전용 검색 트랙(prafta-062 배포 C)
+    // ==================================================================
+
+    /**
+     * 법령 전용 검색(prafta-062): track=verbatim + data_reliability='법령' 청크만 topK={@code LAW_SEARCH_TOP_K}
+     * 조회하고, {@code lawMinScore}(기본 0.40 = deriveMinScore 와 동일 출발) 미만은 채택하지 않는다.
+     *
+     * <p>법령은 소수 트랙(전체의 약 2.7%)이라 HNSW 필터검색 기아가 우려되므로 전용 쿼리로 분리하고,
+     *    관측 로그로 후보 수·최상위 점수를 남겨 기아 여부(후보 0건)를 즉시 식별한다(요청서 S3-2).
+     *    임계값은 knob 만 신설(D4=(b)) — 적재 후 점수 분포 관측 뒤 조정한다.
+     * <p>어떤 예외도 호출부(도출 본류)로 전파하지 않는다(try/catch 격리 — selectVerbatimRefs 패턴 미러.
+     *    단 법령은 유사도 미달 조문을 억지로 붙이면 오인용이라 폴백 없이 빈 목록이 맞다).
+     *
+     * <p>호출부: 배포 D(062-07) {@link #attachLawRefs} — 유해요인별 사후 매핑 전용.
+     */
+    private List<RagHit> searchLawTrack(RiskAiParam param, String query) {
+        List<RagHit> hits;
+        try {
+            RagSearchParam searchParam = new RagSearchParam(
+                query, LAW_SEARCH_TOP_K, null, List.of(LAW_RELIABILITY), List.of(VERBATIM_TRACK),
+                null, param.gvUserCd(), param.gvCmpnyCd());
+            RagSearchResponse resp = ai01Service.search(searchParam);
+            hits = (resp.getHits() == null) ? List.of() : resp.getHits();
+        } catch (Exception e) {
+            // 법령 검색 실패가 도출 본류를 죽이면 안 됨 — 빈 목록으로 격리(법령은 폴백 없음이 정책).
+            log.warn("법령 트랙 검색 실패 - 법령 첨부 없이 진행. 원인={}", e.getMessage());
+            return List.of();
+        }
+
+        // 임계값 판정: lawMinScore 미만 조문은 채택하지 않는다(무관 조문 억지 첨부 방지).
+        double minScore = aiProperties.getSearch().getLawMinScore();
+        double topScore = hits.isEmpty() ? Double.NaN : hits.get(0).getScore();
+        List<RagHit> adopted = new ArrayList<>();
+        for (RagHit h : hits) {
+            if (h.getScore() >= minScore) {
+                adopted.add(h);
+            }
+        }
+        // ★관측 로그(임계값 튜닝·기아 감지 근거): 511~515행 "RAG 그라운딩 판정" 형식 미러.
+        log.info("법령 트랙 판정 - 질의길이={}, 후보={}, 최상위점수={}, 임계값={}, 채택={}건",
+                query.length(), hits.size(),
+                Double.isNaN(topScore) ? "N/A" : String.format("%.4f", topScore),
+                String.format("%.2f", minScore), adopted.size());
+        return adopted;
+    }
+
+    /**
+     * 유해요인별 법령 사후 매핑(prafta-062 배포 D — 062-07).
+     *
+     * <p>확정된 유해요인 목록(상위 {@code MAX_LAW_MAP_HAZARDS}건)마다 법령 트랙을 검색해
+     *    매칭 조문(유해요인당 최대 {@code MAX_LAW_REFS_PER_HAZARD}건)을 원문 그대로 첨부한다.
+     *    검색 키 = 짧은 컨텍스트(공정명/위험성 분류) + 유해요인 텍스트 — 조문은 추상적이라
+     *    유해요인 한 줄만으로는 유사도가 낮게 나올 수 있어 컨텍스트를 보강한다(질의 클램프는 기존 재사용).
+     * <p>★불변식(핵심 회귀 축): 유해요인의 추가/삭제/재정렬 없이 lawRefs 첨부만 한다 —
+     *    반환 목록의 크기·순서·text/markers/measures 는 입력과 동일하다.
+     * <p>매칭 없으면 lawRefs=null 유지(부정 문구·폴백 금지 — 원칙 4). 검색 격리는 searchLawTrack 내부
+     *    try/catch 가 담당하고, 여기서는 조립 예외만 추가 격리한다(실패해도 도출 본류 무영향).
+     */
+    private List<DerivedHazardGroup> attachLawRefs(RiskAiParam param, RiskAssessmentAiSource source,
+                                                   List<DerivedHazardGroup> hazards) {
+        if (hazards == null || hazards.isEmpty()) {
+            return hazards;
+        }
+        long startMs = System.currentTimeMillis();
+        List<DerivedHazardGroup> out = new ArrayList<>(hazards);
+        int mappedCnt = 0;
+        try {
+            // 짧은 컨텍스트: 공정명/위험성 분류(buildDeriveQuery 라벨 관례 미러 — 있는 값만).
+            StringBuilder ctx = new StringBuilder();
+            if (source != null) {
+                if (StringUtils.hasText(source.processNm())) {
+                    ctx.append("공정명: ").append(source.processNm()).append('\n');
+                }
+                if (StringUtils.hasText(source.riskTypeNm())) {
+                    ctx.append("위험성 분류: ").append(source.riskTypeNm()).append('\n');
+                }
+            }
+            int limit = Math.min(MAX_LAW_MAP_HAZARDS, out.size());
+            for (int i = 0; i < limit; i++) {
+                DerivedHazardGroup hz = out.get(i);
+                if (hz == null || !StringUtils.hasText(hz.text())) {
+                    continue;
+                }
+                // 과대입력 방어: 검색·임베딩 투입 전 길이 클램프(도출 질의와 동일 상한 재사용).
+                String lawQuery = ctx + "유해요인: " + hz.text();
+                if (lawQuery.length() > MAX_DERIVE_QUERY_LEN) {
+                    lawQuery = lawQuery.substring(0, MAX_DERIVE_QUERY_LEN);
+                }
+                List<RagHit> adopted = searchLawTrack(param, lawQuery);
+                if (adopted.isEmpty()) {
+                    continue; // 매칭 없음 = 미첨부(lawRefs=null 유지 — 억지 첨부·부정 문구 금지)
+                }
+                List<RagHit> top = adopted.subList(0, Math.min(MAX_LAW_REFS_PER_HAZARD, adopted.size()));
+                List<LawRefItem> refs = new ArrayList<>();
+                for (RagHit h : top) {
+                    refs.add(toLawRefItem(h));
+                }
+                // ★첨부만: text/markers/measures 원본 그대로 승계(개수·순서 불변).
+                out.set(i, new DerivedHazardGroup(hz.text(), hz.markers(), hz.measures(), List.copyOf(refs)));
+                mappedCnt++;
+            }
+        } catch (Exception e) {
+            // 조립 예외 격리 — 이미 첨부된 항목은 유지, 나머지는 미첨부로 진행(도출 본류 무영향).
+            log.warn("법령 사후 매핑 조립 실패 - 일부/전체 미첨부로 진행. 원인={}", e.getMessage());
+        }
+        // ★지연 계측(배포 후 판단 근거): TEI 단건 왕복 × 최대 MAX_LAW_MAP_HAZARDS 회가 추가된다.
+        //   합계가 FE derive 타임아웃(90초) 대비 위험하면 MAX_LAW_MAP_HAZARDS 를 낮춘다.
+        log.info("법령 매핑 소요 - 유해요인={}건(매핑 {}건), 합계={}ms",
+            hazards.size(), mappedCnt, System.currentTimeMillis() - startMs);
+        return out;
+    }
+
+    /**
+     * RagHit(법령 청크) → LawRefItem. 원문({@code content})은 무변경 패스스루, 표시 문구
+     * (articleLabel/effectiveDateText/evidenceTierLabel)는 서버가 완성한다(FE 무로직 원칙).
+     */
+    private LawRefItem toLawRefItem(RagHit h) {
+        return new LawRefItem(
+            h.getSourceName(),                                   // 법령 정식명칭(registry source_name)
+            buildArticleLabel(h.getSourceLocator(), h.getArticleTitle()),
+            h.getContent(),                                      // 조문 원문 그대로(가공·절단 금지)
+            h.getSourceLocator(),
+            h.getArticleEffectiveDate(),
+            formatEffectiveDate(h.getArticleEffectiveDate()),
+            h.getSourceUrl(),
+            h.getEvidenceTier(),
+            EvidenceTierLabels.labelOf(h.getEvidenceTier()));
+    }
+
+    /**
+     * 조문 라벨 조립 — 예: "제32조의2(보호구의 지급 등)".
+     *
+     * <p>조립 방식: sourceLocator("{법령약칭} 제{조문번호}조[의{가지번호}]" — 062-05 §4 규격)에서
+     *    첫 공백 뒤의 "제…조…" 부분을 취하고, 조문제목(meta_json->>'article_title' — SEARCH_SQL additive
+     *    확장으로 RagHit 에 실림)이 있으면 괄호로 덧붙인다. 형식 이탈 시 로케이터 원문 폴백(표기 누락 방지).
+     */
+    private String buildArticleLabel(String sourceLocator, String articleTitle) {
+        String article = null;
+        if (StringUtils.hasText(sourceLocator)) {
+            int idx = sourceLocator.indexOf(" 제");
+            article = (idx >= 0) ? sourceLocator.substring(idx + 1).trim() : sourceLocator.trim();
+        }
+        if (!StringUtils.hasText(article)) {
+            return StringUtils.hasText(articleTitle) ? "(" + articleTitle.trim() + ")" : null;
+        }
+        if (StringUtils.hasText(articleTitle)) {
+            return article + "(" + articleTitle.trim() + ")";
+        }
+        return article;
+    }
+
+    /** 조문시행일자(YYYYMMDD) → 표시용 "YYYY.MM.DD". 8자리 숫자가 아니면 null(FE v-if 미표시). */
+    private String formatEffectiveDate(String yyyymmdd) {
+        if (yyyymmdd == null || !yyyymmdd.matches("\\d{8}")) {
+            return null;
+        }
+        return yyyymmdd.substring(0, 4) + "." + yyyymmdd.substring(4, 6) + "." + yyyymmdd.substring(6, 8);
     }
 
     /**
@@ -1337,8 +1533,10 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                 continue;
             }
             validMarkers.add(m);
+            // prafta-062: 근거 층위(출처 단위) — 코드+표시 문구는 서버 대조값으로 채운다(LLM 값 미사용).
             out.add(new CitationItem(m, hit.getSourceName(), hit.getDataReliability(),
-                hit.getSourceOrg(), hit.getSourceUrl()));
+                hit.getSourceOrg(), hit.getSourceUrl(),
+                hit.getEvidenceTier(), EvidenceTierLabels.labelOf(hit.getEvidenceTier())));
             if (seenChunkIds.add(hit.getChunkId())) {
                 usedChunkIds.add(hit.getChunkId());
             }
@@ -1378,7 +1576,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                     measures.add(new DerivedItem(ms.text().trim(), List.of()));
                 }
             }
-            out.add(new DerivedHazardGroup(hz.text().trim(), List.of(), measures));
+            // lawRefs=null: 법령 첨부는 도출 확정 후 attachLawRefs 가 별도 수행(prafta-062 배포 D).
+            out.add(new DerivedHazardGroup(hz.text().trim(), List.of(), measures, null));
         }
         return out;
     }
@@ -1403,7 +1602,8 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                     measures.add(new DerivedItem(ms.text().trim(), filterValidMarkers(ms.markers(), validMarkers)));
                 }
             }
-            out.add(new DerivedHazardGroup(hz.text().trim(), filterValidMarkers(hz.markers(), validMarkers), measures));
+            // lawRefs=null: 법령 첨부는 도출 확정 후 attachLawRefs 가 별도 수행(prafta-062 배포 D).
+            out.add(new DerivedHazardGroup(hz.text().trim(), filterValidMarkers(hz.markers(), validMarkers), measures, null));
         }
         return out;
     }
@@ -1483,10 +1683,12 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
                 if (g == null) {
                     continue;
                 }
+                // prafta-062: lawRefs 는 저장값 그대로 승계(재열람 복원). 구 저장분은 null → FE v-if 미표시.
                 out.add(new DerivedHazardGroup(
                     g.text(),
                     g.markers() == null ? List.of() : g.markers(),
-                    g.measures() == null ? List.of() : g.measures()));
+                    g.measures() == null ? List.of() : g.measures(),
+                    g.lawRefs()));
             }
             return out;
         } catch (Exception e) {

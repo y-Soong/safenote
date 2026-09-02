@@ -30,7 +30,10 @@ is_checked = _ca.is_checked
 
 REQUIRED = ["source_id", "source_name", "license_type", "feed_type"]
 VERBATIM_MARKERS = ["제3유형", "변경금지"]
-VALID_RELIABILITY = {"규범형", "집계형", "자율신고형"}
+# '법령' = prafta-062 S2 신설 등급(법령 조문 트랙 필터 축 — D6 확정 (a))
+VALID_RELIABILITY = {"규범형", "집계형", "자율신고형", "법령"}
+# 근거 층위(prafta-062): 미지정은 경고만(배지 미표시 = 종전 동작), 값 이상만 ERROR
+VALID_TIER = {"LAW", "GUIDE", "STAT", "CASE", "REF"}
 
 
 def raw_file_exists(src):
@@ -77,6 +80,13 @@ def validate(src):
     if rel and rel not in VALID_RELIABILITY:
         reasons.append(f"data_reliability 값 이상: '{rel}'")
     rel_warn = "" if rel in VALID_RELIABILITY else "  ⚠ 신뢰등급 미지정"
+
+    # 5-2) 근거 층위(prafta-062): 값 이상만 ERROR, 미지정은 경고만(rel_warn 패턴 재사용)
+    tier = str(src.get("evidence_tier", "")).strip()
+    if tier and tier not in VALID_TIER:
+        reasons.append(f"evidence_tier 값 이상: '{tier}' (허용: LAW|GUIDE|STAT|CASE|REF)")
+    if not tier:
+        rel_warn += "  ⚠ 근거층위 미지정"
 
     # 6) 라이선스 게이트(하드가드#1) — 가장 마지막에 판정
     if not is_checked(src.get("license_checked")):

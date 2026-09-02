@@ -84,13 +84,15 @@ def upsert_source(cur, src):
         """
         INSERT INTO tb_ai_corpus_source
           (source_id, source_org, source_name, source_url, license_type,
-           adopted_date, license_checked_date, source_update_cycle, feed_type, use_yn)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'Y')
+           adopted_date, license_checked_date, source_update_cycle, feed_type,
+           evidence_tier, use_yn)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'Y')
         ON CONFLICT (source_id) DO UPDATE SET
           source_org=EXCLUDED.source_org, source_name=EXCLUDED.source_name,
           source_url=EXCLUDED.source_url, license_type=EXCLUDED.license_type,
           adopted_date=EXCLUDED.adopted_date, license_checked_date=EXCLUDED.license_checked_date,
           source_update_cycle=EXCLUDED.source_update_cycle, feed_type=EXCLUDED.feed_type,
+          evidence_tier=EXCLUDED.evidence_tier,
           use_yn='Y', update_date=CURRENT_TIMESTAMP
         """,
         (
@@ -103,6 +105,9 @@ def upsert_source(cur, src):
             d8(src.get("license_checked_date")),
             str(src.get("source_update_cycle") or "")[:20] or None,
             str(src.get("feed_type") or "FILE")[:10],
+            # 근거 층위(prafta-062): registry evidence_tier 컬럼(사용자 수기 입력).
+            #   미기입이면 NULL(배지 미표시). ★재적재 시 NULL 로 덮어쓰므로 xlsx 입력이 원본이다.
+            str(src.get("evidence_tier") or "").strip()[:20] or None,
         ),
     )
 

@@ -440,8 +440,108 @@ def read_koshaguide_pdf(src):
     return out
 
 
+# ── 법령(LAW_*) 조문 리더 (prafta-062 [배포 B] S2) ──
+# 청킹 단위 = 조문(정책서 safety/04 §4.4 개정 — 항 단위 분해 금지·법령 통짜 금지).
+# content = 조문내용 + 하위 항·호·목 텍스트를 문서 순서대로 결합해 조문 1건이 자족적으로 읽히게 한다.
+# ★별표·부칙·개정문·제개정이유는 <조문> 섹션 밖이라 아예 파싱하지 않는다(제외규칙③ — 비범위,
+#   별표 201건은 표 구조라 청킹 전략이 달라 2차 검토 대상).
+_LAW_CONTENT_TAGS = {"조문내용", "항내용", "호내용", "목내용"}
+_LAW_DELETED_RE = re.compile(r"삭제\s*<")          # 예: "제71조 삭제 <2024.6.28>"
+_LAW_MIN_BODY_LEN = 20                              # 결합 후 이보다 짧으면 껍데기 제외(제외규칙②)
+
+
+def read_law_articles(src):
+    """LAW_* 전용 리더: 22_collect_law_articles.py 가 받은 DRF 법령 XML(raw/{sid}_law_*.xml)을
+    조문 단위 레코드로 변환한다. 산출 레코드 키:
+      - article_text : 조문내용+항·호·목 결합(→ content_fields)
+      - locator      : "{법령약칭} 제{조문번호}조[의{가지번호}]" (→ locator_fields,
+                       국가법령정보센터 원문과 1:1 대조 가능해야 한다 — qa 표본검사 축)
+      - _domain      : registry domain_tag('법령-산안법' 등 6종 — D3 확정 (c), → domain_field)
+      - meta 12키(영문 스네이크 — 백엔드가 직접 읽는 값이라 한글 키를 피한다, → meta_fields)
+    제외 3규칙: ①삭제 조문 ②결합 후 20자 미만 껍데기 ③별표·부칙·개정문·제개정이유(미파싱).
+    장·절·편 제목 단위(조문여부='전문')도 조문이 아니므로 제외하고 집계에 출력한다.
+    ★hazard_text/measure_text 는 registry 에 필드 미지정 → NULL(DECISIONS.md ① — 전용 필드
+      없으면 도출 금지. 부수 효과로 웹 패널 verbatimHazardItems 에 법령이 섞이지 않는다)."""
+    import xml.etree.ElementTree as ET
+
+    sid = str(src["source_id"]).strip()
+    hits = sorted(glob.glob(os.path.join(RAW_DIR, f"{sid}_law_*.xml")))
+    if not hits:
+        raise FileNotFoundError(f"법령 XML 없음: {sid}_law_*.xml (22_collect_law_articles 먼저 실행)")
+    xml_path = hits[-1]
+    m = re.search(r"_law_(\d+)_\d{8}\.xml$", os.path.basename(xml_path))
+    mst = m.group(1) if m else ""
+
+    root = ET.parse(xml_path).getroot()
+    if root.tag != "법령":
+        raise ValueError(f"{sid}: 루트 태그 '{root.tag}' (기대: 법령) — 수집 스냅샷 손상 의심")
+    basic = root.find("기본정보")
+    law_name = (basic.findtext("법령명_한글") or "").strip()
+    # 약칭이 비어 있는 법령(산안법·시행령·시행규칙 실측)은 정식명칭을 그대로 쓴다.
+    abbrev = (basic.findtext("법령명약칭") or "").strip() or law_name
+    law_id = (basic.findtext("법령ID") or "").strip()
+    law_kind = (basic.findtext("법종구분") or "").strip()
+    ministry = (basic.findtext("소관부처") or "").strip()
+    prom_date = (basic.findtext("공포일자") or "").strip()
+    law_eff = (basic.findtext("시행일자") or "").strip()
+    domain = str(src.get("domain_tag") or "").strip() or None
+
+    out = []
+    n_jeonmun = n_deleted = n_shell = 0
+    units = root.findall("조문/조문단위")
+    for unit in units:
+        if (unit.findtext("조문여부") or "").strip() != "조문":
+            n_jeonmun += 1                      # 장·절·편 제목('전문') — 조문 아님
+            continue
+        # 문서 순서대로 조문내용/항내용/호내용/목내용 텍스트 결합(iter = document order)
+        parts = []
+        for el in unit.iter():
+            if el.tag in _LAW_CONTENT_TAGS and el.text and el.text.strip():
+                parts.append(el.text.strip())
+        text = "\n".join(parts)
+        compact = re.sub(r"\s+", "", text)
+        # 제외규칙①: 삭제 조문("제N조 삭제 <YYYY.M.D>"). 본문 속 '삭제 <' 인용 오탐 방지를
+        # 위해 길이 가드를 함께 건다(삭제 조문은 despace 후 40자를 넘지 않는다 — 실측).
+        if _LAW_DELETED_RE.search(text) and len(compact) < 40:
+            n_deleted += 1
+            continue
+        # 제외규칙②: 결합 후에도 임계 미만인 껍데기
+        if len(text.strip()) < _LAW_MIN_BODY_LEN:
+            n_shell += 1
+            continue
+
+        art_no = (unit.findtext("조문번호") or "").strip()
+        branch = (unit.findtext("조문가지번호") or "").strip()
+        branch = branch if branch and branch != "0" else ""
+        locator = f"{abbrev} 제{art_no}조" + (f"의{branch}" if branch else "")
+        out.append({
+            "article_text": text,
+            "locator": locator,
+            "_domain": domain,
+            # meta_fields(영문 스네이크 — plan 062-05 5)
+            "law_id": law_id,
+            "mst": mst,
+            "law_name": law_name,
+            "law_kind": law_kind,
+            "ministry": ministry,
+            "promulgation_date": prom_date,
+            "law_effective_date": law_eff,
+            "article_effective_date": (unit.findtext("조문시행일자") or "").strip(),
+            "article_no": art_no,
+            "article_branch_no": branch or None,
+            "article_title": (unit.findtext("조문제목") or "").strip() or None,
+            "article_changed": (unit.findtext("조문변경여부") or "").strip(),
+        })
+    print(f"  [법령] {law_name}: 조문단위 {len(units)} · 제외(전문/장절 {n_jeonmun}, "
+          f"삭제 {n_deleted}, 껍데기 {n_shell}) → 조문 청크 후보 {len(out)}")
+    return out
+
+
 def read_records(src):
     sid = str(src.get("source_id", "")).strip()
+    # LAW_*: 법령 조문 XML(law.go.kr DRF, 22_collect_law_articles.py 수집분) 전용 리더(prafta-062).
+    if sid.startswith("LAW_"):
+        return read_law_articles(src)
     # 15121008: registry상 feed_type=API 이지만 실제로는 15121001 boardno 연계 + PDF 첨부라
     #   범용 API 리더(read_api, collect_api.py 스냅샷 전제)와 다른 전용 리더를 먼저 태운다.
     if sid == "15121008":
@@ -482,9 +582,15 @@ def transform(src, rec):
         return None  # content 없음 → 행 제외(§4-5)
 
     # 마스킹(결정③): 주소는 시군구 절단, 그 외 식별값은 치환, 업체/성명 종합 마스킹
+    # ★법령(LAW_*)은 마스킹을 통째로 건너뛴다(prafta-062): 공개 법령 원문이라 PII 가 없고,
+    #   verbatim 원문 무변경 원칙(정책서 §4.5 정확성 사유)상 패턴 마스킹(_COMPANY/_ADDR_DETAIL)이
+    #   조문 텍스트를 훼손하면 안 된다(2026-08-19 '타설시 도면' 절단 오탐 선례와 같은 계열 위험).
+    #   공백 정규화(normalize_text)만 다른 소스와 동일하게 적용된다.
+    law_verbatim = sid.startswith("LAW_")
     addr_vals = [rec.get(f) for f in mask_fields if is_addr_field(f)]
     other_vals = [rec.get(f) for f in mask_fields if not is_addr_field(f)]
-    content = _mask.mask_body(content, addr_vals, other_vals)
+    if not law_verbatim:
+        content = _mask.mask_body(content, addr_vals, other_vals)
 
     # HAZARD/MEASURE
     hazard_text = _mask.mask_body(normalize_text(rec.get(hazard_field)), addr_vals, other_vals) if hazard_field else None

@@ -11,10 +11,13 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  *    {@code measures} 는 이 유해요인과 연결된 개선안(감소대책) 목록.
  * <p>응답 DTO 겸 HAZARD_JSON 저장 스키마로 공용한다(Jackson 직렬화/역직렬화).
  *    구버전 저장분([{text,markers}])은 파싱 시 measures=null → 서비스에서 빈 리스트로 정규화(하위호환 read).
+ * <p>prafta-062 배포 D: {@code lawRefs} = 사후 매핑된 법령 조문(서버 첨부, LLM 미경유).
+ *    매칭 없으면 null(FE 는 v-if 로 미표시 — 부정 문구 금지). 구 저장분은 누락 필드 null 파싱(하위호환).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record DerivedHazardGroup(
     String text
     , List<String> markers
     , List<DerivedItem> measures
+    , List<LawRefItem> lawRefs
 ) {}

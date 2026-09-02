@@ -42,6 +42,13 @@ public class AiCorpusRepository {
       + "       c.meta_json->>'data_reliability' AS data_reliability, "
       + "       c.meta_json->>'track'            AS track, "
       + "       s.source_org, s.source_url, s.license_type, "
+      /* prafta-062: 근거 층위(출처 단위 속성) — SELECT 만 추가(additive). WHERE/ORDER BY/바인딩 무변경.
+         ★배포 전 pgvector 양 DB 에 prafta-062-evidence-tier-1.sql(DDL) 선적용 필수 — 없으면 검색 전면 실패. */
+      + "       s.evidence_tier, "
+      /* prafta-062 배포 D: 법령 조문 메타(조문시행일자/조문제목) — SELECT 만 추가(additive).
+         meta_json 파생이라 DDL 불요, 법령 외 청크는 키 부재로 null. WHERE/ORDER BY/바인딩 무변경. */
+      + "       c.meta_json->>'article_effective_date' AS article_effective_date, "
+      + "       c.meta_json->>'article_title'          AS article_title, "
       + "       (c.embedding <=> ?::vector)      AS distance "
       + "  FROM tb_ai_corpus_chunk c "
       + "  LEFT JOIN tb_ai_corpus_source s ON (c.source_id = s.source_id) "
@@ -49,6 +56,9 @@ public class AiCorpusRepository {
       + "   AND (?::text   IS NULL OR c.domain_tag = ?) "
       + "   AND (?::text[] IS NULL OR c.meta_json->>'data_reliability' = ANY(?::text[])) "
       + "   AND (?::text[] IS NULL OR c.meta_json->>'track'            = ANY(?::text[])) "
+      /* prafta-062: 신뢰등급 부정 필터(법령 배제 등). null 이면 미적용 = 종전 동일.
+         COALESCE 로 meta 키 부재(null) 행도 배제되지 않게 보존(<> ALL 의 null 전파 방지). */
+      + "   AND (?::text[] IS NULL OR COALESCE(c.meta_json->>'data_reliability','') <> ALL(?::text[])) "
       + " ORDER BY c.embedding <=> ?::vector "
       + " LIMIT ?";
 
@@ -59,21 +69,26 @@ public class AiCorpusRepository {
      * @param domainTag    도메인 태그 필터(null 이면 미적용)
      * @param reliabilityLiteral 신뢰등급 pg 배열 리터럴(null 이면 미적용)
      * @param trackLiteral track pg 배열 리터럴(null 이면 미적용)
+     * @param reliabilityNotInLiteral 신뢰등급 부정(배제) pg 배열 리터럴(null 이면 미적용 = 종전 동일) — prafta-062
      * @param topK         반환 개수(클램프는 서비스 책임)
      */
     public List<RagHit> search(String vecLiteral,
                                String domainTag,
                                String reliabilityLiteral,
                                String trackLiteral,
+                               String reliabilityNotInLiteral,
                                int topK) {
 
+        /* ★slot 순서 = SEARCH_SQL 의 ? 등장 순서와 1:1. 총 11개(종전 9개 + prafta-062 부정필터 2슬롯).
+           기존 (1)~(7) 순서 무변경, 신규 (8)(9)는 track 필터 뒤·ORDER BY 앞에 삽입. */
         Object[] args = new Object[] {
             vecLiteral,             // (1) SELECT distance
             domainTag, domainTag,   // (2)(3) domain_tag 필터
             reliabilityLiteral, reliabilityLiteral, // (4)(5) 신뢰등급 필터
             trackLiteral, trackLiteral,             // (6)(7) track 필터
-            vecLiteral,             // (8) ORDER BY
-            topK                    // (9) LIMIT
+            reliabilityNotInLiteral, reliabilityNotInLiteral, // (8)(9) 신뢰등급 부정 필터(prafta-062)
+            vecLiteral,             // (10) ORDER BY
+            topK                    // (11) LIMIT
         };
 
         try {
@@ -99,6 +114,7 @@ public class AiCorpusRepository {
             .sourceOrg(rs.getString("source_org"))
             .sourceUrl(rs.getString("source_url"))
             .licenseType(rs.getString("license_type"))
+            .evidenceTier(rs.getString("evidence_tier"))
             .dataReliability(rs.getString("data_reliability"))
             .track(track)
             .quotable(true)
@@ -109,6 +125,8 @@ public class AiCorpusRepository {
             .hazardText(rs.getString("hazard_text"))
             .measureText(rs.getString("measure_text"))
             .sourceLocator(rs.getString("source_locator"))
+            .articleEffectiveDate(rs.getString("article_effective_date"))
+            .articleTitle(rs.getString("article_title"))
             .distance(distance)
             .score(1.0d - distance)
             .build();

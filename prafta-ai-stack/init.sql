@@ -18,6 +18,9 @@ CREATE TABLE tb_ai_corpus_source (
     LICENSE_CHECKED_DATE VARCHAR(8),
     SOURCE_UPDATE_CYCLE  VARCHAR(20),
     FEED_TYPE            VARCHAR(10)  NOT NULL,
+    -- 근거 층위(prafta-062): LAW(법령)|GUIDE(권고 지침)|STAT(고위험 통계)|CASE(유사 재해)|REF(참고 자료)
+    --   NULL 허용 = 미지정(화면 배지 미표시, 종전 동작). 라이브 DB엔 prafta-062-evidence-tier-1.sql 로 적용.
+    EVIDENCE_TIER        VARCHAR(20),
     USE_YN               CHAR(1)      NOT NULL DEFAULT 'Y',
     INSERT_NO            VARCHAR(50)  DEFAULT 'SYSTEM',
     INSERT_DATE          TIMESTAMP    DEFAULT CURRENT_TIMESTAMP,

@@ -50,10 +50,12 @@ public class Ai01ServiceImpl implements Ai01Service {
         // 3) 필터(신뢰등급/트랙)를 Postgres 배열 리터럴로 변환(바인딩 값 — SQL 주입 안전)
         String reliabilityLiteral = toPgTextArrayLiteral(param.reliabilityIn());
         String trackLiteral = toPgTextArrayLiteral(param.trackIn());
+        // prafta-062: 신뢰등급 부정 필터(법령 배제 등 서버 내부 전용) — null 이면 미적용 = 종전 동일.
+        String reliabilityNotInLiteral = toPgTextArrayLiteral(param.reliabilityNotIn());
 
         // 4) 검색
         List<RagHit> hits = aiCorpusRepository.search(
-            vecLiteral, param.domainTag(), reliabilityLiteral, trackLiteral, topK);
+            vecLiteral, param.domainTag(), reliabilityLiteral, trackLiteral, reliabilityNotInLiteral, topK);
 
         log.info("RAG 검색 완료 - userCd={}, hit수={}", param.gvUserCd(), hits.size());
 

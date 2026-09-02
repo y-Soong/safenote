@@ -25,6 +25,9 @@ public record RagSearchParam(
     , String domainTag
     , List<String> reliabilityIn
     , List<String> trackIn
+    // prafta-062: 신뢰등급 부정 필터(해당 등급 제외 — 법령 배제 등 내부 검색 전용).
+    //   ★외부 요청 경로(from())에서는 항상 null 고정 — 클라이언트 조작 가능 필터를 늘리지 않는다(security).
+    , List<String> reliabilityNotIn
     , String gvUserCd
     , String gvCmpnyCd
 ) {
@@ -56,6 +59,8 @@ public record RagSearchParam(
             , domainTag
             , capFilter(request.getReliabilityIn())
             , capFilter(request.getTrackIn())
+            // prafta-062: 부정 필터는 서버 내부 전용 — 외부 요청에서는 항상 null(request 값 미수용).
+            , null
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_cmpnyCd()
         );

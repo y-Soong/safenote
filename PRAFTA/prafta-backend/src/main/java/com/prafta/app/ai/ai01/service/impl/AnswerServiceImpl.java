@@ -60,6 +60,13 @@ public class AnswerServiceImpl implements AnswerService {
     /** ★하드가드 #4 fail-closed 기준: LLM 에는 track 이 명시적으로 recompose 로 확정된 청크만 투입한다. */
     private static final String RECOMPOSE_TRACK = "recompose";
 
+    /**
+     * 법령 신뢰등급 값(prafta-062 D5-2). 법령 조문(track=verbatim, data_reliability='법령')이 적재되면
+     * 아래 track 물리 분리(97~105행)가 이를 전부 verbatim 참조로 강등해 앱 AI 답변의 참고 원문에
+     * 조문이 자동으로 섞여 들어온다 → 검색 단계에서 부정 필터로 배제(앱 미노출 확정 — 무회귀 우선).
+     */
+    private static final String LAW_RELIABILITY = "법령";
+
     private static final String DISCLAIMER = "본 내용은 참고 근거이며 최종 판단은 담당자가 수행합니다.";
 
     /** §6 그라운딩 시스템 프롬프트(요청마다 동일 → 프롬프트 캐시 적중). */
@@ -84,9 +91,11 @@ public class AnswerServiceImpl implements AnswerService {
 
         // 1) Phase 1 검색 재사용(answer 전용 topK 적용).
         int effectiveTopK = (param.topK() != null) ? param.topK() : aiProperties.getLlm().getAnswerTopK();
+        // prafta-062 D5-2: 법령 조문은 앱 AI 답변에 미노출 — 신뢰등급 부정 필터로 배제.
         RagSearchParam searchParam = new RagSearchParam(
             param.query(), effectiveTopK, param.domainTag(),
-            param.reliabilityIn(), param.trackIn(), param.gvUserCd(), param.gvCmpnyCd());
+            param.reliabilityIn(), param.trackIn(), List.of(LAW_RELIABILITY),
+            param.gvUserCd(), param.gvCmpnyCd());
         RagSearchResponse searchResp = ai01Service.search(searchParam);
         List<RagHit> hits = (searchResp.getHits() == null) ? List.of() : searchResp.getHits();
 
