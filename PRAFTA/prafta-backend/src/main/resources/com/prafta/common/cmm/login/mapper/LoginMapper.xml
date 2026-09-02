@@ -707,6 +707,9 @@
 		     기존 약관 001~005 는 전부 REQUIRED_YN='Y' 라 현행 동작은 변하지 않는다. */
 		  AND A.REQUIRED_YN = 'Y'
 		  AND A.USE_YN = 'Y'
+		  /* ★위치정보 동의철회·중지 S2 후속: 로그인 게이트 대상만 본다(AuthMapper 두 쿼리와 동일 사유).
+		     005 는 LOGIN_GATE_YN='N' 이라 제외되고, 차단은 이벤트 시점이 담당한다. */
+		  AND A.LOGIN_GATE_YN = 'Y'
 	) A
 	WHERE A.USER_TERMS_AGR_YN = 'N'
     </select>
