@@ -37,238 +37,268 @@
         <div class="modal-body my-info-body">
           <!-- 사용자 기본정보 -->
           <div class="section-title">기본 정보</div>
-        <div class="form-container">
-          <div class="form-row-max">
-            <label>아이디</label>
-            <input v-model="userId" disabled />
+          <div class="form-container">
+            <div class="form-row-max">
+              <label>아이디</label>
+              <input v-model="userId" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>이름</label>
+              <input v-model="userNm" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>사업장</label>
+              <input v-model="siteNm" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>소속부서</label>
+              <input v-model="nodeNm" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>휴대폰</label>
+              <input v-model="mblNo" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>이메일</label>
+              <input v-model="email" disabled />
+            </div>
+            <div class="form-row-max">
+              <label>마지막 로그인</label>
+              <input v-model="lastLoginDtime" disabled />
+            </div>
           </div>
-          <div class="form-row-max">
-            <label>이름</label>
-            <input v-model="userNm" disabled />
-          </div>
-          <div class="form-row-max">
-            <label>사업장</label>
-            <input v-model="siteNm" disabled />
-          </div>
-          <div class="form-row-max">
-            <label>소속부서</label>
-            <input v-model="nodeNm" disabled />
-          </div>
-          <div class="form-row-max">
-            <label>휴대폰</label>
-            <input v-model="mblNo" disabled />
-          </div>
-          <div class="form-row-max">
-            <label>이메일</label>
-            <input v-model="email" disabled />
-          </div>
-          <div class="form-row-max">
-            <label>마지막 로그인</label>
-            <input v-model="lastLoginDtime" disabled />
-          </div>
-        </div>
 
-        <!-- 근무 정보 (F-8-3) — 기본 근무타입 자기변경(웹 내정보). 현재값 표시 + 인라인 변경.
+          <!-- 근무 정보 (F-8-3) — 기본 근무타입 자기변경(웹 내정보). 현재값 표시 + 인라인 변경.
              본인 변경은 정책서 §6.1 이 "관리자 주체"로만 서술돼 있어 명시적 근거는 없으나,
              2026-08-05 사용자 확정(3경로: 관리자/웹 내정보/앱 마이페이지)에 따라 F-8-2 API 를 연결한다.
              PRAFTA-004(결재자선택UI 추가, 2026-08-27): 편집 모드에 결재선 구성 UI 추가
              (LeaveApplyPop.vue 결재라인 구성 패턴 재사용). 웹은 selfApprvYn 개념이 없어 항상 노출하며
              미선택 시 서버가 부서 기본 결재자로 자동 폴백한다(필수 아님 — 2026-08-27 사용자 승인). -->
-        <div class="section-title">근무 정보</div>
-        <div class="form-container">
-          <!-- 대기중 신청 있음 — 배너만 노출, 변경 버튼 숨김(PRAFTA-004 신규 3번째 분기). -->
-          <template v-if="pendingDefaultSch.reqId">
-            <div class="form-row-max">
+          <div class="section-title">근무 정보</div>
+          <div class="form-container">
+            <!-- 대기중 신청 있음 — 배너만 노출, 변경 버튼 숨김(PRAFTA-004 신규 3번째 분기). -->
+            <template v-if="pendingDefaultSch.reqId">
+              <div class="form-row-max">
+                <label>기본 근무타입</label>
+                <input :value="defaultSchLabel" disabled placeholder="미설정" />
+              </div>
+              <div class="default-sch-pending">
+                승인 대기 중 —
+                {{ pendingDefaultSch.schNo || pendingDefaultSch.schCd }} 신청함
+                <br />
+                {{ pendingDefaultSch.reqDate }} · 관리자 승인 후 반영됩니다.
+              </div>
+            </template>
+
+            <div class="form-row-max" v-else-if="!isEditingDefaultSch">
               <label>기본 근무타입</label>
               <input :value="defaultSchLabel" disabled placeholder="미설정" />
-            </div>
-            <div class="default-sch-pending">
-              승인 대기 중 — {{ pendingDefaultSch.schNo || pendingDefaultSch.schCd }} 신청함
-              <br />
-              {{ pendingDefaultSch.reqDate }} · 관리자 승인 후 반영됩니다.
-            </div>
-          </template>
-
-          <div class="form-row-max" v-else-if="!isEditingDefaultSch">
-            <label>기본 근무타입</label>
-            <input :value="defaultSchLabel" disabled placeholder="미설정" />
-            <button
-              type="button"
-              class="btn btn-second"
-              @click="onStartEditDefaultSch"
-            >
-              변경
-            </button>
-          </div>
-
-          <template v-else>
-            <div class="form-row-max">
-              <label>기본 근무타입</label>
-              <BaseSelect
-                id="myDefaultSchCd"
-                v-model="pendingDefaultSchCd"
-                :disabled="isSchOptionsLoading || isSavingDefaultSch"
-              >
-                <option :value="''">-</option>
-                <option
-                  v-for="opt in filteredDefaultSchOptions"
-                  :key="opt.schCd"
-                  :value="opt.schCd"
-                >
-                  {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
-                    fnFmtSchTime(opt.fstSchEndTime)
-                  }})
-                </option>
-              </BaseSelect>
-            </div>
-            <p class="default-sch-hint">
-              ⓘ 근무타입 변경 신청 시 승인 후 명일(내일)부터 당해 연말까지 평일
-              근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
-              휴일·연차·교대팀 구간 제외).
-            </p>
-            <!-- PRAFTA-004 신규 — 변경 사유 입력(필수, ATTD_400_096 과 매칭). -->
-            <div class="form-row-max">
-              <label>변경 사유</label>
-              <textarea
-                v-model="defaultSchReqReason"
-                class="default-sch-reason"
-                rows="2"
-                maxlength="500"
-                placeholder="변경 사유를 입력해 주세요."
-              ></textarea>
-            </div>
-
-            <!-- 결재선 구성 (PRAFTA-004, LeaveApplyPop.vue 패턴 재사용) — 웹은 선택 사항(미선택 시
-                 서버가 부서 기본 결재자로 자동 폴백, 2026-08-27 사용자 승인). -->
-            <div class="default-sch-approval">
-              <div class="default-sch-approval__head">
-                <span>결재선 구성 (선택)</span>
-                <select
-                  v-if="approvalPresets.length > 0"
-                  class="default-sch-preset-sel"
-                  v-model="selectedApprovalPresetId"
-                  @change="fnApplyApprovalPresetSel"
-                >
-                  <option value="">프리셋 선택</option>
-                  <option
-                    v-for="p in approvalPresets"
-                    :key="p.presetId"
-                    :value="p.presetId"
-                  >
-                    {{ p.presetNm }}{{ p.defaultYn === "Y" ? " (기본)" : "" }}
-                  </option>
-                </select>
-                <span v-else class="default-sch-preset-empty">
-                  등록된 프리셋 없음 (사용자관리 &gt; 연차 결재라인 구성)
-                </span>
-              </div>
-              <div class="default-sch-approval__cols">
-                <div class="default-sch-pane">
-                  <div class="default-sch-pane__title">후보</div>
-                  <div class="default-sch-list">
-                    <div
-                      v-for="c in approvalCandidates"
-                      :key="c.userCd"
-                      class="default-sch-cand"
-                      :class="{ added: fnInApprovalLine(c.userCd) }"
-                    >
-                      <span>{{ c.userNm }} · {{ c.rankNm || "직급없음" }}</span>
-                      <button
-                        type="button"
-                        :disabled="fnInApprovalLine(c.userCd)"
-                        @click="fnAddApprover(c)"
-                      >
-                        추가
-                      </button>
-                    </div>
-                    <div v-if="approvalCandidates.length === 0" class="default-sch-empty">
-                      후보 없음
-                    </div>
-                  </div>
-                </div>
-                <div class="default-sch-pane">
-                  <div class="default-sch-pane__title">
-                    결재 순서 ({{ approvalLine.length }})
-                  </div>
-                  <div class="default-sch-list">
-                    <div
-                      v-for="(s, i) in approvalLine"
-                      :key="s.userCd"
-                      class="default-sch-step"
-                    >
-                      <span class="default-sch-step__no">{{ i + 1 }}</span>
-                      <span class="default-sch-step__nm">{{ s.userNm }}</span>
-                      <button
-                        type="button"
-                        :disabled="i === 0"
-                        @click="fnMoveApproverUp(i)"
-                      >
-                        ▲
-                      </button>
-                      <button
-                        type="button"
-                        :disabled="i === approvalLine.length - 1"
-                        @click="fnMoveApproverDown(i)"
-                      >
-                        ▼
-                      </button>
-                      <button
-                        type="button"
-                        class="default-sch-del"
-                        @click="fnRemoveApprover(i)"
-                      >
-                        ✕
-                      </button>
-                    </div>
-                    <div v-if="approvalLine.length === 0" class="default-sch-empty">
-                      지정하지 않으면 부서 기본 결재자에게 자동 배정됩니다.
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <span class="form-msg" v-if="defaultSchErrorMsg">{{
-              defaultSchErrorMsg
-            }}</span>
-
-            <!-- F-10 규약: 왼쪽=진행/확정(신청, primary), 오른쪽=이탈(취소) — 파일 기존 관례상
-                 이탈 버튼은 정의되지 않은 btn-ghost 대신 공용 btn-second 사용(닫기 버튼과 동일). -->
-            <div class="default-sch-actions">
-              <button
-                type="button"
-                class="btn btn-primary"
-                :disabled="!pendingDefaultSchCd || isSavingDefaultSch"
-                @click="onRequestDefaultSch"
-              >
-                신청
-              </button>
               <button
                 type="button"
                 class="btn btn-second"
-                @click="onCancelEditDefaultSch"
+                @click="onStartEditDefaultSch"
               >
-                취소
+                변경
               </button>
             </div>
-          </template>
-        </div>
 
-        <!-- 약관 동의 설정 (선택약관 on/off) — 선택약관이 1건 이상일 때만 노출.
-             앱 마이페이지(MyPageView "약관 동의 설정")와 같은 목록/동작을 웹에도 제공한다.
-             연동 회사 제3자 제공 동의(006)는 이 토글이 유일한 웹 상시 변경 수단이다. -->
-        <template v-if="optionalTerms.length > 0">
-          <div class="section-title">약관 동의 설정</div>
-          <div class="form-container">
-            <div
-              v-for="terms in optionalTerms"
-              :key="terms.termsId"
-              class="terms-row"
-            >
-              <div class="terms-row-text">
-                <span class="terms-row-label">{{
-                  "(선택) " + terms.termsNm
-                }}</span>
+            <template v-else>
+              <div class="form-row-max">
+                <label>기본 근무타입</label>
+                <BaseSelect
+                  id="myDefaultSchCd"
+                  v-model="pendingDefaultSchCd"
+                  :disabled="isSchOptionsLoading || isSavingDefaultSch"
+                >
+                  <option :value="''">-</option>
+                  <option
+                    v-for="opt in filteredDefaultSchOptions"
+                    :key="opt.schCd"
+                    :value="opt.schCd"
+                  >
+                    {{ opt.schNo }} ({{ fnFmtSchTime(opt.fstSchStrTime) }}~{{
+                      fnFmtSchTime(opt.fstSchEndTime)
+                    }})
+                  </option>
+                </BaseSelect>
+              </div>
+              <p class="default-sch-hint">
+                ⓘ 근무타입 변경 신청 시 승인 후 명일(내일)부터 당해 연말까지
+                평일 근무계획이 자동 생성·갱신됩니다(빈 날·자동생성분만,
+                휴일·연차·교대팀 구간 제외).
+              </p>
+              <!-- PRAFTA-004 신규 — 변경 사유 입력(필수, ATTD_400_096 과 매칭). -->
+              <div class="form-row-max">
+                <label>변경 사유</label>
+                <textarea
+                  v-model="defaultSchReqReason"
+                  class="default-sch-reason"
+                  rows="2"
+                  maxlength="500"
+                  placeholder="변경 사유를 입력해 주세요."
+                ></textarea>
+              </div>
+
+              <!-- 결재선 구성 (PRAFTA-004, LeaveApplyPop.vue 패턴 재사용) — 웹은 선택 사항(미선택 시
+                 서버가 부서 기본 결재자로 자동 폴백, 2026-08-27 사용자 승인). -->
+              <div class="default-sch-approval">
+                <div class="default-sch-approval__head">
+                  <span>결재선 구성 (선택)</span>
+                  <select
+                    v-if="approvalPresets.length > 0"
+                    class="default-sch-preset-sel"
+                    v-model="selectedApprovalPresetId"
+                    @change="fnApplyApprovalPresetSel"
+                  >
+                    <option value="">프리셋 선택</option>
+                    <option
+                      v-for="p in approvalPresets"
+                      :key="p.presetId"
+                      :value="p.presetId"
+                    >
+                      {{ p.presetNm }}{{ p.defaultYn === "Y" ? " (기본)" : "" }}
+                    </option>
+                  </select>
+                  <span v-else class="default-sch-preset-empty">
+                    등록된 프리셋 없음 (사용자관리 &gt; 연차 결재라인 구성)
+                  </span>
+                </div>
+                <div class="default-sch-approval__cols">
+                  <div class="default-sch-pane">
+                    <div class="default-sch-pane__title">후보</div>
+                    <div class="default-sch-list">
+                      <div
+                        v-for="c in approvalCandidates"
+                        :key="c.userCd"
+                        class="default-sch-cand"
+                        :class="{ added: fnInApprovalLine(c.userCd) }"
+                      >
+                        <span
+                          >{{ c.userNm }} · {{ c.rankNm || "직급없음" }}</span
+                        >
+                        <button
+                          type="button"
+                          :disabled="fnInApprovalLine(c.userCd)"
+                          @click="fnAddApprover(c)"
+                        >
+                          추가
+                        </button>
+                      </div>
+                      <div
+                        v-if="approvalCandidates.length === 0"
+                        class="default-sch-empty"
+                      >
+                        후보 없음
+                      </div>
+                    </div>
+                  </div>
+                  <div class="default-sch-pane">
+                    <div class="default-sch-pane__title">
+                      결재 순서 ({{ approvalLine.length }})
+                    </div>
+                    <div class="default-sch-list">
+                      <div
+                        v-for="(s, i) in approvalLine"
+                        :key="s.userCd"
+                        class="default-sch-step"
+                      >
+                        <span class="default-sch-step__no">{{ i + 1 }}</span>
+                        <span class="default-sch-step__nm">{{ s.userNm }}</span>
+                        <button
+                          type="button"
+                          :disabled="i === 0"
+                          @click="fnMoveApproverUp(i)"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          :disabled="i === approvalLine.length - 1"
+                          @click="fnMoveApproverDown(i)"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          type="button"
+                          class="default-sch-del"
+                          @click="fnRemoveApprover(i)"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div
+                        v-if="approvalLine.length === 0"
+                        class="default-sch-empty"
+                      >
+                        지정하지 않으면 부서 기본 결재자에게 자동 배정됩니다.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <span class="form-msg" v-if="defaultSchErrorMsg">{{
+                defaultSchErrorMsg
+              }}</span>
+
+              <!-- F-10 규약: 왼쪽=진행/확정(신청, primary), 오른쪽=이탈(취소) — 파일 기존 관례상
+                 이탈 버튼은 정의되지 않은 btn-ghost 대신 공용 btn-second 사용(닫기 버튼과 동일). -->
+              <div class="default-sch-actions">
+                <button
+                  type="button"
+                  class="btn btn-primary"
+                  :disabled="!pendingDefaultSchCd || isSavingDefaultSch"
+                  @click="onRequestDefaultSch"
+                >
+                  신청
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-second"
+                  @click="onCancelEditDefaultSch"
+                >
+                  취소
+                </button>
+              </div>
+            </template>
+          </div>
+
+          <!-- 약관 동의 설정 — 선택약관 + 위치정보 동의(005)를 같은 목록에 둔다.
+             앱 마이페이지(MyPageView "약관 동의 설정")와 구성·조작을 동일하게 맞춘다.
+             ★두 행 모두 [체크박스][(선택) 약관명][보기] 순서로 왼쪽 정렬한다.
+               종전에는 스위치였으나 앱과 형태를 통일했다(2026-09-02).
+             ★위치정보의 '일시 중지 ↔ 재동의'는 되돌릴 수 있으므로 체크박스가 맡는다.
+               반면 '동의 철회'는 좌표 파기를 동반해 되돌릴 수 없으므로 체크박스에 싣지 않고
+               해제 팝업에서 고르게 한다(오조작 1회로 파기되면 복구 수단이 없다). -->
+          <template
+            v-if="optionalTerms.length > 0 || locationConsent.consentState"
+          >
+            <div class="section-title">약관 동의 설정</div>
+            <div class="form-container">
+              <div
+                v-for="terms in optionalTerms"
+                :key="terms.termsId"
+                class="terms-row"
+              >
+                <button
+                  type="button"
+                  role="checkbox"
+                  class="terms-check"
+                  :class="{ 'terms-check-on': terms.agrYn === 'Y' }"
+                  :aria-checked="terms.agrYn === 'Y' ? 'true' : 'false'"
+                  :aria-label="terms.termsNm + ' 동의'"
+                  :disabled="isTermsSaving"
+                  @click="fnToggleTerms(terms)"
+                >
+                  <span class="terms-check-box" aria-hidden="true">
+                    <svg class="terms-check-mark" viewBox="0 0 24 24">
+                      <path d="M5 13l4 4L19 7" />
+                    </svg>
+                  </span>
+                  <span class="terms-check-label">{{
+                    "(선택) " + terms.termsNm
+                  }}</span>
+                </button>
                 <button
                   type="button"
                   class="terms-row-view"
@@ -277,53 +307,82 @@
                   보기
                 </button>
               </div>
-              <button
-                type="button"
-                role="switch"
-                class="terms-switch"
-                :class="{ 'terms-switch-on': terms.agrYn === 'Y' }"
-                :aria-checked="terms.agrYn === 'Y' ? 'true' : 'false'"
-                :aria-label="terms.termsNm + ' 동의'"
-                :disabled="isTermsSaving"
-                @click="fnToggleTerms(terms)"
-              >
-                <span class="terms-switch-knob"></span>
-              </button>
+
+              <!-- 위치정보 동의(005) — 위 선택약관 행과 동일한 구조.
+                 상태가 4가지라, 체크 해제 상태의 사유만 아랫줄에 배지로 덧붙인다. -->
+              <div v-if="locationConsent.consentState" class="terms-row-stack">
+                <div class="terms-row">
+                  <button
+                    type="button"
+                    role="checkbox"
+                    class="terms-check"
+                    :class="{ 'terms-check-on': isLocationAgreed }"
+                    :aria-checked="isLocationAgreed ? 'true' : 'false'"
+                    :aria-label="
+                      (locationConsent.termsNm || '위치기반서비스 이용약관') +
+                      ' 동의'
+                    "
+                    :disabled="isLocationSaving"
+                    @click="fnToggleLocationConsent"
+                  >
+                    <span class="terms-check-box" aria-hidden="true">
+                      <svg class="terms-check-mark" viewBox="0 0 24 24">
+                        <path d="M5 13l4 4L19 7" />
+                      </svg>
+                    </span>
+                    <span class="terms-check-label">{{
+                      "(선택) " +
+                      (locationConsent.termsNm || "위치기반서비스 이용약관")
+                    }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="terms-row-view"
+                    @click="fnViewLocationTerms"
+                  >
+                    보기
+                  </button>
+                </div>
+                <div v-if="!isLocationAgreed" class="terms-state">
+                  <span class="terms-badge" :class="locationBadgeClass">{{
+                    locationStateLabel
+                  }}</span>
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- 비밀번호 변경 -->
+          <div class="section-title">비밀번호 변경</div>
+          <div class="form-container">
+            <div class="form-row-max">
+              <label>현재 비밀번호</label>
+              <input
+                type="password"
+                v-model="currentPw"
+                placeholder="현재 비밀번호"
+                autocomplete="current-password"
+              />
+            </div>
+            <div class="form-row-max">
+              <label>새 비밀번호</label>
+              <input
+                type="password"
+                v-model="newPw"
+                placeholder="8자 이상, 영문+숫자+특수문자"
+                autocomplete="new-password"
+              />
+            </div>
+            <div class="form-row-max">
+              <label>비밀번호 확인</label>
+              <input
+                type="password"
+                v-model="newPwConfirm"
+                placeholder="새 비밀번호 재입력"
+                autocomplete="new-password"
+              />
             </div>
           </div>
-        </template>
-
-        <!-- 비밀번호 변경 -->
-        <div class="section-title">비밀번호 변경</div>
-        <div class="form-container">
-          <div class="form-row-max">
-            <label>현재 비밀번호</label>
-            <input
-              type="password"
-              v-model="currentPw"
-              placeholder="현재 비밀번호"
-              autocomplete="current-password"
-            />
-          </div>
-          <div class="form-row-max">
-            <label>새 비밀번호</label>
-            <input
-              type="password"
-              v-model="newPw"
-              placeholder="8자 이상, 영문+숫자+특수문자"
-              autocomplete="new-password"
-            />
-          </div>
-          <div class="form-row-max">
-            <label>비밀번호 확인</label>
-            <input
-              type="password"
-              v-model="newPwConfirm"
-              placeholder="새 비밀번호 재입력"
-              autocomplete="new-password"
-            />
-          </div>
-        </div>
         </div>
         <!-- /.my-info-body -->
 
@@ -337,12 +396,21 @@
               회원탈퇴
             </button>
             <!-- F-10 규약: 이탈(닫기)은 ghost 계열 — 정의되지 않은 btn-default 대신 공용 btn-second 사용 -->
-            <button class="btn btn-second" @click="$emit('close')">
-              닫기
-            </button>
+            <button class="btn btn-second" @click="$emit('close')">닫기</button>
           </div>
         </div>
       </div>
+
+      <!-- 위치정보 동의 해제 방식 선택 팝업 — 체크박스를 해제할 때 열린다.
+           ★openPop 으로 열지 않는다(openPop 은 기존 모달을 먼저 닫아 본 팝업이 사라진다).
+             닫으면 아무 전이도 일어나지 않으므로 체크는 그대로 유지된다. -->
+      <LocationConsentOffPop
+        v-if="locationOffPopOpen"
+        :saving="isLocationSaving"
+        @close="locationOffPopOpen = false"
+        @suspend="fnSuspendLocation"
+        @withdraw="fnWithdrawLocation"
+      />
     </div>
   </Transition>
 </template>
@@ -359,6 +427,13 @@ import { formatDateTimeDotWithSec } from "@/utils/dateFormat";
 // 연동 회사 제3자 제공 동의(006) 식별 — 철회(Y→N) 확인 팝업 판별용(앱 termsGate 와 동일 상수).
 import { THIRD_PARTY_CONSENT_TERMS_ID } from "@/utils/consentTerms";
 import TermsDetailPop from "@/components/popup/TermsDetailPop.vue";
+import LocationConsentOffPop from "@/components/popup/LocationConsentOffPop.vue";
+// 문구 단일 출처 — 앱(prafta-app-frontend/src/utils/locationConsent.js)과 같은 사실을 말해야 한다.
+import {
+  LOCATION_STATE_LABEL,
+  LOCATION_WITHDRAW_CONFIRM,
+  LOCATION_SUSPEND_CONFIRM,
+} from "@/utils/locationConsent";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 
 const { proxy } = getCurrentInstance();
@@ -434,9 +509,35 @@ const optionalTerms = ref([]);
 // 토글 저장 직렬화 가드(동시 저장 경합 방지).
 const isTermsSaving = ref(false);
 
+// 위치정보 동의(005) — GET /comApi/consent/location-consent.
+//   consentState 가 비면(조회 실패) 행 자체를 그리지 않는다(비치명적).
+const locationConsent = ref({
+  consentState: "",
+  termsVersion: "",
+  collectAllowed: false,
+  termsId: "",
+  termsNm: "",
+});
+const isLocationSaving = ref(false);
+const locationOffPopOpen = ref(false);
+
+const isLocationAgreed = computed(
+  () => locationConsent.value.consentState === "AGREED"
+);
+const locationStateLabel = computed(
+  () => LOCATION_STATE_LABEL[locationConsent.value.consentState] || ""
+);
+const locationBadgeClass = computed(() => ({
+  "is-agreed": locationConsent.value.consentState === "AGREED",
+  "is-suspended": locationConsent.value.consentState === "SUSPENDED",
+  "is-pending": locationConsent.value.consentState === "PENDING_REAGREE",
+  "is-withdrawn": locationConsent.value.consentState === "WITHDRAWN",
+}));
+
 onMounted(async () => {
   await fnLoadMyInfo();
   await fnLoadOptionalTerms();
+  await fnLoadLocationConsent();
 });
 
 const fnLoadMyInfo = async () => {
@@ -484,7 +585,12 @@ const fnLoadMyInfo = async () => {
           reqDate: info.pendingDefaultSchReqDate || "",
         };
       } else {
-        pendingDefaultSch.value = { reqId: "", schCd: "", schNo: "", reqDate: "" };
+        pendingDefaultSch.value = {
+          reqId: "",
+          schCd: "",
+          schNo: "",
+          reqDate: "",
+        };
       }
     }
   } catch {
@@ -607,7 +713,9 @@ const onCancelEditDefaultSch = () => {
 const onRequestDefaultSch = async () => {
   if (!pendingDefaultSchCd.value) return;
   if (!(defaultSchReqReason.value || "").trim()) {
-    defaultSchErrorMsg.value = getMessage(MSG.MY_INFO_DEFAULT_SCH_REASON_REQUIRED);
+    defaultSchErrorMsg.value = getMessage(
+      MSG.MY_INFO_DEFAULT_SCH_REASON_REQUIRED
+    );
     return;
   }
 
@@ -707,6 +815,114 @@ const fnToggleTerms = async (terms) => {
 };
 
 // 약관 전문 보기 — 기존 약관 상세 팝업 재사용(로그인 약관 팝업과 동일 경로).
+// ───────────────────────────────────────────────────────────
+// 위치정보 동의(005) — 앱 마이페이지와 동일한 계약/동작.
+//   EP 는 web·app 공용(/comApi/consent/location-consent*)이라 서버는 채널을 가리지 않는다.
+// ───────────────────────────────────────────────────────────
+
+// 상태 로드. 비치명적 — 실패하면 행을 감춘다(내 정보 팝업 본연의 기능은 계속 쓸 수 있어야 한다).
+const fnLoadLocationConsent = async () => {
+  try {
+    const { data } = await axios.get("/comApi/consent/location-consent");
+    locationConsent.value = {
+      consentState: data?.consentState || "",
+      termsVersion: data?.termsVersion || "",
+      collectAllowed: !!data?.collectAllowed,
+      termsId: data?.termsId || "",
+      termsNm: data?.termsNm || "",
+    };
+  } catch {
+    locationConsent.value = {
+      consentState: "",
+      termsVersion: "",
+      collectAllowed: false,
+      termsId: "",
+      termsNm: "",
+    };
+  }
+};
+
+// 상태 전이 공통 호출기. 반환값 = 성공 여부(해제 팝업은 true 일 때만 닫는다).
+//   ★낙관적 갱신을 쓰지 않는다 — 철회는 파기를 동반해 되돌릴 수 없으므로 서버 확정값만 반영한다.
+const fnCallLocationConsent = async (path, successMsg) => {
+  if (isLocationSaving.value) return false;
+  isLocationSaving.value = true;
+  try {
+    const { data } = await axios.post(
+      `/comApi/consent/location-consent/${path}`
+    );
+    locationConsent.value = {
+      consentState: data?.consentState || "",
+      termsVersion: data?.termsVersion || "",
+      collectAllowed: !!data?.collectAllowed,
+      // ★전이 응답에는 약관명이 없을 수 있다 — 기존 값을 보존해 [보기] 버튼이 죽지 않게 한다.
+      termsId: data?.termsId || locationConsent.value.termsId,
+      termsNm: data?.termsNm || locationConsent.value.termsNm,
+    };
+    await proxy.$alert(
+      typeof successMsg === "function" ? successMsg(data) : successMsg
+    );
+    return true;
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(
+        err,
+        "처리하지 못했어요. 잠시 후 다시 시도해 주세요."
+      )
+    );
+    return false;
+  } finally {
+    isLocationSaving.value = false;
+  }
+};
+
+// 일시 중지 — 과거 기록은 유지된다(법 제24조②). 취소하면 해제 팝업은 열린 채로 남는다.
+const fnSuspendLocation = async () => {
+  const confirmed = await proxy.$confirm(LOCATION_SUSPEND_CONFIRM);
+  if (!confirmed) return;
+  const ok = await fnCallLocationConsent(
+    "suspend",
+    "위치정보 수집을 중지했습니다.\n지금까지의 기록은 그대로 있습니다."
+  );
+  if (ok) locationOffPopOpen.value = false;
+};
+
+// 동의 철회 — ★수집된 위치정보를 전부 파기한다. 팝업 설명과 별개로 확인을 한 번 더 받는다
+//   (파기 직전 마지막 관문). 취소하면 해제 팝업은 열린 채로 남는다.
+const fnWithdrawLocation = async () => {
+  const confirmed = await proxy.$confirm(LOCATION_WITHDRAW_CONFIRM);
+  if (!confirmed) return;
+  const ok = await fnCallLocationConsent("withdraw", (data) => {
+    const purged = Number(data?.purgedRows || 0);
+    return purged > 0
+      ? `동의를 철회하고 위치정보 ${purged}건을 삭제했습니다.`
+      : "동의를 철회했습니다. 삭제할 위치정보는 없었습니다.";
+  });
+  if (ok) locationOffPopOpen.value = false;
+};
+
+// 체크박스 토글 — 선택약관 행과 조작 형태를 맞춘 진입점.
+//   ★체크 해제는 그 자리에서 처리하지 않는다. 중지(되돌릴 수 있음)와 철회(파기, 복구 불가)는
+//     결과가 전혀 달라 사용자가 골라야 하기 때문이다 → 해제 팝업을 띄운다.
+//   체크(재동의)는 잃는 것이 없으므로 즉시 처리한다.
+const fnToggleLocationConsent = async () => {
+  if (isLocationSaving.value) return;
+  if (isLocationAgreed.value) {
+    locationOffPopOpen.value = true;
+  } else {
+    // SUSPENDED / PENDING_REAGREE / WITHDRAWN 어느 상태에서도 resume 가능(서버 계약).
+    await fnCallLocationConsent("resume", "위치정보 제공에 다시 동의했습니다.");
+  }
+};
+
+// 위치정보 약관 전문 보기 — 선택약관 [보기] 와 동일 계약.
+const fnViewLocationTerms = () => {
+  openPop(TermsDetailPop, {
+    termsId_p: locationConsent.value.termsId || "005",
+    termsNm_p: locationConsent.value.termsNm || "위치기반서비스 이용약관",
+  });
+};
+
 const fnViewTerms = (terms) => {
   openPop(TermsDetailPop, {
     termsId_p: terms.termsId,
@@ -988,41 +1204,90 @@ const fnChangePassword = async () => {
 }
 
 /* 스위치: 앱 마이페이지 토글과 동일한 조작감(켜짐=동의) */
-.terms-switch {
-  flex-shrink: 0;
-  position: relative;
-  width: 40px;
-  height: 22px;
-  padding: 0;
+/* 체크박스 — 앱 마이페이지(.mp-terms-check)와 동일 형태. 종전 스위치를 대체한다. */
+.terms-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
   border: 0;
-  border-radius: 999px;
-  background: var(--color-border-strong, #d1d5db);
+  padding: 0;
   cursor: pointer;
-  transition: background 0.15s ease;
+  font-family: inherit;
+  text-align: left;
 }
-
-.terms-switch:disabled {
-  opacity: 0.6;
+.terms-check:disabled {
+  opacity: 0.5;
   cursor: default;
 }
-
-.terms-switch-on {
-  background: var(--color-primary, #16a34a);
+.terms-check-box {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--color-border);
+  border-radius: 4px;
+  background: var(--color-surface, #fff);
+}
+.terms-check-on .terms-check-box {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+}
+.terms-check-mark {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+.terms-check-on .terms-check-mark {
+  opacity: 1;
+}
+.terms-check-label {
+  font-size: 0.875rem;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.terms-switch-knob {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 999px;
-  background: #ffffff;
-  transition: transform 0.15s ease;
+/* 위치정보 행 — 체크박스 줄 + 상태 배지 줄.
+   ★배지를 라벨과 같은 줄에 두면 배지 폭만큼 자리를 뺏겨 약관명이 잘린다(앱에서 확인). */
+.terms-row-stack {
+  display: flex;
+  flex-direction: column;
 }
-
-.terms-switch-on .terms-switch-knob {
-  transform: translateX(18px);
+.terms-state {
+  padding-left: calc(18px + 0.5rem);
+  padding-bottom: 0.35rem;
+}
+.terms-badge {
+  display: inline-block;
+  padding: 1px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+.terms-badge.is-agreed {
+  background: #ecfdf5;
+  color: #047857;
+}
+.terms-badge.is-suspended,
+.terms-badge.is-pending {
+  background: var(--color-border);
+  color: var(--color-text-muted);
+}
+.terms-badge.is-withdrawn {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .btn-withdrawal {
