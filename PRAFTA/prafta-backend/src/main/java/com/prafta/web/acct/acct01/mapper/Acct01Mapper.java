@@ -20,6 +20,7 @@ import com.prafta.web.acct.acct01.result.AcctResult;
 import com.prafta.web.acct.acct01.result.AttendanceLinkResult;
 import com.prafta.web.acct.acct01.result.ChkptOptionResult;
 import com.prafta.web.acct.acct01.result.LegalStepHistoryResult;
+import com.prafta.web.acct.acct01.result.LegalStepProgressResult;
 import com.prafta.web.acct.acct01.result.LegalStepResult;
 import com.prafta.web.acct.acct01.result.LinkSnapshotResult;
 import com.prafta.web.acct.acct01.result.PatrolItemResult;
@@ -47,6 +48,13 @@ public interface Acct01Mapper {
 
     // 사고 단건 상세 (사업장 스코프 강제)
     AcctResult selectAcctInfo(AcctInfoParam param);
+
+    // 사고 헤더 행 잠금(FOR UPDATE). 법정단계 저장 + 처리상태 파생을 사고 단위로 직렬화. 없으면 null
+    String lockAcctHeader(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+    );
 
     // 연계 조회용 사고 헤더(발생일/시각/재해자/유형/사업장) 단건. 사업장 스코프 강제
     AcctResult selectAcctHeader(
@@ -162,6 +170,23 @@ public interface Acct01Mapper {
 
     // ②탭 조치완료 체크/비고 UPSERT
     int upsertLegalStep(LegalStepSaveParam param);
+
+    // 처리상태 파생용 진행 집계 (PROCESS 단계 총수/완료수, 등급 OR ALL). selectLegalStepList 와 동일 술어 유지
+    LegalStepProgressResult selectLegalStepProgress(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("acctGradeCd") String acctGradeCd
+    );
+
+    // 처리상태 파생 갱신 (saveLegalStep 전용. processStatusCd 는 서버 파생값만 바인딩)
+    int updateAcctProcessStatus(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("processStatusCd") String processStatusCd
+        , @Param("gvUserCd") String gvUserCd
+    );
 
     // ③탭 처리 이력 파생 롤업 (IS_DONE_YN='Y' 완료절차 시간순)
     List<LegalStepHistoryResult> selectLegalStepHistory(LegalStepListParam param);

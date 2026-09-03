@@ -128,6 +128,21 @@
       AND A.USE_YN = 'Y'
     </select>
 
+    <!-- 사고 헤더 행 잠금 (FOR UPDATE). 법정단계 저장과 처리상태 파생을 같은 사고 안에서 직렬화한다.
+         재해자 JOIN 없이 TB_ACCT 한 행만 잠근다(사용자 테이블 행 잠금 방지). 없으면 null -->
+    <select id="lockAcctHeader" resultType="java.lang.String">
+    /* Acct01Mapper.lockAcctHeader */
+    SELECT
+        A.ACCT_ID
+    FROM TB_ACCT A
+    WHERE A.CMPNY_CD = #{gvCmpnyCd}
+      AND A.SITE_CD = #{siteCd}
+      AND A.ACCT_ID = #{acctId}
+      AND A.DEL_YN = 'N'
+      AND A.USE_YN = 'Y'
+    FOR UPDATE
+    </select>
+
     <!-- 연계 조회용 사고 헤더 (PII 마스킹 동일, 발생일/시각/재해자/유형/사업장 도출). 사업장 스코프 강제 -->
     <select id="selectAcctHeader"
             resultType="com.prafta.web.acct.acct01.result.AcctResult">
@@ -870,6 +885,45 @@
       , UPDATE_DATE  = NOW()
       , IS_DONE_YN   = IFNULL(#{isDoneYn}, 'N')
     </insert>
+
+    <!-- 처리상태 파생용 진행 집계: 등급(또는 ALL)의 PROCESS 단계 총수와 완료수.
+         REFERENCE 는 분모/분자 모두 제외. 미저장 절차는 미완료로 본다.
+         JOIN/WHERE 술어는 selectLegalStepList 와 동일 + STEP_TYPE='PROCESS' 만 추가.
+         두 쿼리 조건이 어긋나면 화면 목록과 파생 상태가 불일치하므로 한쪽을 고치면 다른 쪽도 동반 수정할 것.
+         LegalStepProgressResult 순서: totalCnt, doneCnt -->
+    <select id="selectLegalStepProgress"
+            resultType="com.prafta.web.acct.acct01.result.LegalStepProgressResult">
+    /* Acct01Mapper.selectLegalStepProgress */
+    SELECT
+        COUNT(1)                                                                      AS totalCnt
+      , IFNULL(SUM(CASE WHEN IFNULL(S.IS_DONE_YN, 'N') = 'Y' THEN 1 ELSE 0 END), 0)   AS doneCnt
+    FROM TB_ACCT_LEGAL_STEP_MASTER M
+         LEFT OUTER JOIN TB_ACCT_LEGAL_STEP S
+            ON (
+                S.CMPNY_CD = #{gvCmpnyCd}
+            AND S.SITE_CD = #{siteCd}
+            AND S.ACCT_ID = #{acctId}
+            AND S.STEP_CD = M.STEP_CD
+            )
+    WHERE M.USE_YN = 'Y'
+      AND M.STEP_TYPE = 'PROCESS'
+      AND (M.ACCT_GRADE_CD = #{acctGradeCd} OR M.ACCT_GRADE_CD = 'ALL')
+    </select>
+
+    <!-- 처리상태 파생 갱신 (saveLegalStep 전용. 클라이언트 입력값이 아니라 서버 파생값만 바인딩).
+         PK 3컬럼 전부 WHERE + DEL_YN='N' 스코프 -->
+    <update id="updateAcctProcessStatus">
+    /* Acct01Mapper.updateAcctProcessStatus */
+    UPDATE TB_ACCT
+    SET
+        PROCESS_STATUS_CD = #{processStatusCd}
+      , UPDATE_NO         = #{gvUserCd}
+      , UPDATE_DATE       = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND DEL_YN = 'N'
+    </update>
 
     <!-- ③탭 처리 이력 파생 롤업 (IS_DONE_YN='Y' 완료절차를 완료일시순).
          LegalStepHistoryResult 순서: stepCd, stepNm, doneDtime, doneUserCd, doneUserNm, remark -->

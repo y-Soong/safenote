@@ -224,13 +224,13 @@
                 class="acc-action"
                 :class="[actionClass(step), { reference: isRef(step) }]"
               >
-                <!-- 처리 단계: 단계번호(stepIdx) / 참고 항목(4·6): '참고' 뱃지 -->
+                <!-- 처리 단계: 단계번호(_stepNo: PROCESS 연속번호) / 참고 항목(4·6): '참고' 뱃지 -->
                 <div
                   v-if="!isRef(step)"
                   class="acc-action-num"
                   :class="{ done: step.isDoneYn === 'Y' }"
                 >
-                  {{ step.isDoneYn === "Y" ? "✓" : step.stepIdx }}
+                  {{ step.isDoneYn === "Y" ? "✓" : step._stepNo }}
                 </div>
                 <div v-else class="acc-action-num acc-action-ref-badge">
                   참고
@@ -300,6 +300,28 @@
               ※ 의무·기한은 재해등급에 따라 분기됩니다. 당국 신고와 근로복지공단
               요양급여 신청은 독립된 별도 트랙입니다. 기한·등급 기준은 노무사
               최종 확인 대상이며, 본 화면은 실무 보조용입니다.
+              <!-- 과태료는 위반 횟수·사업장 규모에 따라 달라지므로 금액을 표시하지 않고 원문 링크로 안내한다(외부 링크만, 내장 금지). -->
+              <div class="acc-legend-links">
+                과태료 기준(금액은 위반 횟수·규모에 따라 다름):
+                <a
+                  :href="ACCT_LAW_FINE_URL"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="acc-legend-link"
+                >
+                  산업안전보건법 제175조(과태료)
+                </a>
+                ·
+                <a
+                  :href="ACCT_LAW_DECREE_URL"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="acc-legend-link"
+                >
+                  시행령 [별표 35] 과태료 부과기준
+                </a>
+                — 국가법령정보센터(law.go.kr)
+              </div>
             </div>
           </section>
 
@@ -562,13 +584,22 @@ const fnLoadLegalSteps = async () => {
       const d = response.data || {};
       legalOccurYmd.value = d.occurYmd || current.value.occurYmd || "";
       legalNotice.value = d.notice || "";
-      legalStepList.value = (d.legalStepList || []).map((s) => ({
-        ...s,
-        _remark: s.remark || "",
-        // 변경 행만 전송하기 위한 로드 시점 원본 스냅샷
-        _origDoneYn: s.isDoneYn || "N",
-        _origRemark: s.remark || "",
-      }));
+      // 단계 번호(_stepNo): 서버 정렬(STEP_IDX, STEP_CD) 순서를 그대로 순회하며 PROCESS 행에만
+      // 1부터 연속 부여. REFERENCE 는 카운터를 올리지 않고 번호 없음('참고' 배지).
+      // stepIdx 는 정렬 전용이며 표시에 쓰지 않는다(등급별 마스터 건너뜀으로 번호가 튀는 문제 방지).
+      let processNo = 0;
+      legalStepList.value = (d.legalStepList || []).map((s) => {
+        const isProcess = s.stepType === "PROCESS";
+        if (isProcess) processNo += 1;
+        return {
+          ...s,
+          _stepNo: isProcess ? processNo : null,
+          _remark: s.remark || "",
+          // 변경 행만 전송하기 위한 로드 시점 원본 스냅샷
+          _origDoneYn: s.isDoneYn || "N",
+          _origRemark: s.remark || "",
+        };
+      });
     }
   } catch (err) {
     await proxy.$alert(
@@ -603,7 +634,14 @@ const fnToggleDone = (step, e) => {
 };
 
 // 법정 절차 저장 (변경 행만 UPSERT)
+// 저장 중 재진입 방지 플래그(다건 순차 POST 도중 이중 클릭 차단)
+let legalSaving = false;
 const fnSaveLegalSteps = async () => {
+  if (legalSaving || !current.value) return;
+  // 루프 도중 다른 사고를 클릭해도 잔여 POST 가 다른 사고에 기록되지 않도록 키를 먼저 고정한다.
+  const siteCd = current.value.siteCd;
+  const acctId = current.value.acctId;
+  legalSaving = true;
   try {
     // 로드 시점 대비 완료여부/비고가 바뀐 행만 전송한다(불필요한 재기록 방지).
     const changed = legalStepList.value.filter(
@@ -615,20 +653,80 @@ const fnSaveLegalSteps = async () => {
       await proxy.$alert("변경된 내용이 없습니다.");
       return;
     }
+    let failed = null;
     for (const step of changed) {
-      await axios.post("/webApi/acct01/legal-step/save", {
-        siteCd: current.value.siteCd,
-        acctId: current.value.acctId,
-        stepCd: step.stepCd,
-        isDoneYn: step.isDoneYn || "N",
-        remark: step._remark || "",
-      });
+      try {
+        await axios.post("/webApi/acct01/legal-step/save", {
+          siteCd,
+          acctId,
+          stepCd: step.stepCd,
+          isDoneYn: step.isDoneYn || "N",
+          remark: step._remark || "",
+        });
+      } catch (err) {
+        // 중간 실패: 남은 행은 보내지 않고, 이미 반영된 행과 파생 상태를 서버 기준으로 다시 맞춘다.
+        failed = err;
+        break;
+      }
     }
-    await proxy.$alert("저장되었습니다.");
-    await fnLoadLegalSteps();
+    if (failed) {
+      await proxy.$alert(
+        resolveApiErrorMessage(failed, "저장 중 오류가 발생했습니다.")
+      );
+    } else {
+      await proxy.$alert("저장되었습니다.");
+    }
+    // 저장 중 다른 사고로 이동했으면 화면 재조회는 건너뛴다(현재 화면과 무관한 사고).
+    if (
+      current.value &&
+      current.value.siteCd === siteCd &&
+      current.value.acctId === acctId
+    ) {
+      await fnLoadLegalSteps();
+      // 서버가 법정단계 완료율로 처리상태를 파생 갱신하므로 헤더 칩·중대재해 배너·좌측 목록 칩을 재반영.
+      // 재조회 실패는 저장 실패가 아니므로 내부에서 별도 처리(throw 하지 않음).
+      await fnRefreshCurrentStatus();
+    }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, "저장 중 오류가 발생했습니다.")
+    );
+  } finally {
+    legalSaving = false;
+  }
+};
+
+// 저장 후 처리상태 반영: 상세 재조회(GET /acct01/detail) + 좌측 목록 같은 행 패치.
+// 목록 전체 재조회(fnSearch)는 상태 필터에 걸린 행이 목록에서 빠지며 상세가 닫히므로 쓰지 않는다.
+// 상태 필터가 걸려 있어도 바뀐 행은 다음 조회 전까지 목록에 남고 칩만 갱신된다(의도).
+const fnRefreshCurrentStatus = async () => {
+  if (!current.value) return;
+  try {
+    const response = await axios.get("/webApi/acct01/detail", {
+      params: {
+        siteCd: current.value.siteCd,
+        acctId: current.value.acctId,
+      },
+    });
+    if (response.status !== 200) return;
+    const info = response.data?.acctInfo;
+    if (!info) return;
+    // 참조 교체 → 헤더 상태 칩·isCriticalOpen(중대재해 배너) computed 갱신
+    current.value = { ...current.value, ...info };
+    // 좌측 목록의 같은 행은 상태/갱신자 정보만 덮어써 목록 순서·선택 유지.
+    // ACCT_ID 는 사업장+발생일 단위 채번이라 다른 사업장에 같은 ID 가 있을 수 있으므로 siteCd 를 함께 비교한다.
+    const row = acctList.value.find(
+      (a) => a.acctId === info.acctId && a.siteCd === info.siteCd
+    );
+    if (row) {
+      row.processStatusCd = info.processStatusCd;
+      row.processStatusNm = info.processStatusNm;
+      row.updateNo = info.updateNo;
+      row.updateDate = info.updateDate;
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "상태 재조회 중 오류가 발생했습니다.")
     );
   }
 };
@@ -752,6 +850,11 @@ const isInvstStep = (step) => step.deadlineRuleCd === "MONTH_PLUS_1";
 // 산업안전보건법 시행규칙 [별지 제30호서식] 산업재해조사표 (외부 원본 링크; flSeq 변동 가능)
 const ACCT_INVST_FORM_URL =
   "https://www.law.go.kr/LSW//flDownload.do?flSeq=113162993";
+// 과태료 근거 원문(국가법령정보센터). 금액은 위반 횟수·규모별로 달라 화면에 표시하지 않고 링크로만 안내.
+const ACCT_LAW_FINE_URL =
+  "https://www.law.go.kr/법령/산업안전보건법/제175조";
+const ACCT_LAW_DECREE_URL =
+  "https://www.law.go.kr/법령/산업안전보건법시행령";
 
 // ── 법정 기한/D-day 계산 (목업 renderActions 로직) ──
 const today = new Date();
@@ -1211,6 +1314,15 @@ const fmtHm = (hhmm) => formatHm(hhmm);
 .acc-form-link {
   display: inline-block;
   font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--color-primary, #16a34a);
+  text-decoration: underline;
+}
+/* 범례 안 법령 링크: 범례 글자 크기를 그대로 따르고 색·밑줄만 링크 규약(acc-form-link)과 통일 */
+.acc-legend-links {
+  margin-top: 0.35rem;
+}
+.acc-legend-link {
   font-weight: 600;
   color: var(--color-primary, #16a34a);
   text-decoration: underline;

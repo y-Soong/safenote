@@ -44,6 +44,7 @@ import com.prafta.web.acct.acct01.dto.response.TbmLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.VictimSearchResponse;
 import com.prafta.web.acct.acct01.mapper.Acct01Mapper;
 import com.prafta.web.acct.acct01.result.AcctResult;
+import com.prafta.web.acct.acct01.result.LegalStepProgressResult;
 import com.prafta.web.acct.acct01.result.RiskAssessmentDetailResult;
 import com.prafta.web.acct.acct01.result.ScheduleLinkResult;
 import com.prafta.web.acct.acct01.service.Acct01Service;
@@ -77,6 +78,11 @@ public class Acct01ServiceImpl implements Acct01Service {
     private static final String DOMAIN_TBM = "TBM";
 
     private static final String USER_TYPE_DAILY = "DAILY";
+
+    // 처리상태(SYS066): 100 접수 / 200 처리중 / 300 종결 — 법정단계(PROCESS) 완료율로 파생
+    private static final String STATUS_RECEIVED = "100";
+    private static final String STATUS_IN_PROGRESS = "200";
+    private static final String STATUS_CLOSED = "300";
 
     private final Acct01Mapper acct01Mapper;
 
@@ -436,6 +442,16 @@ public class Acct01ServiceImpl implements Acct01Service {
         if (!StringUtils.hasText(param.acctId()) || !StringUtils.hasText(param.stepCd())) {
             throw new ApiException(AcctErrorCode.ACCT_400_001);
         }
+        // 완료여부는 'Y'/'N' 만 허용(그 외 문자열이 IS_DONE_YN 에 그대로 저장되는 것을 차단). 미전송(null)은 'N' 취급.
+        if (param.isDoneYn() != null && !"Y".equals(param.isDoneYn()) && !"N".equals(param.isDoneYn())) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        // 사고 헤더 행 잠금(FOR UPDATE): 같은 사고를 두 관리자가 동시에 저장할 때 파생 집계가 상대 트랜잭션의
+        // 미커밋 행을 못 보고 stale 상태를 남기는 경합을 직렬화로 막는다. 없으면 존재 검증과 동일하게 404.
+        if (acct01Mapper.lockAcctHeader(param.gvCmpnyCd(), param.siteCd(), param.acctId()) == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
 
         // 사고 헤더 존재(사업장 스코프) 확인 — 타 사업장 사고 ID 조작 차단
         AcctResult header = acct01Mapper.selectAcctHeader(
@@ -446,6 +462,52 @@ public class Acct01ServiceImpl implements Acct01Service {
 
         acct01Mapper.upsertLegalStep(param);
         log.info("법정절차 저장 완료 - acctId={}, stepCd={}", param.acctId(), param.stepCd());
+
+        // 처리상태 자동 파생: upsert 와 같은 트랜잭션에서 PROCESS 단계 완료율로 TB_ACCT.PROCESS_STATUS_CD 갱신.
+        // header 는 upsert 이전에 조회한 값이므로 processStatusCd 는 저장 전 상태 → 변경 여부 비교 기준으로 사용(재조회 불필요).
+        deriveProcessStatus(param, header);
+    }
+
+    /**
+     * 법정단계 저장 후 처리상태(SYS066: 100 접수 / 200 처리중 / 300 종결) 파생 갱신.
+     *
+     * <p>집계 = 마스터 USE_YN='Y' AND STEP_TYPE='PROCESS' AND (사고등급 OR 'ALL'). REFERENCE 는 분모·분자 모두 제외.
+     * 규칙: done=0 → 접수, done=total → 종결, 그 외 → 처리중. total=0 이면 상태 변경 스킵.
+     * 되돌림(전부 해제 → 접수 복귀) 허용. 현재값과 다를 때만 UPDATE(비고만 수정 시 TB_ACCT.UPDATE_DATE 불변).
+     *
+     * <p>등급 변경(updateAcct / POST /acct01/update)은 웹 UI 미사용으로 이번 범위 밖.
+     * 등급이 바뀌면 분모가 바뀌므로 향후 해당 경로에도 동일 파생이 필요하다.
+     */
+    private void deriveProcessStatus(LegalStepSaveParam param, AcctResult header) {
+        LegalStepProgressResult progress = acct01Mapper.selectLegalStepProgress(
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), header.acctGradeCd());
+
+        int total = (progress == null || progress.totalCnt() == null) ? 0 : progress.totalCnt();
+        int done = (progress == null || progress.doneCnt() == null) ? 0 : progress.doneCnt();
+
+        if (total == 0) {
+            log.info("처리상태 파생 스킵(PROCESS 단계 없음) - acctId={}, grade={}",
+                param.acctId(), header.acctGradeCd());
+            return;
+        }
+
+        String derived;
+        if (done == 0) {
+            derived = STATUS_RECEIVED;
+        } else if (done >= total) {
+            derived = STATUS_CLOSED;
+        } else {
+            derived = STATUS_IN_PROGRESS;
+        }
+
+        if (derived.equals(header.processStatusCd())) {
+            return;
+        }
+
+        acct01Mapper.updateAcctProcessStatus(
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), derived, param.gvUserCd());
+        log.info("처리상태 파생 갱신 - acctId={}, {} -> {} (done {}/{})",
+            param.acctId(), header.processStatusCd(), derived, done, total);
     }
 
     @Override
