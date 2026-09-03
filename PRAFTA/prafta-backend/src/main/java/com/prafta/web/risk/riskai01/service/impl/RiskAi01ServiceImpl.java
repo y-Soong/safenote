@@ -1208,6 +1208,12 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         if (hazards == null || hazards.isEmpty()) {
             return hazards;
         }
+        // 스위치 OFF(기본): 법령 트랙 검색·임베딩 호출 자체를 생략하고 입력을 그대로 반환(lawRefs=null 유지).
+        //   보류 배경은 AiProperties.Search.lawRefsEnabled javadoc 참조. 유해요인 개수·순서·본문 불변(핵심 회귀 축).
+        if (!aiProperties.getSearch().isLawRefsEnabled()) {
+            log.info("법령 사후 매핑 스킵(스위치 OFF) - 유해요인={}건", hazards.size());
+            return hazards;
+        }
         long startMs = System.currentTimeMillis();
         List<DerivedHazardGroup> out = new ArrayList<>(hazards);
         int mappedCnt = 0;

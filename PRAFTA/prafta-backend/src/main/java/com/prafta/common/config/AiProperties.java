@@ -85,6 +85,16 @@ public class AiProperties {
          */
         private double lawMinScore = 0.40d;
 
+        /**
+         * 법령 조문 사후 첨부 스위치(riskai01 attachLawRefs). 기본 OFF.
+         * ★2026-09-04 사용자 결정으로 보류: 벡터 유사도가 맞는 조문과 무관 조문을 구분하지 못해(운영 실측
+         *   최상위 점수 0.58~0.61 동일 구간) 매 유해요인에 무관 조문이 붙었고, 실무 위험성평가는 조문보다
+         *   "발생 가능한 위험 발굴"이 본체라 화면 가독성만 깎았다. LLM 선별 단계 등 재설계 검토 후 재개.
+         * false 면 법령 트랙 검색·임베딩 호출 자체를 생략하고 lawRefs 는 null 유지 → 화면 관련 법령 블록 미표시
+         *   (prafta-062 이전 형태). 코퍼스 법령 청크는 다른 트랙에서 배제 필터로 격리돼 있어 그대로 둔다.
+         */
+        private boolean lawRefsEnabled = false;
+
         public int getDefaultTopK() {
             return defaultTopK;
         }
@@ -115,6 +125,14 @@ public class AiProperties {
 
         public void setLawMinScore(double lawMinScore) {
             this.lawMinScore = lawMinScore;
+        }
+
+        public boolean isLawRefsEnabled() {
+            return lawRefsEnabled;
+        }
+
+        public void setLawRefsEnabled(boolean lawRefsEnabled) {
+            this.lawRefsEnabled = lawRefsEnabled;
         }
     }
 
