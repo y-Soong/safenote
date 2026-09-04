@@ -1,6 +1,7 @@
 package com.prafta.common.util;
 
 import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
 import org.jsoup.safety.Safelist;
 import org.springframework.util.StringUtils;
 
@@ -32,6 +33,16 @@ public final class TbmContentSanitizer {
         return Safelist.relaxed().addAttributes(":all", "class");
     }
 
+    /**
+     * ★pretty-print 해제(중요). Jsoup 은 기본으로 정화 결과를 들여쓰기·줄바꿈이 들어간 형태로
+     * 출력하는데, 그러면 블록 태그 사이에 원문에 없던 공백 텍스트 노드가 생긴다. 이 값을
+     * 편집기(Quill)에 그대로 넣으면 본문 최상위에 붙은 공백 텍스트 노드를 편집기가 정리하면서
+     * 인접한 목록 블록까지 함께 지워, 교육 내용 일부가 사라진다. 원문 구조를 그대로 보존한다.
+     */
+    private static Document.OutputSettings compactOutput() {
+        return new Document.OutputSettings().prettyPrint(false);
+    }
+
     private TbmContentSanitizer() {
     }
 
@@ -45,7 +56,7 @@ public final class TbmContentSanitizer {
         if (!StringUtils.hasText(body)) {
             return body;
         }
-        return Jsoup.clean(body, safelist());
+        return Jsoup.clean(body, "", safelist(), compactOutput());
     }
 
     /**

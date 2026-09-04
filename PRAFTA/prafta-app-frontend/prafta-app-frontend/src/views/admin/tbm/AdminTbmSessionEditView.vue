@@ -60,6 +60,7 @@
               theme="snow"
               :toolbar="EDITOR_TOOLBAR"
               placeholder="교육 내용을 입력하세요"
+              @ready="onEditorReady"
             />
           </div>
         </div>
@@ -184,6 +185,22 @@ const EDITOR_TOOLBAR = [
   [{ list: 'ordered' }, { list: 'bullet' }],
   ['clean'],
 ]
+
+// 편집기 준비 완료 시 저장된 HTML 을 편집기 문서 모델로 변환해 다시 싣는다.
+//   ★편집기 기본 로드는 본문 DOM 에 HTML 을 직접 꽂는 방식이라, 저장된 구조(특히 목록 블록)가
+//     편집기 내부 모델과 어긋나면 정리 과정에서 통째로 사라질 수 있다(교육 내용 일부 유실).
+//     변환기를 거치면 임의의 HTML 이 편집기 모델로 정규화돼 목록·제목이 보존된다.
+//   'silent' 로 실어 update:content 를 발생시키지 않는다 — 사용자가 손대지 않고 저장하면
+//   원문이 그대로 전송되어 정규화로 인한 조용한 재작성이 없다.
+const onEditorReady = (quill) => {
+  const html = form.contentBody
+  if (!quill || !html) return
+  try {
+    quill.setContents(quill.clipboard.convert(html), 'silent')
+  } catch (e) {
+    console.error('[AdminTbmSessionEditView] 교육 내용 편집기 로드 실패:', e?.message)
+  }
+}
 
 const router = useRouter()
 const route = useRoute()
