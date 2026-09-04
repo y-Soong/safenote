@@ -112,15 +112,15 @@
                   @sort="onSort"
                   @update:width="onResize"
                 />
-                <ThSortable
-                  label="공정"
-                  col-key="processNm"
-                  :sort-key="sortKey"
-                  :sort-order="sortOrder"
-                  :width="colWidths.processNm"
-                  @sort="onSort"
-                  @update:width="onResize"
-                />
+                <!-- 2026-09-05: "공정" 컬럼 제거.
+                     ① 입력 경로가 없다 — 앱 보고 화면은 processCd 를 전송하지 않고(서버 API 는
+                        선택 항목으로 열려 있음), 웹에는 아차사고 신규 등록 화면 자체가 없다.
+                        운영 실측상 앱 경로로 들어온 최근 3건은 전부 빈 값이다.
+                     ② 라벨이 값과 맞지 않는다 — PROCESS_CD 가 참조하는 COM002 는 공정 목록이 아니라
+                        "위험성평가 구분"(공정/설비·기계/작업/장소/기타)이라, 이 칸에 "설비/기계"·"장소"
+                        같은 값이 찍힌다(운영 기존 10건 중 "공정" 값은 0건).
+                     데이터와 조회 경로(PROCESS_CD, processNm)는 그대로 두고 화면에서만 뺀다 —
+                     구분 항목으로 되살릴 경우 백엔드 수정 없이 컬럼만 복구하면 된다. -->
                 <ThSortable
                   label="발생장소"
                   col-key="locationDesc"
@@ -182,7 +182,9 @@
                 v-if="!incidentResultList || incidentResultList.length === 0"
               >
                 <tr>
-                  <td colspan="10" class="edu-grid-empty">
+                  <!-- colspan 은 실제 열 수(No 1 + ThSortable 8 = 9)와 맞춘다.
+                       공정 컬럼 제거(2026-09-05)로 10 → 9. -->
+                  <td colspan="9" class="edu-grid-empty">
                     등록된 사건이 없습니다.
                   </td>
                 </tr>
@@ -204,7 +206,6 @@
                       {{ item.potentialSeverityNm || "-" }}
                     </span>
                   </td>
-                  <td>{{ item.processNm }}</td>
                   <!-- 긴 텍스트 3종: 고정폭 + 말줄임, 전체 내용은 툴팁으로 -->
                   <td class="cell-ellipsis" :title="item.locationDesc">
                     {{ item.locationDesc || "-" }}
@@ -265,7 +266,6 @@ const { sortKey, sortOrder, sortedData, onSort } =
 const { colWidths, onResize } = useColumnResize({
   nearMissId: 150,
   potentialSeverityNm: 110,
-  processNm: 110,
   locationDesc: 150,
   description: 220,
   immediateActionDesc: 220,

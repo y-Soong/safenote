@@ -72,7 +72,7 @@
         <!-- 내 서명 -->
         <!-- mySignUrl: my-sign-image(인증 스트림) 응답 blob 의 objectURL. 서명은 보호 파일타입(009)
              이라 정적 URL 로는 열람할 수 없어 blob 으로 받아 렌더한다.
-             인라인 렌더 실패 시 '서명 이미지 열기' 링크(동일 objectURL)로 폴백한다. -->
+             인라인 렌더 실패 시 안내 문구로 폴백한다(링크 폴백은 무의미해 제거 — 아래 주석 참조). -->
         <section class="card">
           <p class="card__label">내 서명</p>
           <div class="sign-view">
@@ -83,15 +83,20 @@
               alt="내 서명"
               @error="onSignError"
             />
-            <!-- 인라인 렌더 실패(앱 웹뷰 mixed-content 등) 시 외부 열기 링크 폴백(자료 슬라이더와 동일 패턴) -->
-            <a
-              v-else-if="detail.mySignUrl"
-              class="sign-view__link"
-              :href="detail.mySignUrl"
-              target="_blank"
-              rel="noopener noreferrer"
-            >서명 이미지 열기</a>
-            <p v-else-if="detail.mySignFileMgmtCd" class="tbm-state tbm-state--sm">
+            <!-- 2026-09-05: '서명 이미지 열기' 링크 폴백 제거.
+                 ① 이 링크는 웹뷰에서 눌러도 아무 일이 없었다(target="_blank" = 새 창 요청인데
+                    셸에 onCreateWindow 핸들러가 없어 요청이 버려진다).
+                 ② 자료 슬라이더처럼 같은 창 내비게이션으로 바꾸는 해법도 여기선 못 쓴다 —
+                    mySignUrl 은 blob: objectURL 이라 http(s) 가 아니고, 셸의
+                    shouldOverrideUrlLoading 이 비-http 스킴은 그대로 ALLOW 하므로 웹뷰가
+                    blob 문서로 이동해 SPA 를 이탈해버린다.
+                 ③ 애초에 의미가 없다 — <img src=blob> 이 실패한 상황에서 같은 objectURL 을
+                    링크로 연다고 성공할 이유가 없다.
+                 → 링크 대신 아래 안내 문구로 떨어뜨린다(조건에 mySignUrl 을 더해 누락 방지). -->
+            <p
+              v-else-if="detail.mySignUrl || detail.mySignFileMgmtCd"
+              class="tbm-state tbm-state--sm"
+            >
               서명 완료 (이미지를 불러올 수 없어요)
             </p>
             <p v-else class="tbm-state tbm-state--sm">서명 정보가 없어요</p>
@@ -466,20 +471,7 @@ onUnmounted(() => {
   height: auto;
   display: block;
 }
-/* 인라인 렌더 실패 시 외부 열기 링크(자료 슬라이더 .mtrl-slide__link 와 동일 톤) */
-.sign-view__link {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: var(--space-md);
-  padding: var(--space-sm) var(--space-md);
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  color: var(--color-primary);
-  font-size: 13px;
-  font-weight: 600;
-  text-decoration: none;
-}
+/* (2026-09-05: .sign-view__link 제거 — 서명 blob 링크 폴백을 없애 미사용이 됐다) */
 
 /* 스프라이트 */
 .tbm-sprite {

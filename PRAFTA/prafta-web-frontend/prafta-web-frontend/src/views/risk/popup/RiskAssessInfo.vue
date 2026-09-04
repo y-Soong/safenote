@@ -1908,9 +1908,15 @@ onBeforeUnmount(() => {
   text-align: center;
   padding: 0.75rem 0;
 }
-/* 연결 해제(x) 컬럼 */
+/* 연결 해제(x) 컬럼
+   2026-09-05: 32px → 44px. 32px 에서는 x 버튼이 잘려 보였다(운영 실측):
+     셀 폭 32 − 좌우 패딩 8+8 = 콘텐츠 15px 인데 .btn-x 실제 폭은 20.9px
+     (패딩 6.4×2 + 테두리 1×2 + 글자) 라, 공용 규칙의 overflow:hidden 에 약 6px 잘렸다.
+   44px = 콘텐츠 27px 로 6px 여유. 40px 는 여유가 0.6px 뿐이라 글꼴이 조금만 달라져도
+   재발하므로 쓰지 않는다. 셀 패딩을 줄이는 방법도 있으나 공용 규칙
+   (.ref-nm-table td = 클래스+타입)이 더 강해 선택자를 늘려야 하므로 폭만 조정한다. */
 .ref-nm-table__del {
-  width: 32px;
+  width: 44px;
   text-align: center;
 }
 .btn-x {

@@ -88,7 +88,8 @@
           </div>
         </div>
 
-        <!-- 푸터 (F-10 규약: 왼쪽=진행/확정(저장), 오른쪽=이탈(닫기), 폭 균등) -->
+        <!-- 푸터 (왼쪽=진행/확정(저장), 오른쪽=이탈(닫기).
+             폭은 텍스트 크기만큼, 우측 정렬 — 공용 modal-footer 규약 그대로 사용) -->
         <div class="modal-footer">
           <button class="btn btn-save" @click="fnApplySelection">저장</button>
           <button class="btn btn-cancel" @click="$emit('close')">닫기</button>
@@ -339,10 +340,11 @@ onMounted(() => {
   background: rgba(22, 163, 74, 0.06);
 }
 
-/* F-10 규약: 좌우 버튼 폭 균등 */
-.modal-footer .btn {
-  flex: 1;
-}
+/* 2026-09-05: 푸터 버튼을 내용 폭 + 우측 정렬로 변경.
+   종전에는 `.modal-footer .btn { flex: 1 }` 로 좌우 균등 확장이라 두 버튼이 팝업 가로를 꽉 채웠다.
+   이 로컬 규칙을 걷어내면 공용 규약(modal-popup-guide.css `.prafta-modal-popup .modal-footer`
+   = justify-content: flex-end + gap 8px)이 그대로 살아나, 버튼이 텍스트 크기(.btn padding 0 11px)
+   만큼만 차지하며 오른쪽에 붙는다. 버튼 순서(왼=저장 / 오=닫기)는 그대로 유지. */
 
 .fade-enter-active,
 .fade-leave-active {
