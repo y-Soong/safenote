@@ -525,15 +525,17 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
             }
             // 근무시간 내 검증(prafta-app-018-B 보완): 시간차 연차는 정규 근무구간(스케줄) 안에서만
             //   신청 가능. 예) 스케줄 07:00~15:00 인데 03:00~04:30 신청 → 근무하지 않는 시간이라 거부.
-            //   BW-04: 체크 시에도 "신청 구간"으로 검증(합친 구간은 휴게가 근무 안에 클램프되어 자동 보장).
+            //   BW-04: 체크 시에도 "신청 구간"으로 검증한다 — 확장 구간은 근무 종료 클램프로 근무 시간을 넘지 않고,
+            //   확장 구간으로 검증하면 2구간 사이 공백을 지나는 정상 케이스가 거부된다(6차 A안 주석 참조).
             if (!leaveDeductionService.withinScheduledWorkHours(cmpny, site, user, workYmd, sMin, eMin)) {
                 throw new ApiException(AttdErrorCode.ATTD_400_103);
             }
             if (brkWaive) {
-                // BW-04(요청서 §1-2): 체크 시 가로지름 거부(ATTD_400_055)를 건너뛰고, 신청 구간에 접하거나
-                //   겹치는 휴게 시각 구간을 쉬는 구간에 합친다. 저장 시각 = 합친 구간, 차감 = 신청 − 휴게 겹침.
-                //   합친 결과가 신청과 같으면(붙은 휴게 없음) recordOnly — 시각 불변 + 요청 기록만.
-                //   차감 0분(신청 = 휴게 구간 전체)은 연차가 아니므로 거부(ATTD_400_052 재사용).
+                // BW-04(요청서 §1-2, 2026-09-04 A안 개정): 체크 시 가로지름 거부(ATTD_400_055)를 건너뛰고,
+                //   신청 시작부터 "근로"를 신청 길이만큼 확보하도록 쉬는 구간을 늘린다(휴게·구간 공백 건너뜀,
+                //   양 끝에 맞닿은 휴게는 흡수). 저장 시각 = 확장 구간, 차감 = 신청 길이(클램프 시 확보 근로분).
+                //   확장 결과가 신청과 같으면(건너뛸 휴게 없음) recordOnly — 시각 불변 + 요청 기록만.
+                //   차감 0분(신청 이후 근로 없음)은 연차가 아니므로 거부(ATTD_400_052 재사용).
                 BreakMergeResult mr = leaveDeductionService.mergeAdjacentBreaks(cmpny, site, user, workYmd, sMin, eMin);
                 if (mr == null || mr.chargeMinutes() <= 0) {
                     log.info("[leaveflow] 시간차 신청 거부: 휴게 편입 결과 차감 0분/산출 불가 (userCd={}, workYmd={}, {}~{})",
@@ -544,9 +546,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                 endTime = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptEndMin());
                 leaveMinutes = mr.chargeMinutes();
                 log.info("[leaveflow] 휴게 미이용 요청 확정: userCd={}, workYmd={}, unit={}, part=-, recordOnly={}, "
-                                + "저장구간={}~{}, 신청={}분, 차감={}분, 편입휴게={}분",
+                                + "저장구간={}~{}, 신청={}분, 차감={}분, 편입휴게={}분, clamped={}",
                         user, workYmd, unit, mr.recordOnly(), startTime, endTime,
-                        mr.requestMinutes(), mr.chargeMinutes(), mr.waivedBreakMinutes());
+                        mr.requestMinutes(), mr.chargeMinutes(), mr.waivedBreakMinutes(), mr.clamped());
             } else {
                 // 휴게 가로지름 거부(§8.5.9) — 휴게시각 미설정이면 skip
                 if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {

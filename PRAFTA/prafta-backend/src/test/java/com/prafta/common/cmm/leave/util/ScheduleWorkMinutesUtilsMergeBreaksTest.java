@@ -18,10 +18,14 @@ import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.BreakMergeResul
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 
 /**
- * 시간차 "붙은 휴게 편입" 규칙 + 가로지름 판정 wrap 검증 (부분휴가 휴게 무시 도입 BW-03, 2026-09-04).
+ * 시간차 "휴게 건너뛰고 근로 확보" 규칙 + 가로지름 판정 wrap 검증 (부분휴가 휴게 무시 BW-03,
+ * 2026-09-04 운영 피드백 A안 개정).
  *
- * <p>기준: 요청서 §1-2·§5-7(예 A 14~18 + 휴게 13~14 → 13~18·차감 240 / 예 B 12~14 + 휴게 12~13 → 차감 60),
- * §5-6(야간 휴게 가로지름), plan BW-03. 분 값은 근무일 00:00 = 0 기준, 익일 +1440.
+ * <p>기준: 요청서 §1-2·§5-6(야간 휴게 가로지름), plan BW-03, 6차 A안(신청 시작부터 근로를 신청 길이만큼
+ * 확보 + 양 끝 맞닿은 휴게 흡수). 분 값은 근무일 00:00 = 0 기준, 익일 +1440.
+ *
+ * <p>★ 개정 전(접함/겹침 병합 + 차감 = 신청 − 겹침) 기대값이 바뀐 테스트는 {@code crossingBreak…} /
+ * {@code requestInsideBreak…} 2건이다 — 휴게가 신청 구간 안에 있을 때 차감이 줄던 결함(2시간차 → 60분)을 고쳤다.
  */
 class ScheduleWorkMinutesUtilsMergeBreaksTest {
 
@@ -72,18 +76,79 @@ class ScheduleWorkMinutesUtilsMergeBreaksTest {
     }
 
     @Test
-    @DisplayName("§5-7 예 B: 09~18 휴게 12~13, 시간차 12~14 체크(가로지름) → 저장 12:00~14:00 그대로(기록 전용), 차감 60, 겹침 60")
-    void crossingBreakKeepsRangeAndChargesNetWork() {
+    @DisplayName("A안: 09~18 휴게 12~13, 시간차 12~14 체크(휴게에서 시작) → 12:00~15:00, 차감 120(불변), 편입 60, 겹침 60")
+    void crossingBreakExtendsRangeAndKeepsCharge() {
         BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
                 sch("0900", "1800", "60", "1200", "1300"), t(12, 0), t(14, 0));
         assertNotNull(r);
         assertEquals(t(12, 0), r.exemptStartMin());
-        assertEquals(t(14, 0), r.exemptEndMin());
+        assertEquals(t(15, 0), r.exemptEndMin());
         assertEquals(120, r.requestMinutes()); // 단위 배수 검증은 신청 길이 기준(Q-10)
-        assertEquals(60, r.chargeMinutes());
+        assertEquals(120, r.chargeMinutes(), "차감은 항상 신청 길이(클램프 제외)");
         assertEquals(60, r.overlapBreakMinutes());
         assertEquals(60, r.waivedBreakMinutes());
-        assertTrue(r.recordOnly());
+        assertFalse(r.recordOnly());
+        assertFalse(r.clamped());
+    }
+
+    @Test
+    @DisplayName("★운영 피드백 예1: 09~18 휴게 12~13, 11:30 시작 2시간차 체크 → 11:30~14:30, 차감 120, 편입 60")
+    void breakInsideRequestExtendsRange() {
+        BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
+                sch("0900", "1800", "60", "1200", "1300"), t(11, 30), t(13, 30));
+        assertNotNull(r);
+        assertEquals(t(11, 30), r.exemptStartMin());
+        assertEquals(t(14, 30), r.exemptEndMin());
+        assertEquals(120, r.requestMinutes());
+        assertEquals(120, r.chargeMinutes(), "종전 규칙은 60분만 차감했다(운영 결함)");
+        assertEquals(60, r.overlapBreakMinutes());
+        assertEquals(60, r.waivedBreakMinutes());
+        assertFalse(r.recordOnly());
+        assertFalse(r.clamped());
+        assertEquals("1430", ScheduleWorkMinutesUtils.hhmmOfDay(r.exemptEndMin()));
+    }
+
+    @Test
+    @DisplayName("★운영 피드백 예2: 09~18 휴게 11:30~13:00, 13:00 시작 2시간차 체크 → 앞 휴게 흡수 11:30~15:00, 차감 120, 편입 90")
+    void breakTouchingStartIsAbsorbed() {
+        BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
+                sch("0900", "1800", "90", "1130", "1300"), t(13, 0), t(15, 0));
+        assertNotNull(r);
+        assertEquals(t(11, 30), r.exemptStartMin());
+        assertEquals(t(15, 0), r.exemptEndMin());
+        assertEquals(120, r.chargeMinutes());
+        assertEquals(0, r.overlapBreakMinutes());
+        assertEquals(90, r.waivedBreakMinutes());
+        assertFalse(r.recordOnly());
+    }
+
+    @Test
+    @DisplayName("근무 종료 클램프: 09~18 휴게 17:00~17:30, 16:00 시작 2시간차 → 16:00~18:00, 차감 90(확보 근로분), clamped=true")
+    void clampedAtWorkEnd() {
+        BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
+                sch("0900", "1800", "30", "1700", "1730"), t(16, 0), t(18, 0));
+        assertNotNull(r);
+        assertEquals(t(16, 0), r.exemptStartMin());
+        assertEquals(t(18, 0), r.exemptEndMin());
+        assertEquals(120, r.requestMinutes());
+        assertEquals(90, r.chargeMinutes());
+        assertEquals(30, r.waivedBreakMinutes());
+        assertTrue(r.clamped());
+        assertFalse(r.recordOnly());
+    }
+
+    @Test
+    @DisplayName("2구간 공백 건너뜀: 1구간 09~13(휴게 11~12) + 2구간 14~18, 10:30 시작 2시간차 → 10:30~14:30, 차감 120, 비근로 120")
+    void twoSegmentGapIsSkipped() {
+        DailyScheduleVO s = sch("0900", "1300", "60", "1100", "1200", "1400", "1800", "0", null, null);
+        BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(s, t(10, 30), t(12, 30));
+        assertNotNull(r);
+        assertEquals(t(10, 30), r.exemptStartMin());
+        assertEquals(t(14, 30), r.exemptEndMin());
+        assertEquals(120, r.chargeMinutes());
+        assertEquals(120, r.waivedBreakMinutes(), "휴게 60 + 구간 사이 공백 60");
+        assertFalse(r.clamped());
+        assertFalse(r.recordOnly());
     }
 
     @Test
@@ -118,13 +183,28 @@ class ScheduleWorkMinutesUtilsMergeBreaksTest {
     }
 
     @Test
-    @DisplayName("신청 = 휴게 구간(13~14 신청 + 휴게 13~14): 구간 불변(기록 전용), 차감 0 — 호출부(BW-04)가 0분 차감을 거부해야 한다")
-    void requestEqualsBreakYieldsZeroCharge() {
+    @DisplayName("신청 = 휴게 구간(13~14 신청 + 휴게 13~14): 뒤 근로로 확보 → 14:00~15:00, 차감 60, 편입 60")
+    void requestInsideBreakShiftsToWork() {
         BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
                 sch("0900", "1800", "60", "1300", "1400"), t(13, 0), t(14, 0));
-        assertTrue(r.recordOnly());
+        assertNotNull(r);
+        assertEquals(t(13, 0), r.exemptStartMin());
+        assertEquals(t(15, 0), r.exemptEndMin());
+        assertEquals(60, r.chargeMinutes(), "종전 규칙은 차감 0(호출부 거부)이었다");
+        assertEquals(60, r.overlapBreakMinutes());
+        assertEquals(60, r.waivedBreakMinutes());
+        assertFalse(r.recordOnly());
+    }
+
+    @Test
+    @DisplayName("차감 0(호출부 ATTD_400_052 거부): 09~18 휴게 17~18, 시간차 17~18 → 이후 근로 없음 → 차감 0")
+    void trailingBreakYieldsZeroCharge() {
+        BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(
+                sch("0900", "1800", "60", "1700", "1800"), t(17, 0), t(18, 0));
+        assertNotNull(r);
         assertEquals(0, r.chargeMinutes());
         assertEquals(60, r.overlapBreakMinutes());
+        assertTrue(r.clamped());
     }
 
     @Test

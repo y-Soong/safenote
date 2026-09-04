@@ -481,50 +481,64 @@ public final class ScheduleWorkMinutesUtils {
     }
 
     // ================================================================
-    // BW-03: 시간차 "붙은 휴게 편입" 규칙 (부분휴가 휴게 무시 도입, 2026-09-04 — 요청서 §1-2)
-    //   체크 시 신청 구간 [s, e) 에 접하거나 겹치는 휴게 시각 구간을 쉬는 구간에 합친다(반복 병합).
-    //   저장 시각 = 합친 구간, 차감 분 = (e − s) − (신청 ∩ 휴게 겹침). 합친 결과가 신청과 같으면 기록 전용.
-    //   휴게 시각이 없는 타입(분만/미등록)은 편입할 구간이 없어 기록 전용(G-2).
+    // BW-03: 시간차 "휴게 건너뛰고 근로 확보" 규칙 (부분휴가 휴게 무시 — 2026-09-04 운영 피드백 A안 개정)
+    //   체크 시 신청 시작 s 부터 "근로"를 신청 길이만큼 확보하도록 쉬는 구간을 늘린다(휴게·구간 공백은 건너뜀).
+    //   저장 시각 = 늘린 구간(+ 양 끝에 맞닿은 휴게 흡수), 차감 분 = 신청 길이(= 확보한 근로분).
+    //   ★ 종전(6차 이전) 규칙은 "접하거나 겹치는 휴게를 흡수하고 차감 = 신청 − 겹침" 이라, 휴게가 신청 구간
+    //     안에 있으면 구간이 늘지 않고 차감만 줄었다(09~18·휴게 12~13 에서 11:30 시작 2시간차 → 차감 60분).
+    //     반차 경계와 같은 논리(근로만 누적)로 통일했다.
+    //   휴게 시각이 없는 타입(분만/미등록)은 늘릴 근거가 없어 기록 전용(G-2).
     //   미체크 경로(가로지름 거부 ATTD_400_055)는 본 함수를 타지 않는다(호출부 분기는 BW-04).
     // ================================================================
 
     /**
      * 시간차 휴게 편입 결과. 분 값은 입력 {@code startMin/endMin} 과 <b>같은 프레임</b>(호출부가 넘긴 원시 분).
      *
-     * @param exemptStartMin       저장할 쉬는 구간 시작(분) — 편입 후
-     * @param exemptEndMin         저장할 쉬는 구간 종료(분) — 편입 후
+     * @param exemptStartMin       저장할 쉬는 구간 시작(분) — 확장 후
+     * @param exemptEndMin         저장할 쉬는 구간 종료(분) — 확장 후
      * @param requestMinutes       신청 길이 {@code endMin - startMin}(단위 배수 검증 대상 — Q-10 신청 길이 기준 유지)
-     * @param chargeMinutes        차감 분 = 신청 길이 − (신청 ∩ 휴게 겹침). {@code LEAVE_MINUTES}·{@code calcHourlyCharge} 입력
-     * @param overlapBreakMinutes  신청 구간과 휴게 시각 구간의 겹침 분(가로지름 분)
-     * @param waivedBreakMinutes   쉬는 구간에 편입된 휴게 분 합(접함으로 늘어난 분 + 겹침 분)
-     * @param recordOnly           합친 구간이 신청과 같아(붙은 휴게 없음) 시각 불변·요청 기록만 하는 경우 {@code true}
+     * @param chargeMinutes        차감 분 = <b>확보한 근로분</b>. 클램프({@code clamped=true})가 아니면 항상
+     *                             {@code requestMinutes} 와 같다. {@code LEAVE_MINUTES}·{@code calcHourlyCharge} 입력
+     * @param overlapBreakMinutes  <b>신청</b> 구간(확장 전)과 휴게 시각 구간의 겹침 분(가로지름 분 — 안내/로그용)
+     * @param waivedBreakMinutes   쉬는 구간 중 근로가 아닌 분 = {@code (exemptEnd − exemptStart) − chargeMinutes}
+     *                             (편입된 휴게 분 + 2구간 사이 공백 분)
+     * @param recordOnly           확장 결과가 신청 구간과 같고 차감도 신청 길이 그대로일 때(건너뛸 휴게·맞닿은 휴게
+     *                             없음) {@code true} — 시각 불변·요청 기록만. 클램프는 {@code false}
      * @param breakTimeRegistered  그날 스케줄에 휴게 시각 구간이 1개 이상 있으면 {@code true}(G-2 안내용)
+     * @param clamped              신청 길이만큼 근로를 확보하지 못해 근무 종료로 잘린 경우 {@code true}
+     *                             (이때만 {@code chargeMinutes < requestMinutes})
      */
     public record BreakMergeResult(int exemptStartMin, int exemptEndMin, int requestMinutes, int chargeMinutes,
                                    int overlapBreakMinutes, int waivedBreakMinutes,
-                                   boolean recordOnly, boolean breakTimeRegistered) {
+                                   boolean recordOnly, boolean breakTimeRegistered, boolean clamped) {
     }
 
     /**
-     * 시간차 신청 구간 {@code [startMin, endMin)} 에 접하거나 겹치는 스케줄 휴게 시각 구간을 쉬는 구간에
-     * 합친다(순수 함수, 요청서 §1-2 / plan BW-03).
+     * 시간차 휴게 무시 체크 시 쉬는 구간을 산출한다(순수 함수, 요청서 §1-2 / 2026-09-04 운영 피드백 A안).
      *
      * <p>규칙:
      * <ul>
-     *   <li>접함 판정 = {@code brkEnd == startMin || brkStart == endMin}, 겹침 = 통상 구간 겹침. 1·2구간 휴게 모두 검사.
-     *       합친 뒤 또 접하는 휴게가 있으면 계속 합친다(반복 병합).</li>
-     *   <li>휴게 구간은 근무 구간 프레임(자정 넘김 +1440, G-1 wrap)으로 정렬·클램프한 값을 쓴다. 신청 구간은
-     *       그 구간을 포함하는 근무 구간의 프레임으로 맞춘 뒤 비교하고, 결과는 입력 프레임으로 되돌린다.</li>
-     *   <li>휴게가 근무 구간 안에 클램프되어 있으므로 합친 구간은 근무 밖으로 나가지 않는다.</li>
-     *   <li>차감 분 = {@code (endMin − startMin) − 겹침} — "차감 분은 불변"(신청한 근로 시간만 차감).
-     *       예 A: 14~18 + 휴게 13~14(접함) → 저장 13:00~18:00, 차감 240. 예 B: 12~14 + 휴게 12~13(가로지름) →
-     *       저장 12:00~14:00(동일, recordOnly), 차감 60.</li>
+     *   <li><b>근로 확보</b>: 신청 시작 {@code s} 부터 근로 조각(근무 구간 − 휴게 시각 구간)을 걸어 신청 길이
+     *       {@code (endMin − startMin)} 만큼 근로를 확보하는 시각까지 구간을 늘린다. 휴게와 2구간 사이 공백은
+     *       근로가 아니므로 건너뛴다(반차 경계와 같은 논리).</li>
+     *   <li><b>접함 흡수</b>: 확보한 구간의 양 끝에 맞닿은 휴게({@code 휴게 종료 == 구간 시작} 또는
+     *       {@code 휴게 시작 == 구간 종료})는 쉬는 구간에 흡수한다(반복). 차감 분은 늘지 않는다.</li>
+     *   <li><b>클램프</b>: 신청 길이만큼 근로를 확보할 수 없으면(근무 종료를 넘어감) 마지막 근로 종료로 자르고
+     *       차감은 실제 확보한 근로분으로 한다({@code clamped=true}). 확장 구간은 이 클램프 덕분에 근무 시간을
+     *       넘지 않으므로, 호출부는 종전대로 <b>신청 구간</b>으로 {@code withinScheduledWorkHours} 를 검증하면
+     *       된다(확장 구간으로 검증하면 2구간 사이 공백을 지나는 정상 케이스가 거부된다).</li>
+     *   <li>휴게 시각이 없는 타입(분만 등록/미등록)은 늘릴 근거가 없어 시각 불변·기록 전용(G-2).</li>
+     *   <li>휴게·근로 조각은 근무 구간 프레임(자정 넘김 +1440, G-1 wrap)으로 정렬·클램프한 값을 쓴다. 신청 구간은
+     *       그 구간을 포함하는 근무 구간 프레임으로 맞춘 뒤 계산하고, 결과는 입력 프레임으로 되돌린다.</li>
+     *   <li>대표 케이스(09~18): ① 휴게 12~13 · 11:30 시작 2시간차 → 쉬는 구간 11:30~14:30, 차감 120, 편입 60.
+     *       ② 휴게 11:30~13:00 · 13:00 시작 2시간차 → 근로는 13:00~15:00 이고 앞의 휴게가 맞닿아 흡수되어
+     *       11:30~15:00, 차감 120, 편입 90. ③ 휴게 13~14 · 14~18 신청 → 13:00~18:00, 차감 240, 편입 60.</li>
      * </ul>
      *
      * @param sch      그날 스케줄. {@code null} 이면 {@code null}.
      * @param startMin 신청 시작(분, 호출부 프레임 — 통상 {@code hhmmToMinutes} 원시 분)
      * @param endMin   신청 종료(분). {@code endMin <= startMin} 이면 {@code null}.
-     * @return 편입 결과. 산출 불가(스케줄 없음/구간 비정상/신청 비정상)면 {@code null}.
+     * @return 산출 결과. 산출 불가(스케줄 없음/구간 비정상/신청 비정상)면 {@code null}.
      */
     public static BreakMergeResult mergeAdjacentBreaks(DailyScheduleVO sch, int startMin, int endMin) {
         if (sch == null || endMin <= startMin) {
@@ -538,9 +552,16 @@ public final class ScheduleWorkMinutesUtils {
         boolean breakTimeRegistered = !breaks.isEmpty();
         int requestMinutes = endMin - startMin;
 
+        if (!breakTimeRegistered) {
+            // G-2: 휴게 시각 미등록(분만/없음) — 건너뛸 휴게도 흡수할 휴게도 없다. 시각 불변·기록 전용.
+            //   (신청 구간은 호출부 검증으로 근무 구간 안이므로 확보 근로 = 신청 길이.)
+            return new BreakMergeResult(startMin, endMin, requestMinutes, requestMinutes,
+                    0, 0, true, false, false);
+        }
+
         // 신청 구간을 근무 구간 프레임으로 정렬: [s+k, e+k] 를 완전히 포함하는 구간이 있는 offset k(0 또는 +1440)를
         //   찾는다(야간 2구간은 buildSegments 가 2구간을 +1440 으로 민다). 포함 구간이 없으면 원시 프레임 그대로
-        //   비교한다(근무 밖 신청은 호출부 withinScheduledWorkHours 가 거부).
+        //   계산한다(근무 밖 신청은 호출부 withinScheduledWorkHours 가 거부).
         int offset = 0;
         boolean aligned = false;
         for (int k = 0; k <= MINUTES_PER_DAY && !aligned; k += MINUTES_PER_DAY) {
@@ -560,31 +581,83 @@ public final class ScheduleWorkMinutesUtils {
             overlap += Math.max(0, Math.min(e, b[1]) - Math.max(s, b[0]));
         }
 
-        // 반복 병합 — 접하거나 겹치는 휴게를 흡수. 휴게는 최대 2개라 2회면 수렴하나 일반형으로 둔다.
+        // ① 근로 확보 — 근로 조각(근무 구간 − 휴게)을 s 부터 걸어 신청 길이만큼 누적한다.
+        List<int[]> works = workIntervals(segments, breaks);
+        int acc = 0;
+        int me = s;
+        for (int[] w : works) {
+            if (w[1] <= s) {
+                continue;
+            }
+            int from = Math.max(w[0], s);
+            int len = w[1] - from;
+            if (len <= 0) {
+                continue;
+            }
+            if (acc + len >= requestMinutes) {
+                me = from + (requestMinutes - acc);
+                acc = requestMinutes;
+                break;
+            }
+            acc += len;
+            me = w[1];
+        }
+        if (acc <= 0) {
+            // 신청 시작 이후에 근로가 없다(마지막 휴게 안에서 시작 / 근무 종료 이후) — 차감 0.
+            //   호출부(BW-04)가 ATTD_400_052 로 거부한다.
+            return new BreakMergeResult(startMin, endMin, requestMinutes, 0, overlap, 0,
+                    false, true, true);
+        }
+        boolean clamped = acc < requestMinutes;
+
+        // ② 접함 흡수 — 확보 구간의 양 끝에 맞닿은 휴게를 쉬는 구간에 넣는다(차감 불변). 휴게는 최대 2개.
         int ms = s;
-        int me = e;
         boolean changed = true;
         while (changed) {
             changed = false;
             for (int[] b : breaks) {
-                if (b[1] >= ms && b[0] <= me) {
-                    int ns = Math.min(ms, b[0]);
-                    int ne = Math.max(me, b[1]);
-                    if (ns != ms || ne != me) {
-                        ms = ns;
-                        me = ne;
-                        changed = true;
-                    }
+                if (b[1] == ms) {
+                    ms = b[0];
+                    changed = true;
+                } else if (b[0] == me) {
+                    me = b[1];
+                    changed = true;
                 }
             }
         }
 
-        int chargeMinutes = requestMinutes - overlap;
-        // 편입 휴게 분 = 합친 길이 − 순수 근로(차감) 분.
+        int chargeMinutes = acc;
+        // 쉬는 구간 중 근로가 아닌 분 = 편입된 휴게 + 2구간 사이 공백.
         int waivedBreakMinutes = (me - ms) - chargeMinutes;
-        boolean recordOnly = (ms == s && me == e);
+        // 시각도 그대로이고 차감도 신청 길이 그대로일 때만 "기록 전용"이다.
+        //   (클램프는 시각이 같아도 차감이 줄어 실효가 있으므로 기록 전용이 아니다 — FE 결과 박스 노출.)
+        boolean recordOnly = (ms == s && me == e && !clamped);
         return new BreakMergeResult(ms - offset, me - offset, requestMinutes, chargeMinutes,
-                overlap, waivedBreakMinutes, recordOnly, breakTimeRegistered);
+                overlap, waivedBreakMinutes, recordOnly, breakTimeRegistered, clamped);
+    }
+
+    /**
+     * 근무 구간에서 휴게 시각 구간을 뺀 근로 조각 목록(오름차순). 휴게는 이미 각 구간 프레임으로 클램프된 값이며,
+     * 구간 사이 공백은 애초에 조각에 들어가지 않는다(근로 아님).
+     *
+     * <p>{@link #buildWorkParts} 와 달리 "휴게 분만 등록" 보정({@code span − brkMin})을 하지 않는다 — 본 함수는
+     * 휴게 <b>시각</b>이 있는 경우에만 쓰이며(시각 없으면 호출 전에 기록 전용으로 빠짐), 시간차는 신청 시각과
+     * 실제 휴게 시각을 맞춰야 하므로 위치 미상 분을 임의로 깎으면 안 된다.
+     */
+    private static List<int[]> workIntervals(List<int[]> segments, List<int[]> breaks) {
+        List<int[]> out = new ArrayList<>(4);
+        for (int[] seg : segments) {
+            int cur = seg[0];
+            for (int[] b : breaks) {
+                if (b[1] <= cur || b[0] >= seg[1]) {
+                    continue;
+                }
+                addIfPositive(out, cur, Math.min(b[0], seg[1]));
+                cur = Math.max(cur, b[1]);
+            }
+            addIfPositive(out, cur, seg[1]);
+        }
+        return out;
     }
 
     /**

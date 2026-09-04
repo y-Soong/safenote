@@ -120,9 +120,10 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
         }
         ScheduleWorkMinutesUtils.BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(sch, startMin, endMin);
         if (r != null) {
-            log.debug("[leave-deduct] 시간차 휴게 편입: userCd={}, workYmd={}, 신청={}~{}, 저장={}~{}, 차감={}분, 편입={}분, recordOnly={}",
+            log.debug("[leave-deduct] 시간차 휴게 편입: userCd={}, workYmd={}, 신청={}~{}, 저장={}~{}, 차감={}분, 편입={}분, "
+                            + "recordOnly={}, clamped={}",
                     userCd, workYmd, startMin, endMin, r.exemptStartMin(), r.exemptEndMin(),
-                    r.chargeMinutes(), r.waivedBreakMinutes(), r.recordOnly());
+                    r.chargeMinutes(), r.waivedBreakMinutes(), r.recordOnly(), r.clamped());
         }
         return r;
     }

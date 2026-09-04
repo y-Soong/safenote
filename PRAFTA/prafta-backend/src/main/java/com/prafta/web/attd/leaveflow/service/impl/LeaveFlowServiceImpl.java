@@ -275,8 +275,9 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 throw new ApiException(AttdErrorCode.ATTD_400_052);
             }
             if (brkWaive) {
-                // BW-04(요청서 §1-2, 앱 미러): 체크 시 가로지름 거부 스킵 + 신청 구간에 접하거나 겹치는 휴게 시각 구간을
-                //   쉬는 구간에 합친다. 저장 시각 = 합친 구간, 차감 = 신청 − 휴게 겹침. 차감 0분은 거부(ATTD_400_052).
+                // BW-04(요청서 §1-2, 2026-09-04 A안 개정 · 앱 미러): 체크 시 가로지름 거부 스킵 + 신청 시작부터
+                //   "근로"를 신청 길이만큼 확보하도록 쉬는 구간을 늘린다(양 끝에 맞닿은 휴게는 흡수).
+                //   저장 시각 = 확장 구간, 차감 = 신청 길이(클램프 시 확보 근로분). 차감 0분은 거부(ATTD_400_052).
                 //   근무시간 내 검증은 신청 구간 기준(웹 미러 경로는 종전에도 withinScheduledWorkHours 를 두지 않았으므로
                 //   앱과 동일하게 신청 구간으로 추가 검증한다 — 체크 시에만, 미체크 경로 무회귀).
                 if (!leaveDeductionService.withinScheduledWorkHours(cmpny, site, user, workYmd, sMin, eMin)) {
@@ -292,9 +293,9 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 endTime = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptEndMin());
                 leaveMinutes = mr.chargeMinutes();
                 log.info("[leaveflow] 휴게 미이용 요청 확정: userCd={}, workYmd={}, unit={}, part=-, recordOnly={}, "
-                                + "저장구간={}~{}, 신청={}분, 차감={}분, 편입휴게={}분",
+                                + "저장구간={}~{}, 신청={}분, 차감={}분, 편입휴게={}분, clamped={}",
                         user, workYmd, unit, mr.recordOnly(), startTime, endTime,
-                        mr.requestMinutes(), mr.chargeMinutes(), mr.waivedBreakMinutes());
+                        mr.requestMinutes(), mr.chargeMinutes(), mr.waivedBreakMinutes(), mr.clamped());
             } else {
                 // 휴게 가로지름 거부 (§8.5.9) — 휴게시각 미설정이면 skip
                 if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {

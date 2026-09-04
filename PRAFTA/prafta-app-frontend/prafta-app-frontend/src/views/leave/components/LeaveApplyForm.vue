@@ -331,6 +331,12 @@
           </div>
         </label>
 
+        <!-- 미체크 + 휴게 가로지름 사전 경고(2026-09-04 운영 피드백 B) — 서버가 최종 판정하므로 제출은 막지 않는다. -->
+        <p v-if="breakCrossWarnText" class="half-note half-note--warn" role="status">
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          <span class="half-note__text">{{ breakCrossWarnText }}</span>
+        </p>
+
         <p class="time-guide">
           <span class="time-guide__dot" aria-hidden="true">·</span>
           {{ unitGuideText }}
@@ -374,12 +380,10 @@
             >휴게 시각이 등록되지 않아 시각은 바뀌지 않아요. 휴게 미이용 요청만 기록돼요.</span
           >
         </p>
-        <!-- 기록 전용: 휴게가 쉬는 구간 안에 있어 결과가 미체크와 같음 (반차=day-schedule / 시간차=preview 값) -->
+        <!-- 기록 전용: 체크해도 결과가 미체크와 같음 (반차=day-schedule / 시간차=preview 값) -->
         <p v-else-if="brkWaive && brkWaiveRecordOnly" class="half-note half-note--info">
           <span class="half-note__dot" aria-hidden="true">·</span>
-          <span class="half-note__text"
-            >휴게가 쉬는 시간 안에 있어 시각은 그대로예요. 휴게 미이용 요청만 기록돼요.</span
-          >
+          <span class="half-note__text">{{ brkWaiveRecordOnlyText }}</span>
         </p>
 
         <!-- 시간차 체크 결과(preview): 편입된 휴게·실제 쉬는 구간·차감 분 — 서버 산출값 -->
@@ -839,9 +843,48 @@ const ctxSiteDisplay = computed(() => props.context?.siteName || '')
 const unitGuideText = computed(() => {
   const label = UNIT_LABELS[useUnitType.value] || ''
   // developer: 휴게시간 가로지름 불가 등 정책 문구 확정(attd §8.5). 골격은 기본 안내만.
-  // BW-07: 휴게시간 무시 체크 시 붙은 휴게가 쉬는 시간에 편입되므로 안내 문구를 전환한다.
-  if (brkWaive.value) return `${label} 단위로 신청해 주세요. 휴게를 쉬는 시간에 포함해요.`
+  // BW-07: 휴게시간 무시 체크 시 휴게가 쉬는 구간에 편입되므로 안내 문구를 전환한다.
+  //   ★문구는 2026-09-04 사용자 확정본 — 어미('~됩니다')를 임의로 앱 기본체('~해요')로 바꾸지 않는다.
+  if (brkWaive.value) return `${label} 단위로 신청해 주세요. 휴게시간을 포함한 휴가로 요청됩니다.`
   return `${label} 단위로 신청해 주세요. 휴게시간을 가로지를 수 없어요.`
+})
+
+// 'HHMM'(휴게 시각) → 분. '2400'=1440 인정(서버 brkEndToMinutes 규약). 형식 위반이면 -1.
+const brkHhmmToMinutes = (hhmm) => {
+  if (!hhmm || !/^\d{4}$/.test(hhmm)) return -1
+  const h = Number(hhmm.slice(0, 2))
+  const m = Number(hhmm.slice(2))
+  if (h > 24 || m > 59) return -1
+  return h * 60 + m
+}
+
+// 미체크 상태에서 신청 구간이 휴게 시각을 가로지르는지 사전 안내(2026-09-04 운영 피드백 B).
+//   종전에는 일반 안내 문구만 있어 제출 후 서버 ATTD_400_055 로 거부되기 전까지 알 수 없었다.
+//   ★판정 근거는 서버 day-schedule 의 휴게 시각뿐이고, 겹침 판정은 서버 overlapsBreak 와 동일 규칙
+//   (종료<시작이면 +1440 wrap, 0폭은 휴게 없음, 맞닿음은 가로지름 아님)을 그대로 쓴다. 제출은 막지 않는다.
+//   체크 시에는 감춘다(체크 안내 문구가 대신 뜬다).
+const breakCrossWarnText = computed(() => {
+  if (!isTimeUnit.value || brkWaive.value) return ''
+  const ds = props.daySchedule
+  if (!ds || ds.hasSchedule !== true) return ''
+  const startM = toMinutes(startTimeInput.value)
+  const endM = toMinutes(endTimeInput.value)
+  if (startM < 0 || endM < 0 || endM <= startM) return ''
+  const crosses = [
+    [ds.fstBrkStrTime, ds.fstBrkEndTime],
+    [ds.secBrkStrTime, ds.secBrkEndTime],
+  ].some(([bs, be]) => {
+    const bsM = brkHhmmToMinutes(bs)
+    let beM = brkHhmmToMinutes(be)
+    if (bsM < 0 || beM < 0) return false
+    if (beM < bsM) beM += 1440
+    if (beM === bsM) return false
+    return startM < beM && bsM < endM
+  })
+  if (!crosses) return ''
+  // 회사가 휴게시간 무시를 허용하지 않으면 체크박스가 없으므로 앞 문장만 안내한다.
+  if (ds.brkWaiveAllowYn !== 'Y') return '휴게시간을 가로지르는 시간대예요.'
+  return '휴게시간을 가로지르는 시간대예요. 휴게시간 무시를 체크하면 휴게시간을 포함한 휴가로 요청됩니다.'
 })
 
 // ── 대상일 근무/휴게 시각 안내 (day-schedule) ─────────────────────────────
@@ -956,6 +999,15 @@ const brkWaiveRecordOnly = computed(() => {
   if (isTimeUnit.value) return props.preview?.brkWaiveRecordOnlyYn === 'Y'
   return false
 })
+// 기록 전용 안내 문구 — 사유가 단위별로 다르다.
+//   반차: 휴게가 쉬는 구간 안에 있어 경계가 미체크와 같은 경우.
+//   시간차(2026-09-04 A안 개정): 신청 구간이 건너뛸 휴게도, 맞닿은 휴게도 없는 경우.
+//     (개정 전과 달리 "휴게가 신청 구간 안"이면 구간이 늘어나므로 더 이상 기록 전용이 아니다.)
+const brkWaiveRecordOnlyText = computed(() =>
+  isTimeUnit.value
+    ? '이 시간대에는 붙어 있는 휴게가 없어 시각은 그대로예요. 휴게 미이용 요청만 기록돼요.'
+    : '휴게가 쉬는 시간 안에 있어 시각은 그대로예요. 휴게 미이용 요청만 기록돼요.',
+)
 // QA D3(2026-09-04): 반차 경계 안내 문구가 "휴게를 건너뛴 값"을 설명해도 되는지.
 //   체크(brkWaive)만 보고 문구를 고르면, 기록 전용 파트(휴게가 쉬는 구간 안에 있어 경계가 그대로인
 //   케이스 — 예: 09~18 휴게 12~13 의 '늦게 출근' 14:00)에서 값과 설명이 어긋난다(D3).
