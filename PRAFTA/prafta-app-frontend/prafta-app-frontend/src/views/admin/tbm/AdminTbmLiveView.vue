@@ -54,10 +54,11 @@
           <h2 class="admin-tbm-live__title">{{ session.title || 'TBM 세션' }}</h2>
         </div>
 
-        <!-- 교육 내용(plain text, 줄바꿈 보존) -->
+        <!-- 교육 내용(리치 HTML — 근로자 화면과 동일 렌더. 서버에서 저장형 XSS 정화 후 전달됨) -->
         <section class="card">
           <p class="card__label">교육 내용</p>
-          <p class="admin-tbm-content">{{ session.contentBody || '내용이 없어요' }}</p>
+          <div v-if="contentHtml" class="admin-tbm-content" v-html="contentHtml"></div>
+          <p v-else class="admin-tbm-content">내용이 없어요</p>
         </section>
 
         <!-- 첨부 자료 슬라이드(사용자 TBM 컴포넌트 재사용 — 비파괴 import) -->
@@ -148,6 +149,7 @@ import AdminTbmAttendeeRow from './components/AdminTbmAttendeeRow.vue'
 import AdminTbmForceExitSheet from './components/AdminTbmForceExitSheet.vue'
 import AdminTbmEndSignSheet from './components/AdminTbmEndSignSheet.vue'
 import TbmMaterialSlider from '@/views/tbm/components/TbmMaterialSlider.vue'
+import { toTbmContentHtml } from '@/utils/tbmContent'
 
 const route = useRoute()
 const router = useRouter()
@@ -170,6 +172,9 @@ const ending = ref(false) // 종료 진행 가드
 
 const session = ref(null) // 상세(서버 SessionDetailItem)
 const materials = ref([]) // TbmMaterialSlider 계약: [{ mtrlCd, title, items:[{ type,url,desc,sortIdx }] }]
+
+// 교육 내용 표시용 HTML(리치 HTML 은 그대로, 순수 텍스트는 이스케이프 + 줄바꿈 보존)
+const contentHtml = computed(() => toTbmContentHtml(session.value?.contentBody))
 const attendees = ref([]) // [{ attendanceCd, userNm, userTypeCd, deptNm, entryAt, exitAt, completionStatusCd }]
 
 // 강제퇴실 시트
@@ -488,13 +493,22 @@ onMounted(() => {
 }
 
 /* 교육 내용(plain text) */
+/* 교육 내용: 리치 HTML 렌더(근로자 TbmInProgressView 의 .tbm-content 와 동일 규격).
+   순수 텍스트는 유틸이 <br> 로 바꿔 넘기므로 pre-wrap 없이도 줄바꿈이 보존된다. */
 .admin-tbm-content {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
   color: var(--color-text-primary);
-  white-space: pre-wrap;
   word-break: break-word;
+}
+.admin-tbm-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+.admin-tbm-content :deep(p) {
+  margin: 0 0 var(--space-sm);
 }
 
 /* 입실자 리스트 */

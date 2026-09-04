@@ -49,17 +49,19 @@
           />
         </div>
 
-        <!-- 교육 내용 -->
+        <!-- 교육 내용(리치 HTML — web TbmSessionForm 과 동일 편집기. 모바일 폭에 맞춰 툴바만 축소) -->
         <div class="admin-tbm-form__field">
-          <label class="admin-tbm-form__label" for="tbm-edit-content">교육 내용</label>
-          <textarea
-            id="tbm-edit-content"
-            v-model="form.contentBody"
-            class="admin-tbm-form__textarea"
-            rows="5"
-            maxlength="4000"
-            placeholder="교육 내용을 입력하세요"
-          ></textarea>
+          <span class="admin-tbm-form__label">교육 내용</span>
+          <div class="admin-tbm-form__editor">
+            <!-- 이 폼은 조회 완료 후(v-else) 새로 마운트되므로 편집기 초기값이 항상 최신이다. -->
+            <QuillEditor
+              v-model:content="form.contentBody"
+              contentType="html"
+              theme="snow"
+              :toolbar="EDITOR_TOOLBAR"
+              placeholder="교육 내용을 입력하세요"
+            />
+          </div>
         </div>
 
         <!-- GPS 검증 여부 -->
@@ -172,6 +174,16 @@ import { ref, reactive, computed, getCurrentInstance, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 
 import api from '@/api/axios'
+import { QuillEditor } from '@vueup/vue-quill'
+import '@vueup/vue-quill/dist/vue-quill.snow.css'
+
+// 모바일 축소 툴바: 좁은 폭에서 줄바꿈되지 않게 굵게/기울임/밑줄 + 목록 2종 + 서식 지우기만 둔다.
+//   web(TbmSessionForm) 기본 툴바와 태그 집합이 호환되므로 웹·AI 가 만든 서식도 그대로 보존된다.
+const EDITOR_TOOLBAR = [
+  ['bold', 'italic', 'underline'],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  ['clean'],
+]
 
 const router = useRouter()
 const route = useRoute()
@@ -437,9 +449,8 @@ onMounted(loadDetail)
   color: var(--color-text-tertiary);
 }
 
-/* 인풋/셀렉트/텍스트영역 */
-.admin-tbm-form__input,
-.admin-tbm-form__textarea {
+/* 인풋 */
+.admin-tbm-form__input {
   width: 100%;
   box-sizing: border-box;
   padding: 0 var(--space-md);
@@ -454,16 +465,44 @@ onMounted(loadDetail)
 .admin-tbm-form__input--narrow {
   width: 140px;
 }
-.admin-tbm-form__textarea {
-  height: auto;
-  padding: var(--space-md);
-  resize: vertical;
-  line-height: 1.5;
-}
-.admin-tbm-form__input:focus,
-.admin-tbm-form__textarea:focus {
+.admin-tbm-form__input:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+/* 교육 내용 편집기(QuillEditor) — 인풋과 같은 테두리 안에 툴바 + 본문을 담는다. */
+.admin-tbm-form__editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.admin-tbm-form__editor :deep(.ql-toolbar) {
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 8px;
+}
+.admin-tbm-form__editor :deep(.ql-container) {
+  border: 0;
+  font-family: inherit;
+  font-size: 15px;
+}
+.admin-tbm-form__editor :deep(.ql-editor) {
+  min-height: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-md);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+/* 플레이스홀더: 기본 이탤릭은 국문에서 읽기 나빠 평체로 되돌린다. */
+.admin-tbm-form__editor :deep(.ql-editor.ql-blank::before) {
+  font-style: normal;
+  color: var(--color-text-secondary);
+}
+.admin-tbm-form__editor :deep(.ql-editor img) {
+  max-width: 100%;
+  height: auto;
 }
 
 /* GPS 라디오 */

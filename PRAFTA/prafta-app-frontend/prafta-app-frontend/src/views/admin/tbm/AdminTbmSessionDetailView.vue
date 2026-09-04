@@ -97,10 +97,11 @@
           </dl>
         </section>
 
-        <!-- 교육 내용(plain text, 줄바꿈 보존) -->
+        <!-- 교육 내용(리치 HTML — 근로자 화면과 동일 렌더. 서버에서 저장형 XSS 정화 후 전달됨) -->
         <section class="card">
           <p class="card__label">교육 내용</p>
-          <p class="admin-tbm-content">{{ session.contentBody || '내용이 없어요' }}</p>
+          <div v-if="contentHtml" class="admin-tbm-content" v-html="contentHtml"></div>
+          <p v-else class="admin-tbm-content">내용이 없어요</p>
         </section>
 
         <!-- GPS 설정 -->
@@ -238,6 +239,7 @@ import { requestGps } from '@/utils/gpsBridge'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 import AdminTbmPwdCard from './components/AdminTbmPwdCard.vue'
+import { toTbmContentHtml } from '@/utils/tbmContent'
 
 const router = useRouter()
 const route = useRoute()
@@ -264,6 +266,9 @@ const regenerating = ref(false)
 const session = ref(null) // 상세 헤더(서버 SessionDetailItem)
 const contents = ref([]) // [{ mtrlCd, title, ... }]
 const risks = ref([]) // [{ displayName, ... }]
+
+// 교육 내용 표시용 HTML(리치 HTML 은 그대로, 순수 텍스트는 이스케이프 + 줄바꿈 보존)
+const contentHtml = computed(() => toTbmContentHtml(session.value?.contentBody))
 
 // 상태 라벨(SYS046) — 서버 statusNm 우선
 const STATUS_LABELS = {
@@ -622,13 +627,22 @@ onMounted(loadDetail)
 }
 
 /* 교육 내용(plain text) */
+/* 교육 내용: 리치 HTML 렌더(근로자 TbmCompletedDetailView 의 .tbm-content 와 동일 규격).
+   순수 텍스트는 유틸이 <br> 로 바꿔 넘기므로 pre-wrap 없이도 줄바꿈이 보존된다. */
 .admin-tbm-content {
   margin: 0;
   font-size: 14px;
   line-height: 1.6;
   color: var(--color-text-primary);
-  white-space: pre-wrap;
   word-break: break-word;
+}
+.admin-tbm-content :deep(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-md);
+}
+.admin-tbm-content :deep(p) {
+  margin: 0 0 var(--space-sm);
 }
 
 /* 이름 리스트 */

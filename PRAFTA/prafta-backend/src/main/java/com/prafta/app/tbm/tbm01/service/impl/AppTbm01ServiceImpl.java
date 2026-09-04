@@ -6,7 +6,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -61,6 +60,7 @@ import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.error.tbm.TbmErrorCode;
 import com.prafta.common.error.location.LocationErrorCode;
+import com.prafta.common.util.TbmContentSanitizer;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.security.FileUrlSigner;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
@@ -757,12 +757,12 @@ public class AppTbm01ServiceImpl implements AppTbm01Service {
      *
      * <p>A6(content)·A10(my-completion) 앱 읽기 경로 양쪽에서 재사용한다.
      * null/blank 는 그대로 반환한다(불필요한 정화 호출 방지).
+     *
+     * <p>★실제 정화 기준은 {@link TbmContentSanitizer} 단일 출처에 있다(앱 관리자 읽기 경로와
+     * 공유 — 경로별로 기준이 갈라져 한쪽만 뚫리는 것을 막는다). 동작 불변.
      */
     private String sanitizeContentBody(String body) {
-        if (!StringUtils.hasText(body)) {
-            return body;
-        }
-        return Jsoup.clean(body, Safelist.relaxed());
+        return TbmContentSanitizer.sanitize(body);
     }
 
     /**

@@ -9,7 +9,9 @@
       OPENED(교육준비) 도달은 세션상세 "교육준비 시작"(/prepare 전이)으로 일원화 → POST /sessions 는 DRAFT 만 허용.
   - GPS: 검증유형(AUTO/MANUAL/DISABLED)·반경은 세션 설정값으로 개설 단계 유지.
       관리자 현재좌표 수집(requestGps)은 교육준비(/prepare) 전이에서 수행 → 개설 폼에서 제거.
-  - 교육내용 입력기: web 은 QuillEditor(리치HTML). 모바일은 plain textarea(저장 텍스트, 표시는 contentBody) — 플래그 T5.
+  - 교육내용 입력기: web(TbmSessionForm)과 동일하게 QuillEditor(리치HTML). 모바일 폭에 맞춰 툴바만 축소.
+      ★종전 plain textarea(T5)에서 전환 — 웹·AI 가 만든 교육안을 앱에서 열면 태그가 그대로 보이고,
+        그 상태로 저장하면 제목·목록·이미지 서식이 소실되던 문제 때문.
   - 디자인 토큰은 부모(.admin-tbm-view)에서 상속. 자료/위험성 선택 시트는 후속 골격(R2) — 본 골격은 트리거/요약만.
   - planner 라운드 스코프: template + style 완성. script 는 선언/TODO + v-model + 단순 검증 + UI 토글만.
       ⚠️ API 호출/저장/라우팅/store 는 developer(R2).
@@ -40,17 +42,18 @@
       />
     </div>
 
-    <!-- 교육 내용(모바일 textarea — T5) -->
+    <!-- 교육 내용(리치 HTML — web TbmSessionForm 과 동일 편집기. 모바일 폭에 맞춰 툴바만 축소) -->
     <div class="admin-tbm-form__field">
-      <label class="admin-tbm-form__label" for="tbm-content">교육 내용</label>
-      <textarea
-        id="tbm-content"
-        v-model="form.contentBody"
-        class="admin-tbm-form__textarea"
-        rows="5"
-        maxlength="4000"
-        placeholder="교육 내용을 입력하세요 (개설 시 10자 이상)"
-      ></textarea>
+      <span class="admin-tbm-form__label">교육 내용</span>
+      <div class="admin-tbm-form__editor">
+        <QuillEditor
+          v-model:content="form.contentBody"
+          contentType="html"
+          theme="snow"
+          :toolbar="EDITOR_TOOLBAR"
+          placeholder="교육 내용을 입력하세요 (개설 시 10자 이상)"
+        />
+      </div>
     </div>
 
     <!-- GPS 검증 여부 -->
@@ -184,6 +187,17 @@ import { ref, reactive, getCurrentInstance, onMounted } from 'vue'
 import api from '@/api/axios'
 import AdminTbmContentPickSheet from './AdminTbmContentPickSheet.vue'
 import AdminTbmRiskPickSheet from './AdminTbmRiskPickSheet.vue'
+import { QuillEditor } from '@vueup/vue-quill'
+import '@vueup/vue-quill/dist/vue-quill.snow.css'
+import { toTbmContentText } from '@/utils/tbmContent'
+
+// 모바일 축소 툴바: 좁은 폭에서 줄바꿈되지 않게 굵게/기울임/밑줄 + 목록 2종 + 서식 지우기만 둔다.
+//   web(TbmSessionForm) 기본 툴바와 태그 집합이 호환되므로 웹·AI 가 만든 서식도 그대로 보존된다.
+const EDITOR_TOOLBAR = [
+  ['bold', 'italic', 'underline'],
+  [{ list: 'ordered' }, { list: 'bullet' }],
+  ['clean'],
+]
 
 const { proxy } = getCurrentInstance() || { proxy: null }
 
@@ -316,10 +330,12 @@ const validate = () => {
 }
 
 // 미저장 변경 여부(닫기 확인용 — 단순 dirty 체크)
+//   ★교육 내용은 편집기가 빈 상태에서도 `<p><br></p>` 껍데기를 남기므로 문자열 길이로 보면 안 된다.
+//     태그를 걷어낸 실제 글자로 판정한다(미입력 상태에서 닫기 확인이 뜨는 오동작 방지).
 const isDirty = () =>
   !!(
     form.title ||
-    (form.contentBody || '').trim() ||
+    toTbmContentText(form.contentBody) ||
     (form.eduMinutes !== null && form.eduMinutes !== '' && form.eduMinutes !== undefined) ||
     contentRows.value.length ||
     riskRows.value.length
@@ -428,10 +444,9 @@ onMounted(async () => {
   color: var(--color-text-tertiary);
 }
 
-/* 인풋/셀렉트/텍스트영역 */
+/* 인풋/셀렉트 */
 .admin-tbm-form__input,
-.admin-tbm-form__select,
-.admin-tbm-form__textarea {
+.admin-tbm-form__select {
   width: 100%;
   box-sizing: border-box;
   padding: 0 var(--space-md);
@@ -446,17 +461,45 @@ onMounted(async () => {
 .admin-tbm-form__input--narrow {
   width: 140px;
 }
-.admin-tbm-form__textarea {
-  height: auto;
-  padding: var(--space-md);
-  resize: vertical;
-  line-height: 1.5;
-}
 .admin-tbm-form__input:focus,
-.admin-tbm-form__select:focus,
-.admin-tbm-form__textarea:focus {
+.admin-tbm-form__select:focus {
   outline: none;
   border-color: var(--color-primary);
+}
+
+/* 교육 내용 편집기(QuillEditor) — 인풋과 같은 테두리 안에 툴바 + 본문을 담는다. */
+.admin-tbm-form__editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+.admin-tbm-form__editor :deep(.ql-toolbar) {
+  border: 0;
+  border-bottom: 1px solid var(--color-border);
+  padding: 6px 8px;
+}
+.admin-tbm-form__editor :deep(.ql-container) {
+  border: 0;
+  font-family: inherit;
+  font-size: 15px;
+}
+.admin-tbm-form__editor :deep(.ql-editor) {
+  min-height: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--space-md);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+/* 플레이스홀더: 기본 이탤릭은 국문에서 읽기 나빠 평체로 되돌린다. */
+.admin-tbm-form__editor :deep(.ql-editor.ql-blank::before) {
+  font-style: normal;
+  color: var(--color-text-secondary);
+}
+.admin-tbm-form__editor :deep(.ql-editor img) {
+  max-width: 100%;
+  height: auto;
 }
 
 /* GPS 라디오 */

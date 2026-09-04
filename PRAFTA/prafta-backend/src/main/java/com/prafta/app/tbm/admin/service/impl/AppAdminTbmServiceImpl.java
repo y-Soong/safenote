@@ -126,6 +126,7 @@ import com.prafta.common.security.FileUrlSigner;
 import com.prafta.common.security.crypto.GpsCoordCrypto;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.common.util.NumericPwdGenerator;
+import com.prafta.common.util.TbmContentSanitizer;
 import com.prafta.app.tbm.admin.dto.response.AdminEduMaterialItemResponse;
 
 import lombok.RequiredArgsConstructor;
@@ -338,7 +339,9 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
                 .siteNm(session.siteNm())
                 .eduTypeCd(session.eduTypeCd())
                 .title(session.title())
-                .contentBody(session.contentBody())
+                // 저장형 XSS 차단: 교육내용은 RICH_HTML 이고 앱 관리자 상세도 HTML 로 렌더하므로
+                //   근로자 앱 읽기 경로와 동일 기준(TbmContentSanitizer)으로 응답 직전 정화한다.
+                .contentBody(TbmContentSanitizer.sanitize(session.contentBody()))
                 .contentFormatCd(session.contentFormatCd())
                 .statusCd(session.statusCd())
                 .statusNm(session.statusNm())
@@ -2156,8 +2159,10 @@ public class AppAdminTbmServiceImpl implements AppAdminTbmService {
     }
 
     private void validateContentBody(String contentBody) {
-        // T5: plain text. 빈 입력 거부를 위해 공백 제거 후 길이만 검사(HTML strip 동일 결과).
-        String text = contentBody == null ? "" : contentBody.replaceAll("\\s+", "").trim();
+        // 교육내용은 리치 HTML(앱 관리자도 QuillEditor 사용). ★태그를 먼저 걷어내고 글자수를 센다 —
+        //   편집기가 빈 상태에서 남기는 껍데기(<p><br></p> = 11자)가 최소 글자수를 통과시키면
+        //   내용 없는 교육이 개설된다. 순수 텍스트 입력은 toText 가 그대로 돌려주므로 종전과 동일.
+        String text = TbmContentSanitizer.toText(contentBody).replaceAll("\\s+", "").trim();
         if (text.length() < CONTENT_TEXT_MIN) {
             log.warn("TBM 교육 내용 텍스트 부족 - len={}", text.length());
             throw new ApiException(TbmErrorCode.TBM_400_010);
