@@ -11,6 +11,7 @@ public record SaveIncidentParam(
     , String causeDesc
     , String preventionDesc
     , String immediateActionDesc
+    , String adminTempActionDesc
     , String gvCmpnyCd
     , String gvUserCd
     , String gvAuthCd
@@ -28,6 +29,7 @@ public record SaveIncidentParam(
             , request.getCauseDesc()
             , request.getPreventionDesc()
             , request.getImmediateActionDesc()
+            , request.getAdminTempActionDesc()
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_userCd()
             , tokenInfo.gv_authCd()

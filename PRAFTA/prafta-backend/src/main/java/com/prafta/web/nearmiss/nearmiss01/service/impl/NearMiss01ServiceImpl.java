@@ -109,10 +109,17 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
         // 사업장 권한 검증 (cross-site IDOR 차단)
         assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
 
-        // 사업장 스코프 존재 확인(IDOR 차단)
-        ensureExists(param.gvCmpnyCd(), param.siteCd(), param.nearMissId());
+        // 사업장 스코프 존재 확인(IDOR 차단) + 현재 처리상태 확보
+        String current = requireStatus(param.gvCmpnyCd(), param.siteCd(), param.nearMissId());
 
-        int updated = nearMiss01Mapper.updateIncident(SaveIncidentCommand.from(param));
+        // 임시조치(관리자) 메모는 종결(완료 300 / 미처리대상 400) 건에서 읽기전용이다.
+        //   화면 readonly 는 우회 가능하므로 서버가 최종 차단한다(값을 무시하고 컬럼을 건드리지 않음).
+        //   원인/재발방지/즉시조치는 종전 동작 그대로 유지한다(종결 후 보완 기록 허용 — 무회귀).
+        boolean tempActionEditable =
+            !STATUS_COMPLETED.equals(current) && !STATUS_UNADDRESSED.equals(current);
+
+        int updated = nearMiss01Mapper.updateIncident(
+            SaveIncidentCommand.from(param, tempActionEditable));
         if (updated == 0) {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);
         }
@@ -195,11 +202,13 @@ public class NearMiss01ServiceImpl implements NearMiss01Service {
         }
     }
 
-    private void ensureExists(String gvCmpnyCd, String siteCd, String nearMissId) {
+    /** 사업장 스코프 존재 확인 + 현재 처리상태 반환. 없으면 404(IDOR 차단). */
+    private String requireStatus(String gvCmpnyCd, String siteCd, String nearMissId) {
         String status = nearMiss01Mapper.selectReportStatus(
             new IncidentInfoQuery(siteCd, nearMissId, gvCmpnyCd));
         if (status == null) {
             throw new ApiException(NearMissErrorCode.NEARMISS_404_001);
         }
+        return status;
     }
 }

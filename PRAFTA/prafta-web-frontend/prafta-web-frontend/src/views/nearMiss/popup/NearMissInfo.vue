@@ -93,6 +93,18 @@
           <div class="incident-section action-section">
             <div class="section-header">조사 / 조치</div>
             <div class="form-container">
+              <!-- 임시조치(관리자) — 앱 1차확인에서 입력된 현장 조치 메모.
+                   완료/미처리대상 건은 읽기전용(서버도 동일하게 무시). -->
+              <div class="form-row">
+                <label>임시조치</label>
+                <textarea
+                  v-model="formData.adminTempActionDesc"
+                  :readonly="isReadOnly"
+                  placeholder="앱에서 관리자가 남긴 현장 임시조치가 표시됩니다"
+                  maxlength="500"
+                  rows="2"
+                ></textarea>
+              </div>
               <div class="form-row">
                 <label>추정 원인</label>
                 <textarea
@@ -227,6 +239,9 @@ const formData = ref({
   potentialSeverityCd: "",
   potentialSeverityNm: "",
   immediateActionDesc: "",
+  // 관리자 임시조치 메모(ADMIN_TEMP_ACTION_DESC) — 앱 1차확인에서 입력된 값.
+  //   2026-09-05: 웹이 이 컬럼을 아예 다루지 않아 앱에서 남긴 메모를 볼 수도 고칠 수도 없었다.
+  adminTempActionDesc: "",
   causeDesc: "",
   preventionDesc: "",
   fileMgmtCd: "",
@@ -380,7 +395,8 @@ const fnChangeStatus = async (reportStatusCd, rejectReasonVal) => {
   return response;
 };
 
-// 정밀조사 저장 = save-incident(원인/재발방지/임시조치) + 상태 변경 시 change-status 동반
+// 정밀조사 저장 = save-incident(원인/재발방지/즉시조치/임시조치) + 상태 변경 시 change-status 동반
+//   임시조치는 완료/미처리대상 건에서 서버가 무시한다(읽기전용 — 화면 readonly 와 이중 가드).
 const fnSave = async () => {
   const ok = await proxy.$confirm("정밀조사 내용을 저장하시겠습니까?");
   if (!ok) return;
@@ -394,6 +410,7 @@ const fnSave = async () => {
         causeDesc: formData.value.causeDesc,
         preventionDesc: formData.value.preventionDesc,
         immediateActionDesc: formData.value.immediateActionDesc,
+        adminTempActionDesc: formData.value.adminTempActionDesc,
       },
       { headers: { "Content-Type": "application/json" } }
     );

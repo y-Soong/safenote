@@ -15,6 +15,7 @@
       , A.POTENTIAL_SEVERITY_CD                                                 AS potentialSeverityCd
       , FNC_CMM_INFO_SRCH(A.CMPNY_CD, 'SYST_VAL', A.POTENTIAL_SEVERITY_CD, 'SYS062') AS potentialSeverityNm
       , A.IMMEDIATE_ACTION_DESC                                                 AS immediateActionDesc
+      , A.ADMIN_TEMP_ACTION_DESC                                                AS adminTempActionDesc
       , A.CAUSE_DESC                                                            AS causeDesc
       , A.PREVENTION_DESC                                                       AS preventionDesc
       , A.FILE_MGMT_CD                                                          AS fileMgmtCd
@@ -142,7 +143,11 @@
       AND A.USE_YN = 'Y'
     </select>
 
-    <!-- E4 정밀조사 저장 (원인/재발방지/임시조치). 검토자 기록 -->
+    <!-- E4 정밀조사 저장 (원인/재발방지/즉시조치/임시조치). 검토자 기록.
+         2026-09-05: ADMIN_TEMP_ACTION_DESC(관리자 임시조치) 편입. 종전에는 이 컬럼을 웹이 전혀
+         다루지 않아 앱에서 남긴 메모를 웹에서 볼 수도 고칠 수도 없었다.
+         null 이면 SET 자체를 하지 않는다(종결 건은 서비스가 null 을 넣어 읽기전용으로 강제).
+         빈 문자열은 "명시적 삭제" 로 취급해 그대로 저장한다. -->
     <update id="updateIncident"
             parameterType="com.prafta.web.nearmiss.nearmiss01.application.command.SaveIncidentCommand">
     /* NearMiss01Mapper.updateIncident */
@@ -151,6 +156,9 @@
         CAUSE_DESC           = #{causeDesc}
       , PREVENTION_DESC      = #{preventionDesc}
       , IMMEDIATE_ACTION_DESC = #{immediateActionDesc}
+      <if test="adminTempActionDesc != null">
+      , ADMIN_TEMP_ACTION_DESC = #{adminTempActionDesc}
+      </if>
       , REVIEWER_ID          = #{gvUserCd}
       , REVIEW_DTIME         = NOW()
       , UPDATE_NO            = #{gvUserCd}

@@ -243,7 +243,11 @@
     UPDATE TB_NEAR_MISS
     SET
         REPORT_STATUS_CD       = '200'
+      <!-- 2026-09-05: 무조건 SET 하던 것을 조건부로 바꿈. 앱은 입력칸이 비면 null 을 보내는데,
+           그대로 SET 하면 기존 메모가 지워진다. 같은 매퍼 updateReject 의 보호 방식과 맞춘다. -->
+      <if test="adminTempActionDesc != null and adminTempActionDesc != ''">
       , ADMIN_TEMP_ACTION_DESC = #{adminTempActionDesc}
+      </if>
       , REVIEWER_ID            = #{gvUserCd}
       , REVIEW_DTIME           = NOW()
       , UPDATE_NO              = #{gvUserCd}
