@@ -375,6 +375,11 @@ const assessKeys = () => ({
   assessmentCd: props.riskAssessmentData.assessmentCd,
 });
 
+// 일자 정규화: 화면(CalendarSrch)은 YYYY-MM-DD 로 다루지만 DB/서버 검증은 YYYYMMDD(varchar(8)) 다.
+//   서버 @Pattern("^(\\d{8})?$") 위반(형식 검증 실패)을 막기 위해 전송 직전에만 대시를 제거한다.
+//   빈값/미선택은 빈 문자열(선택 항목이라 null 허용).
+const fnToYyyymmdd = (ymd) => String(ymd || "").replace(/-/g, "").trim();
+
 // 위험도 산출 (빈도 × 강도)
 const calcRiskLv = (frequency, intensity) => {
   if (!frequency || !intensity) return "";
@@ -507,7 +512,7 @@ const saveImprovementItem = async (idx) => {
     const requestBody = {
       ...assessKeys(),
       improvementSeq: item.improvementSeq, // null=신규 / 값=수정
-      improveDate: item.improveDate,
+      improveDate: fnToYyyymmdd(item.improveDate),
       improveDesc: item.improveDesc,
       likelihoodScore: Number(item.likelihoodScore),
       severityScore: Number(item.severityScore),
@@ -559,7 +564,7 @@ const saveAll = async () => {
       const requestBody = {
         ...assessKeys(),
         improvementSeq: item.improvementSeq,
-        improveDate: item.improveDate,
+        improveDate: fnToYyyymmdd(item.improveDate),
         improveDesc: item.improveDesc,
         likelihoodScore: Number(item.likelihoodScore),
         severityScore: Number(item.severityScore),
@@ -616,7 +621,7 @@ const completeImprovement = async () => {
         revalSeverityScore: Number(latest.severityScore),
         revalRiskLv: latest.riskLv,
         revalDesc: latest.improveDesc,
-        revalDate: latest.improveDate,
+        revalDate: fnToYyyymmdd(latest.improveDate),
       },
       { headers: { "Content-Type": "application/json" } }
     );

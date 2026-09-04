@@ -159,7 +159,7 @@
                   :key="item.improvementSeq"
                 >
                   <td class="report-table__no">{{ idx + 1 }}</td>
-                  <td>{{ item.improveDate || "-" }}</td>
+                  <td>{{ fnFormatYmd(item.improveDate) }}</td>
                   <td class="report-table__desc">
                     {{ item.improveDesc || "-" }}
                   </td>
@@ -224,6 +224,10 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 });
 
 const printRef = ref(null);
+
+// 개선일자 표시 형식: DB 는 varchar(8) YYYYMMDD 로 저장하므로 화면에서는 YYYY-MM-DD 로 끊어 보여준다.
+//   공용 유틸(formatDateString)은 8/6자리만 변환하고 그 외(빈값·날짜시각 문자열)는 원본을 돌려주므로 안전하다.
+const fnFormatYmd = (ymd) => proxy.$util.formatDateString(ymd) || "-";
 
 // 위험상황 + 개선 결과 표시 데이터 (props 로 채움)
 const report = ref({
