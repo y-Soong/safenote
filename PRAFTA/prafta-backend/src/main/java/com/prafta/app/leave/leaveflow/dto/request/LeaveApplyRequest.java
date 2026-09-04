@@ -91,4 +91,13 @@ public class LeaveApplyRequest {
     @FieldLabel("증빙파일ID")
     @Size(max = 50)
     private String evidenceFileId;
+
+    /**
+     * 휴게시간 무시 요청(BW-04, 근기법 제54조① 단서). 'Y'/'N', 미전송=N.
+     * 반차(01)·시간차(02/03/04)에서만 'Y' 허용(그 외 ATTD_400_219) + 회사 BRK_WAIVE_ALLOW_YN='Y' 필요(ATTD_400_217).
+     */
+    @FieldLabel("휴게시간무시")
+    @Size(max = 1)
+    @Pattern(regexp = "[YN]")
+    private String brkWaiveYn;
 }

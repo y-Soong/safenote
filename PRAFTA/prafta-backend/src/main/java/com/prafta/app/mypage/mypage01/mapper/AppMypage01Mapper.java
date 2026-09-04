@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 
 import com.prafta.app.mypage.mypage01.application.command.DefaultSchChangeReqInsertCommand;
 import com.prafta.app.mypage.mypage01.result.ApprovalCandidateResult;
+import com.prafta.app.mypage.mypage01.result.BrkWaiveStandingResult;
 import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.app.mypage.mypage01.result.UserProfileResult;
@@ -246,4 +247,27 @@ public interface AppMypage01Mapper {
 
     /** tb_user_attd_req INSERT(REQ_TYPE='14' 전용). */
     int insertDefaultSchChangeReq(DefaultSchChangeReqInsertCommand cmd);
+
+    // ============================================================
+    // BW-12(§7-1): 휴게 미이용 상시 요청 — 현행값(tb_user) + 변경 이력
+    // ============================================================
+
+    /**
+     * 본인 상시 요청 현행값 + 고용형태 1행(토큰 스코프). 사용자 미존재면 null.
+     * ★ tb_user 신규 2컬럼은 prafta-brk-waive-3-standing-ddl.sql 선적용 필수.
+     */
+    BrkWaiveStandingResult selectBrkWaiveStanding(@Param("cmpnyCd") String cmpnyCd,
+                                                  @Param("userCd") String userCd);
+
+    /** 본인 상시 요청 현행값 UPDATE(값 + 변경 시각 NOW()). 이력 INSERT 와 한 트랜잭션. */
+    int updateBrkWaiveStanding(@Param("cmpnyCd") String cmpnyCd,
+                               @Param("userCd") String userCd,
+                               @Param("standingYn") String standingYn,
+                               @Param("updateNo") String updateNo);
+
+    /** 상시 요청 변경 이력 INSERT(행위자 = 본인 — 서버 강제). */
+    int insertBrkWaiveStandingHist(@Param("cmpnyCd") String cmpnyCd,
+                                   @Param("userCd") String userCd,
+                                   @Param("standingYn") String standingYn,
+                                   @Param("chgBy") String chgBy);
 }

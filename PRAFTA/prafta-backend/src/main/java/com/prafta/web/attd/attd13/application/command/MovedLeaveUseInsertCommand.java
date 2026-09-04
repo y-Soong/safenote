@@ -36,5 +36,9 @@ public record MovedLeaveUseInsertCommand(
     , String designatorType
     , String origDesignatedDate
     , String insertNo
+    /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_YN 그대로 복사('Y'/'N', null=N). */
+    , String brkWaiveYn
+    /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_REQ_DTIME('yyyy-MM-dd HH:mm:ss', null 가능) 그대로 복사 — 요청 시각 보존. */
+    , String brkWaiveReqDtime
 ) {
 }

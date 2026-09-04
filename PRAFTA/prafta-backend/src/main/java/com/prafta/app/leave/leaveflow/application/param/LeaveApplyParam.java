@@ -42,6 +42,11 @@ public record LeaveApplyParam(
      * 서버 강제 검증은 {@code AppLeaveFlowServiceImpl.submitLeave} 가 EVIDENCE_YN='Y' 타입에 한해 수행한다.
      */
     , String evidenceFileId
+    /**
+     * 휴게시간 무시 요청(BW-04). 'Y'/'N' — 미전송(null)은 'N' 으로 본다.
+     * 기간 신청({@link #deriveForDate})은 종일 전용이라 항상 'N' 고정 승계.
+     */
+    , String brkWaiveYn
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -74,6 +79,7 @@ public record LeaveApplyParam(
             , tokenInfo.gv_userCd()
             , null   // groupId — 단일일 신청은 묶음이 아니다(무회귀: 기존 동작 완전 동일)
             , request.getEvidenceFileId()
+            , "Y".equals(request.getBrkWaiveYn()) ? "Y" : "N" // 미전송/null/'N' → 'N'
         );
     }
 
@@ -105,6 +111,7 @@ public record LeaveApplyParam(
             , gvUserCd
             , groupId
             , evidenceFileId // 기간신청은 날짜별로 분해되지만 증빙 파일은 신청 1건 대표값 그대로 승계
+            , "N"            // BW-04: 기간 신청은 종일 전용 — 휴게 무시 요청은 항상 'N' 고정(요청값 무시)
         );
     }
 }

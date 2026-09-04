@@ -65,6 +65,7 @@ public record LeavePolicySaveParam(
             , request.getUsageUnit() // LC-10: 반반차는 'QUARTER_DAY' 값으로 표현(구 allowQuarter 토글 폐기)
             , request.getAllowRemnantRoundUp() // PC-05(D3): 짜투리 잔여 보전 옵션(Y/N)
             , request.getChangeReason()
+            , request.getBrkWaiveAllowYn() // BW-04: 휴게 미이용 요청 허용(Y/N). 미전송은 서비스에서 'Y' 정규화
         );
 
         return new LeavePolicySaveParam(

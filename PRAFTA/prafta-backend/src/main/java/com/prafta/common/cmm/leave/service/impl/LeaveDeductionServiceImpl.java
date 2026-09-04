@@ -81,6 +81,52 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
         return boundary;
     }
 
+    @Override
+    public ScheduleWorkMinutesUtils.HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd,
+                                                                      String userCd, String workYmd,
+                                                                      ScheduleWorkMinutesUtils.HalfPart part,
+                                                                      boolean waive) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return null;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 근무 계획/스케줄 없음 → 반차 경계 산출 불가(호출부가 ATTD_400_110 으로 거부).
+            return null;
+        }
+        ScheduleWorkMinutesUtils.HalfDayBoundary boundary = ScheduleWorkMinutesUtils.halfDayBoundary(sch, part, waive);
+        if (boundary == null) {
+            log.warn("반차 경계 계산 실패(part={}, waive={}) - 스케줄 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
+                    part, waive, cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
+        } else if (waive) {
+            log.debug("[leave-deduct] 반차 경계(휴게 무시 체크): userCd={}, workYmd={}, part={}, boundary={}, recordOnly={}, brkTime={}",
+                    userCd, workYmd, boundary.part(), boundary.boundaryMin(), boundary.recordOnly(),
+                    boundary.breakTimeRegistered());
+        }
+        return boundary;
+    }
+
+    @Override
+    public ScheduleWorkMinutesUtils.BreakMergeResult mergeAdjacentBreaks(String cmpnyCd, String siteCd,
+                                                                        String userCd, String workYmd,
+                                                                        int startMin, int endMin) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null || startMin >= endMin) {
+            return null;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 스케줄 없음 → 편입 산출 불가(호출부가 ATTD_400_110 으로 거부).
+            return null;
+        }
+        ScheduleWorkMinutesUtils.BreakMergeResult r = ScheduleWorkMinutesUtils.mergeAdjacentBreaks(sch, startMin, endMin);
+        if (r != null) {
+            log.debug("[leave-deduct] 시간차 휴게 편입: userCd={}, workYmd={}, 신청={}~{}, 저장={}~{}, 차감={}분, 편입={}분, recordOnly={}",
+                    userCd, workYmd, startMin, endMin, r.exemptStartMin(), r.exemptEndMin(),
+                    r.chargeMinutes(), r.waivedBreakMinutes(), r.recordOnly());
+        }
+        return r;
+    }
+
     @Deprecated
     @Override
     public BigDecimal calcDeductionDays(int requestMinutes, int dailyStdWorkMinutes) {
@@ -171,14 +217,25 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
                 || overlapsBreak(startMin, endMin, sch.getSecBrkStrTime(), sch.getSecBrkEndTime());
     }
 
-    /** 신청 구간 [startMin,endMin) 와 휴게 구간 [brkStr,brkEnd) 가 겹치면 true. 휴게 미설정/0폭이면 false. */
+    /**
+     * 신청 구간 [startMin,endMin) 와 휴게 구간 [brkStr,brkEnd) 가 겹치면 true. 휴게 미설정/0폭이면 false.
+     *
+     * <p>G-1(2026-09-04): 휴게 종료는 {@link DateTimeUtils#brkEndToMinutes}("2400"=1440 인정)로 파싱하고,
+     * 종료 &lt; 시작이면 자정 넘김 휴게(예 '2330'~'0030')로 보아 +1440 wrap 한다 — 야간 휴게가 가로지름 판정에서
+     * 사라지던 결함 해소. 종료 == 시작('0000'~'0000')은 0폭 = 휴게 없음(종전과 동일).
+     * 신청 분은 호출부 원시 프레임(0..1439)이므로 자정 이전 신청만 야간 휴게와 겹칠 수 있다(현행 범위와 동일).
+     */
     private boolean overlapsBreak(int startMin, int endMin, String brkStr, String brkEnd) {
         Integer bs = DateTimeUtils.hhmmToMinutes(brkStr);
-        Integer be = DateTimeUtils.hhmmToMinutes(brkEnd);
-        if (bs == null || be == null || be <= bs) {
+        Integer be = DateTimeUtils.brkEndToMinutes(brkEnd);
+        if (bs == null || be == null) {
             return false;
         }
-        return startMin < be && bs < endMin;
+        int end = (be < bs) ? be + MINUTES_PER_DAY : be; // 자정 넘김 휴게 wrap
+        if (end == bs) {
+            return false;
+        }
+        return startMin < end && bs < endMin;
     }
 
     @Override

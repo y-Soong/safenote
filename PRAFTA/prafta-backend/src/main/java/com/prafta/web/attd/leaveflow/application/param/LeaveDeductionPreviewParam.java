@@ -18,6 +18,8 @@ public record LeaveDeductionPreviewParam(
     , String gvCmpnyCd
     , String gvSiteCd
     , String gvUserCd
+    /** 휴게시간 무시 요청(BW-04, 앱 미러). 'Y'/'N' — 미전송은 'N'. */
+    , String brkWaiveYn
 ) {
     public static LeaveDeductionPreviewParam from(LeaveDeductionPreviewRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -42,6 +44,7 @@ public record LeaveDeductionPreviewParam(
             , tokenInfo.gv_cmpnyCd()
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()
+            , "Y".equals(request.getBrkWaiveYn()) ? "Y" : "N" // 미전송/null/'N' → 'N'
         );
     }
 }

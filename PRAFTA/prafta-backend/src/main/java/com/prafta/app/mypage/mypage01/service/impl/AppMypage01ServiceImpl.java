@@ -13,6 +13,7 @@ import org.springframework.util.StringUtils;
 
 import com.prafta.app.mypage.mypage01.application.command.DefaultSchChangeReqInsertCommand;
 import com.prafta.app.mypage.mypage01.application.param.ApprovalCandidateParam;
+import com.prafta.app.mypage.mypage01.application.param.BrkWaiveStandingUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileSendParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileVerifyParam;
 import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
@@ -22,6 +23,7 @@ import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateItem;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
+import com.prafta.app.mypage.mypage01.dto.response.BrkWaiveStandingResponse;
 import com.prafta.app.mypage.mypage01.dto.response.DefaultSchChangeRequestResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileVerifyResponse;
@@ -33,6 +35,7 @@ import com.prafta.app.mypage.mypage01.dto.response.PresetSaveResponse;
 import com.prafta.app.mypage.mypage01.dto.response.PresetStepItem;
 import com.prafta.app.mypage.mypage01.mapper.AppMypage01Mapper;
 import com.prafta.app.mypage.mypage01.result.ApprovalCandidateResult;
+import com.prafta.app.mypage.mypage01.result.BrkWaiveStandingResult;
 import com.prafta.app.mypage.mypage01.result.PresetMasterResult;
 import com.prafta.app.mypage.mypage01.result.PresetStepResult;
 import com.prafta.app.mypage.mypage01.result.UserProfileResult;
@@ -92,11 +95,21 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
     /** PRAFTA-002: 결재 분기/라인 INSERT 공용 서비스(req07 과 동일 재사용, 같은 @Transactional 참여). */
     private final AttdApprovalLineService attdApprovalLineService;
 
+    /**
+     * BW-12(§7-1): 상시 요청 행 노출 조건(eligibleYn) 판정용 — 기본 근무타입(tb_user.DEFAULT_SCH_CD)의
+     * 유효 스케줄 시각. 공용 조회를 그대로 재사용한다(신규 쿼리 0건, 사업장 스코프는 쿼리 내부에서 파생).
+     */
+    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
+
     /** PRAFTA-002 F15: advisory lock 타임아웃(초). req07 DUP_LOCK_TIMEOUT_SEC 과 동일 정책값. */
     private static final int DUP_LOCK_TIMEOUT_SEC = 3;
 
     /** 기본 근무타입 변경 신청 사유 최대 길이(TB_USER_ATTD_REQ.REQ_REASON varchar(500)). */
     private static final int REQ_REASON_MAX_LEN = 500;
+
+    /** BW-12(§7-1): 고용형태 [SYS041] — 정규직만 상시 요청 행을 노출하고, 일용직은 저장 자체를 거부한다. */
+    private static final String EMPLOYMENT_TYPE_REGULAR = "REGULAR";
+    private static final String EMPLOYMENT_TYPE_DAILY = "DAILY";
 
     // 휴대폰 정규화 후 허용 자리수(10~11). 정책 §3.2.
     private static final int PHONE_MIN_DIGITS = 10;
@@ -749,6 +762,78 @@ public class AppMypage01ServiceImpl implements AppMypage01Service {
         return DefaultSchChangeRequestResponse.builder()
                 .reqId(reqId)
                 .reqStatus(AttdReqTypeUtils.REQ_STATUS_REQUESTED)
+                .build();
+    }
+
+    // ============================================================
+    // BW-12(§7-1): 휴게 미이용 상시 요청 — 근기법 제54조① 단서 / 정책서 attd/08-leave.md §8.5.10(e)
+    //   근로자 본인만 켜고 끈다(관리자 대리 경로 없음 — 식별자는 토큰 출처만).
+    // ============================================================
+
+    @Override
+    public BrkWaiveStandingResponse getBrkWaiveStanding(TokenInfo tokenInfo) {
+        if (tokenInfo == null || tokenInfo.gv_cmpnyCd() == null || tokenInfo.gv_userCd() == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        BrkWaiveStandingResult row = appMypage01Mapper.selectBrkWaiveStanding(
+                tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd());
+        if (row == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        return toBrkWaiveStandingResponse(tokenInfo, row);
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public BrkWaiveStandingResponse updateBrkWaiveStanding(BrkWaiveStandingUpdateParam param) {
+        String cmpnyCd = param.tokenInfo().gv_cmpnyCd();
+        String userCd = param.tokenInfo().gv_userCd();
+        String standingYn = param.standingYn();
+
+        // 값 검증 — 'Y'/'N' 외에는 저장하지 않는다(컬럼 char(1) 오염 방지).
+        if (!"Y".equals(standingYn) && !"N".equals(standingYn)) {
+            throw new ApiException(AttdErrorCode.ATTD_400_220);
+        }
+
+        BrkWaiveStandingResult before = appMypage01Mapper.selectBrkWaiveStanding(cmpnyCd, userCd);
+        if (before == null) {
+            throw new ApiException(CommonErrorCode.COMMON_400_003);
+        }
+        // 일용직(DAILY)은 대상 아님(정책서 §8.5.10(e)) — 화면 미노출 + 서버 거부(이중 차단).
+        if (EMPLOYMENT_TYPE_DAILY.equals(before.employmentType())) {
+            throw new ApiException(AttdErrorCode.ATTD_400_220);
+        }
+
+        // 현행값 UPDATE + 이력 INSERT 는 한 트랜잭션(요청 사실 기록이 유실되지 않게 한다).
+        appMypage01Mapper.updateBrkWaiveStanding(cmpnyCd, userCd, standingYn, userCd);
+        appMypage01Mapper.insertBrkWaiveStandingHist(cmpnyCd, userCd, standingYn, userCd);
+
+        log.info("[BW-12] 휴게 미이용 상시 요청 변경 - userCd={}, 이전={}, 이후={}",
+                userCd, before.standingYn(), standingYn);
+
+        // 변경 시각은 서버 포맷으로 되돌려 준다(화면 재조회 없이 갱신 — 클라 시계 신뢰 금지).
+        BrkWaiveStandingResult after = appMypage01Mapper.selectBrkWaiveStanding(cmpnyCd, userCd);
+        return toBrkWaiveStandingResponse(param.tokenInfo(), after == null ? before : after);
+    }
+
+    /**
+     * 상시 요청 응답 조립. eligibleYn = 정규직 + 기본 근무타입 소정 240분·휴게 0(plan §7 Q-8).
+     * 판정은 배지 산출과 같은 단일 출처({@code BreakLegalCheckUtils.evaluateDay})를 쓴다 —
+     * 화면 노출 조건과 배지 조건이 갈리지 않게 한다.
+     */
+    private BrkWaiveStandingResponse toBrkWaiveStandingResponse(TokenInfo tokenInfo, BrkWaiveStandingResult row) {
+        boolean eligible = false;
+        if (EMPLOYMENT_TYPE_REGULAR.equals(row.employmentType())) {
+            com.prafta.common.cmm.leave.vo.DailyScheduleVO sch = leaveDeductionMapper.selectUserDefaultSchedule(
+                    tokenInfo.gv_cmpnyCd(), tokenInfo.gv_userCd(),
+                    java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.BASIC_ISO_DATE));
+            eligible = com.prafta.common.cmm.leave.util.BreakLegalCheckUtils
+                    .evaluateDay(sch, true, false).eligible();
+        }
+        return BrkWaiveStandingResponse.builder()
+                .standingYn("Y".equals(row.standingYn()) ? "Y" : "N")
+                .standingDtime(row.standingDtime())
+                .eligibleYn(eligible ? "Y" : "N")
                 .build();
     }
 

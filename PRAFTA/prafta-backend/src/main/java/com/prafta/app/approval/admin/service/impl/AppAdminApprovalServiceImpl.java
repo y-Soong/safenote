@@ -79,6 +79,13 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
     //   동일 JVM 의 @Service 빈을 같은 트랜잭션으로 호출한다(앱 leaveflow/근태 모듈이 이미 쓰는 패턴).
     private final Attd07Service attd07Service;             // 근태보정/초과 승인·반려(MGMT 반영+HIST)
     private final LeaveFlowService leaveFlowService;       // 연차 다단 결재 승인·반려(단계 진행+차감)
+    /** BW-06: 관리자 승인상세 법정 휴게 하한 경고 산출용 그날 스케줄 조회(저장 행 기준 재산출). */
+    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
+
+    /** BW-06: 법정 휴게 경고 대상 단위 = 반차(01)·시간차(02/03/04). 종일(00)은 비대상. */
+    private static boolean isPartialLeaveUnit(String unit) {
+        return "01".equals(unit) || "02".equals(unit) || "03".equals(unit) || "04".equals(unit);
+    }
 
     // SYS032 요청유형
     private static final List<String> CORRECTION_TYPES = List.of("01", "02");
@@ -605,6 +612,17 @@ public class AppAdminApprovalServiceImpl implements AppAdminApprovalService {
                 body.put("unitNm", lb.unitNm());
                 // 가불표시-02: 가불 충당 일수(0 이상). FE 는 0 초과일 때만 "가불 N일" 행 표시.
                 body.put("borrowDays", lb.borrowDays());
+                // BW-06: 휴게 미이용 요청 배지 + 법정 휴게 하한 경고(저장 행 기준 재산출, 사용자 승인상세 미러).
+                body.put("brkWaiveYn", lb.brkWaiveYn() == null ? "N" : lb.brkWaiveYn());
+                body.put("brkWaiveReqDtime", lb.brkWaiveReqDtime());
+                com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result legal =
+                        isPartialLeaveUnit(lb.useUnitType())
+                                ? com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateStored(
+                                        leaveDeductionMapper.selectDailySchedule(cmpnyCd, meta.siteCd(), meta.userCd(), lb.startDate()),
+                                        lb.startTime(), lb.endTime(), "Y".equals(lb.brkWaiveYn()))
+                                : com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result.notEligible();
+                body.put("brkLegalWarnYn", legal.warnYn());
+                body.put("brkLegalWarnMsg", legal.message());
                 Map<String, Object> applied = new LinkedHashMap<>();
                 applied.put("startDate", lb.startDate());
                 applied.put("startTime", lb.startTime());

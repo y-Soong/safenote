@@ -179,6 +179,10 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 throw new ApiException(PlatformErrorCode.PLATFORM_400_019);
             }
             brkMin = String.valueOf(brkEnd - brkStr); // FST_SCH_BRK_MIN varchar(3) — 구간상한(1440미만)으로 자릿수 안전
+            // BW-10(G-6): Attd_01 저장과 같은 공용 검증(BreakTimeValidator) — 폭 == 분·범위·'2400' 파싱. 위 산출로 폭 == 분은
+            //   자동 성립하므로 실질은 범위 규칙 재확인이며, 두 경로가 한 함수를 쓰도록 묶는 것이 목적(위반 시 ATTD_400_197 detail).
+            com.prafta.common.cmm.sch.util.BreakTimeValidator.validateSegment(
+                    "구간1", schStrTime, schEndTime, brkMin, brkStrTime, brkEndTime);
         }
 
         // 6-2) 기본 근무타입 적용일(선택 입력 — prafta-061 R1. 미입력 시 오늘=회사 생성일, 종전 동작과 동일).

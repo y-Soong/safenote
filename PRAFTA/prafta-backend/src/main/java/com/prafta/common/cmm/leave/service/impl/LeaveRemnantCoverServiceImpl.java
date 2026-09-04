@@ -192,11 +192,12 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
     @Override
     public String applyTrigger(String cmpnyCd, String siteCd, String userCd, String workYmd, String useUnitType,
                                String startTime, String endTime, Integer leaveMinutes, String reason, String reqId,
-                               RemnantTriggerPlanVO plan, String actorUserCd) {
+                               RemnantTriggerPlanVO plan, String actorUserCd, String brkWaiveYn, String evidenceFileId) {
         if (plan == null || plan.charges() == null || plan.charges().isEmpty()) {
             // 판정 계획 없이 호출된 비정상 — 잔여 부족 거부와 동일 처리(호출부 방어).
             throw new ApiException(AttdErrorCode.ATTD_400_051);
         }
+        final String waiveYn = YN_Y.equals(brkWaiveYn) ? YN_Y : "N";
         String leaveId = null;
         boolean first = true;
         for (RemnantGrantChargeVO charge : plan.charges()) {
@@ -208,6 +209,8 @@ public class LeaveRemnantCoverServiceImpl implements LeaveRemnantCoverService {
                     .startDate(workYmd).startTime(startTime).endDate(workYmd).endTime(endTime)
                     .useUnitType(useUnitType).leaveDays(charge.days())
                     .leaveMinutes(first ? leaveMinutes : null) // 분할 규칙: 첫 행만(PC-01 REQ 합산 정합)
+                    .evidenceFileId(first ? evidenceFileId : null) // BW-04(Q-2): 증빙은 첫 행만(신청 경로 관례 동일)
+                    .brkWaiveYn(waiveYn) // BW-04: 휴게 무시 요청은 판정 속성 — 분할 전 행 동일 값
                     .leaveReason(reason).leaveStatus(USE_CONFIRMED).insertNo(actorUserCd)
                     .build());
             leaveRemnantCoverMapper.recomputeGrantUsedDays(cmpnyCd, charge.grantId(), actorUserCd);

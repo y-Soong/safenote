@@ -73,6 +73,7 @@
     </select>
 
     <!-- use 행 INSERT — LeaveFlowMapper.insertLeaveUse 미러(매퍼별 보유 관례). -->
+    <!-- BW-04(Q-2): EVIDENCE_FILE_ID(첫 행만 - 호출부) + BRK_WAIVE_YN / BRK_WAIVE_REQ_DTIME(서버 시각, Y 일 때만) 추가. -->
     <insert id="insertLeaveUse" parameterType="com.prafta.common.cmm.leave.vo.RemnantLeaveUseVO">
     /* LeaveRemnantCoverMapper.insertLeaveUse */
     INSERT INTO TB_USER_LEAVE_USE (
@@ -90,7 +91,10 @@
         , USE_UNIT_TYPE
         , LEAVE_DAYS
         , LEAVE_MINUTES
+        , BRK_WAIVE_YN
+        , BRK_WAIVE_REQ_DTIME
         , LEAVE_REASON
+        , EVIDENCE_FILE_ID
         , LEAVE_STATUS
         , DEL_YN
         , INSERT_NO
@@ -111,7 +115,10 @@
         , #{useUnitType}
         , #{leaveDays}
         , #{leaveMinutes}
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN NOW() ELSE NULL END
         , #{leaveReason}
+        , #{evidenceFileId}
         , #{leaveStatus}
         , 'N'
         , #{insertNo}

@@ -11,7 +11,9 @@
     <!-- 헤더 -->
     <header class="lad-hd">
       <button type="button" class="lad-hd__back" aria-label="뒤로" @click="onBack">
-        <svg class="icon" width="22" height="22" aria-hidden="true"><use href="#i-lad-chev-left" /></svg>
+        <svg class="icon" width="22" height="22" aria-hidden="true">
+          <use href="#i-lad-chev-left" />
+        </svg>
       </button>
       <h1 class="lad-hd__title">연차 결재 상세</h1>
       <span class="lad-hd__spacer" aria-hidden="true"></span>
@@ -34,8 +36,12 @@
         <!-- ① 메타 -->
         <section class="lad-card">
           <div class="lad-meta__top">
-            <span class="lad-chip lad-chip--type">{{ body.leaveNm || meta.reqTypeNm || '연차' }}</span>
-            <span v-if="body.paidYn" class="lad-chip">{{ body.paidYn === 'Y' ? '유급' : '무급' }}</span>
+            <span class="lad-chip lad-chip--type">{{
+              body.leaveNm || meta.reqTypeNm || '연차'
+            }}</span>
+            <span v-if="body.paidYn" class="lad-chip">{{
+              body.paidYn === 'Y' ? '유급' : '무급'
+            }}</span>
             <span v-if="body.unitNm" class="lad-chip">{{ body.unitNm }}</span>
             <span class="lad-meta__status">{{ meta.reqStatusNm }}</span>
           </div>
@@ -43,7 +49,9 @@
             <strong>{{ meta.requesterUserNm }}</strong>
             <span v-if="meta.nodeNm" class="lad-meta__dept">{{ meta.nodeNm }}</span>
           </p>
-          <p class="lad-meta__sub">대상일자 {{ fmtYmd(meta.targetYmd) }} · 요청 {{ fmtDt(meta.reqDate) }}</p>
+          <p class="lad-meta__sub">
+            대상일자 {{ fmtYmd(meta.targetYmd) }} · 요청 {{ fmtDt(meta.reqDate) }}
+          </p>
         </section>
 
         <!-- ② 게이트 배너(조건부) -->
@@ -58,6 +66,15 @@
           <!-- 가불표시-05: 가불 포함 신청 표기 — borrowDays > 0 일 때만(일 단위 표기는 formatLeaveDaysOnly 단일 출처) -->
           <p v-if="Number(body.borrowDays) > 0" class="lad-row lad-row--borrow">
             가불 {{ formatLeaveDaysOnly(body.borrowDays) }} 포함
+          </p>
+          <!-- BW-08: 휴게 미이용 요청 표기(근기법 제54조① 단서) — 서버 body.brkWaiveYn / brkWaiveReqDtime(표시 포맷 서버 제공).
+               필드 부재(구서버)면 미노출. 승인/반려 게이트 무변경(차단 없음). -->
+          <p v-if="body.brkWaiveYn === 'Y'" class="lad-row lad-row--brk-waive">
+            휴게 미이용 요청 · {{ body.brkWaiveReqDtime || '-' }}
+          </p>
+          <!-- 법정 휴게 하한 경고(차단 없음) — 문구 서버 제공 -->
+          <p v-if="body.brkLegalWarnYn === 'Y'" class="lad-row lad-row--legal-warn" role="status">
+            {{ body.brkLegalWarnMsg }}
           </p>
           <div class="lad-balance">
             <span>부여 {{ body.balance?.granted ?? '-' }}</span>
@@ -116,10 +133,20 @@
 
     <!-- ⑥ 결정(대기 + 내 차례일 때만) -->
     <footer v-if="meta && gate.canProcess" class="lad-actions">
-      <button type="button" class="lad-btn lad-btn--reject" :disabled="submitting" @click="openRejectSheet">
+      <button
+        type="button"
+        class="lad-btn lad-btn--reject"
+        :disabled="submitting"
+        @click="openRejectSheet"
+      >
         반려
       </button>
-      <button type="button" class="lad-btn lad-btn--approve" :disabled="submitting" @click="onApprove">
+      <button
+        type="button"
+        class="lad-btn lad-btn--approve"
+        :disabled="submitting"
+        @click="onApprove"
+      >
         요청대로 승인
       </button>
     </footer>
@@ -134,8 +161,15 @@
 
     <svg width="0" height="0" class="lad-sprite" aria-hidden="true" focusable="false">
       <defs>
-        <symbol id="i-lad-chev-left" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-          stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <symbol
+          id="i-lad-chev-left"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        >
           <polyline points="15 18 9 12 15 6" />
         </symbol>
       </defs>
@@ -484,6 +518,20 @@ function fmtDt(v) {
 .lad-row--borrow {
   color: var(--color-warning-text);
   font-weight: 600;
+}
+/* BW-08: 휴게 미이용 요청 행 — primary 톤(요청 사실). 신규 토큰 발행 없음 */
+.lad-row--brk-waive {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+/* BW-08: 법정 휴게 하한 경고 행 — warning 토큰(차단 없음, 표시 전용) */
+.lad-row--legal-warn {
+  padding: var(--space-xs) var(--space-sm);
+  background: var(--color-warning-tint);
+  color: var(--color-warning-text);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  word-break: keep-all;
 }
 
 /* ① 메타 */

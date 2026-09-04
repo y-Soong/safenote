@@ -122,4 +122,10 @@ public class LeavePolicyVO {
      * 'N'(기본) = 시스템 미개입 — 소멸 임박 짜투리 리포트(D9-③)로 지원.
      */
     private String allowRemnantRoundUp;
+
+    /**
+     * 부분휴가(반차·시간차) 휴게 미이용 요청 허용 Y/N (BW-04, 기본 'Y').
+     * 'N' 이면 앱 체크박스 미노출 + 서버 ATTD_400_217 거부. 미전송/비정상 값은 'Y' 정규화(기존 회사 동작 불변).
+     */
+    private String brkWaiveAllowYn;
 }

@@ -33,5 +33,21 @@ public record ConfirmedLeaveResult(
 
     /** 차감 일수 (decimal 문자열 그대로 — FE 가 정규화) */
     , String leaveDays
+
+    /* BW-06: 휴게 미이용 요청 배지 — 매퍼가 채움('Y'/'N', 'yyyy-MM-dd HH:mm'). ★record 끝(위치매핑). */
+    , String brkWaiveYn
+
+    , String brkWaiveReqDtime
+
+    /* BW-06: 법정 휴게 하한 경고 — 서비스가 채움(매퍼는 NULL 자리). 'Y'/'N', 문구(서버 생성). */
+    , String brkLegalWarnYn
+
+    , String brkLegalWarnText
 ) {
+
+    /** BW-06: 서비스가 산출한 법정 경고를 반영한 사본(record 불변). */
+    public ConfirmedLeaveResult withBrkLegalWarn(String warnYn, String warnText) {
+        return new ConfirmedLeaveResult(leaveCd, leaveNm, useUnitType, unitNm, startTime, endTime, leaveDays,
+                brkWaiveYn, brkWaiveReqDtime, warnYn, warnText);
+    }
 }

@@ -27,5 +27,9 @@ public record LeaveBodyRow(
      * borrowDays 다음(맨 끝) 추가 — 위치매핑 규약 준수.
      */
     , String evidenceFileId
+    /** BW-06: 휴게 미이용 요청 'Y'/'N'. ★record 끝(위치매핑). */
+    , String brkWaiveYn
+    /** BW-06: 휴게 미이용 요청 시각 'yyyy-MM-dd HH:mm'(서버 포맷, 없으면 null). */
+    , String brkWaiveReqDtime
 ) {
 }

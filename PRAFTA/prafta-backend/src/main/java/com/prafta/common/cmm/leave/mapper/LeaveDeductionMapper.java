@@ -69,4 +69,16 @@ public interface LeaveDeductionMapper {
                                                          @Param("siteCd") String siteCd,
                                                          @Param("userCd") String userCd,
                                                          @Param("workYmd") String workYmd);
+
+    /**
+     * BW-12(§7-1, 2026-09-04): 사용자의 휴게 미이용 <b>상시</b> 요청 현행값({@code tb_user.BRK_WAIVE_STANDING_YN}).
+     *
+     * <p>단시간(소정 240분·휴게 0) 근무일의 법정 휴게 하한 배지({@code BreakLegalCheckUtils.evaluateDay})
+     * 판정 입력. 앱 홈 today 카드·웹 근태 일자상세가 공용한다(같은 값을 두 곳에서 다르게 읽지 않도록 공용 조회 1본).
+     * 사용자 미존재면 {@code null}(= 요청 없음으로 취급).
+     *
+     * <p>★ {@code prafta-brk-waive-3-standing-ddl.sql} 선적용 필수(미적용 시 1054 Unknown column).
+     */
+    String selectBrkWaiveStandingYn(@Param("cmpnyCd") String cmpnyCd,
+                                    @Param("userCd") String userCd);
 }

@@ -34,4 +34,6 @@ public class LeaveUseCommand {
     private String evidenceFileId;
     private String leaveStatus;
     private String insertNo;
+    /** BW-04: 휴게시간 무시 요청 'Y'/'N'. 분할 차감 시 모든 행 동일 값(판정 속성). REQ_DTIME 은 매퍼가 NOW() 로 채운다. */
+    private String brkWaiveYn;
 }

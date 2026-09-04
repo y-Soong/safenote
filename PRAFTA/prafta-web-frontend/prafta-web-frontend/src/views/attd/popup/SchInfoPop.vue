@@ -389,7 +389,10 @@ const togglePreFixedOt = () => {
 
 /**
  * 휴게 종료시각 자동 계산: 시작시각 + 휴게시간(분).
- * 시작 미입력 시 빈 문자열. 24:00(1440분) 상한.
+ * 시작 미입력 시 빈 문자열.
+ * BW-09(G-1, 2026-09-04): 종전 24:00(1440분) 클램프를 제거하고 자정 wrap 으로 전환 —
+ *   23:30 + 60분 → "00:30", 정확히 24:00 → "00:00". 서버(BW-10)가 종료 < 시작이면 익일로 해석하고
+ *   "휴게 시각 폭 ≠ 휴게분" 은 ATTD_400_197 detail 로 거부한다. 클램프 시절엔 '2400' 이 저장돼 폭이 어긋났다.
  */
 const addMinutesToHHmm = (hhmm, addMin) => {
   const s = String(hhmm ?? "").replace(/\D/g, "");
@@ -398,8 +401,7 @@ const addMinutesToHHmm = (hhmm, addMin) => {
   const m = parseInt(s.slice(2, 4), 10);
   if (isNaN(h) || isNaN(m)) return "";
   let total = h * 60 + m + (parseInt(String(addMin ?? "0"), 10) || 0);
-  if (total > 1440) total = 1440;
-  if (total < 0) total = 0;
+  total = ((total % 1440) + 1440) % 1440; // 자정 wrap(음수 방어 포함)
   const hh = String(Math.floor(total / 60)).padStart(2, "0");
   const mm = String(total % 60).padStart(2, "0");
   return `${hh}:${mm}`;

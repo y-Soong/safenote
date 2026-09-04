@@ -47,6 +47,10 @@
              결재 미경유(직접 차감) 건은 REQ_ID 가 없어 null 이 되고, 확정 취급된다.
              ★record(LeaveUseTargetResult) 위치 기반 매핑이므로 반드시 SELECT 마지막에 둔다. -->
         , R.REQ_STATUS           AS reqStatus
+        <!-- BW-04(Q-1 승계): 원 행의 휴게 무시 요청 여부/시각 - 이동 시 새 행에 그대로 복사 + 대상일 경계는 waive 로 재산출.
+             ★위치매핑 - reqStatus 뒤 맨 끝에 추가. -->
+        , U.BRK_WAIVE_YN         AS brkWaiveYn
+        , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%d %H:%i:%s') AS brkWaiveReqDtime
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = U.CMPNY_CD
@@ -366,6 +370,8 @@
     <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
         , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
+    <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
+        , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -467,6 +473,8 @@
     <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
         , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
+    <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
+        , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -528,6 +536,8 @@
     <!-- 위치선택 확장(2026-08-18): record 마지막 2 컴포넌트와 1:1(3쿼리 동시 확장 — 위치매핑). -->
         , R.MOVE_TARGET_HALF_PART                    AS moveTargetHalfPart
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
+    <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
+        , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -618,6 +628,8 @@
         , USE_UNIT_TYPE
         , LEAVE_DAYS
         , LEAVE_MINUTES
+        , BRK_WAIVE_YN
+        , BRK_WAIVE_REQ_DTIME
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -643,6 +655,8 @@
         , #{useUnitType}
         , #{leaveDays}
         , #{leaveMinutes}
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN #{brkWaiveReqDtime} ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , 'CONFIRMED'

@@ -338,6 +338,18 @@
                     selected.leaveMinutes
                   }}분)
                 </dd>
+                <!-- QA D2(2026-09-04): 휴게 미이용 요청 배지(근기법 제54조① 단서) — 요건이 "근로자의
+                     명시적 요청"이라 결재자가 승인 화면에서 요청 사실을 확인할 수 있어야 한다.
+                     서버 값 표시 전용(승인/반려 게이트 무변경). 구서버 응답은 필드 부재 → 미노출. -->
+                <dt v-if="selected.brkWaiveYn === 'Y'">휴게</dt>
+                <dd v-if="selected.brkWaiveYn === 'Y'">
+                  <span class="ra-chip brk-waive"
+                    >휴게 미이용 요청 ·
+                    {{
+                      (selected.brkWaiveReqDtime || "").replace("T", " ") || "-"
+                    }}</span
+                  >
+                </dd>
                 <dt>사유</dt>
                 <dd>{{ selected.reqReason || "-" }}</dd>
                 <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 썸네일(클릭 시 확대) -->
@@ -1781,6 +1793,15 @@ onMounted(async () => {
   font-size: 0.7rem;
   background: var(--color-warning-bg, #fef3c7);
   color: var(--color-warning-text, #b45309);
+  border-radius: 0.3rem;
+  padding: 0.05rem 0.3rem;
+}
+/* QA D2: 휴게 미이용 요청 배지 — primary 톤(요청 사실, 경고 아님). 기존 칩 규격(.ra-chip.type)과
+   같은 토큰·크기를 쓰고 신규 토큰은 발행하지 않는다. */
+.ra-chip.brk-waive {
+  font-size: 0.7rem;
+  background: var(--color-primary-tint, #dcfce7);
+  color: var(--color-primary, #30796a);
   border-radius: 0.3rem;
   padding: 0.05rem 0.3rem;
 }

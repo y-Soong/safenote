@@ -212,7 +212,10 @@
             @click="halfPart = 'START'"
           >
             <span class="half-card__name">늦게 출근</span>
-            <span class="half-card__range">{{ halfStartRangeText || '--:-- ~ --:--' }}</span>
+            <!-- BW-07: 휴게시간 무시 체크 시 서버 *WaiveRange 값으로 즉시 교체(클라 재계산 금지) -->
+            <span class="half-card__range">{{
+              (brkWaive ? halfStartRangeWaiveText : halfStartRangeText) || '--:-- ~ --:--'
+            }}</span>
             <span class="half-card__hint">이 시간까지 쉬고 출근</span>
           </button>
 
@@ -224,24 +227,34 @@
             @click="halfPart = 'END'"
           >
             <span class="half-card__name">일찍 퇴근</span>
-            <span class="half-card__range">{{ halfEndRangeText || '--:-- ~ --:--' }}</span>
+            <span class="half-card__range">{{
+              (brkWaive ? halfEndRangeWaiveText : halfEndRangeText) || '--:-- ~ --:--'
+            }}</span>
             <span class="half-card__hint">이 시간부터 쉬고 퇴근</span>
           </button>
         </div>
 
-        <!-- 경계 안내 — 휴게를 건너뛰고 근로를 절반으로 나눈 시각임을 명시 -->
+        <!-- 경계 안내 — 휴게를 건너뛰고 근로를 절반으로 나눈 시각임을 명시.
+             BW-07: 표시 시각은 파트·체크 상태별 서버값(halfBoundaryDisplayText), 노출 판정은 기존 halfBoundaryText 유지 -->
         <p v-if="halfBoundaryText" class="half-note">
           <span class="half-note__dot" aria-hidden="true">·</span>
           <span class="half-note__text">
             이 날 근무를 절반으로 나누는 기준 시각은
-            <strong>{{ halfBoundaryText }}</strong> 예요. (휴게시간은 근무로 세지 않아요)
+            <strong>{{ halfBoundaryDisplayText }}</strong> 예요.
+            <!-- QA D3(2026-09-04): 판정은 brkWaive(체크 상태)가 아니라 halfBoundaryWaiveApplied
+                 (체크가 이 파트의 경계를 실제로 바꿨는지). 기록 전용 파트에서 체크만 보고 문구를
+                 고르면 값(휴게를 건너뛴 경계)과 설명이 어긋난다. -->
+            <template v-if="halfBoundaryWaiveApplied">(휴게를 건너뛰지 않고 이어서 세요)</template>
+            <template v-else>(휴게시간은 근무로 세지 않아요)</template>
           </span>
         </p>
         <!-- 차단이 확정된 경우에만 경고. daySchedule 미도착 구간에는 아무것도 띄우지 않는다
              (틀린 안내를 순간 노출하지 않기 위함 — halfPartBlocked 주석 참조) -->
         <p v-else-if="halfPartBlocked" class="half-note half-note--warn">
           <span class="half-note__dot" aria-hidden="true">·</span>
-          <span class="half-note__text">이 날은 근무계획이 없어 반차를 신청할 수 없어요. 종일 연차로 신청해 주세요.</span>
+          <span class="half-note__text"
+            >이 날은 근무계획이 없어 반차를 신청할 수 없어요. 종일 연차로 신청해 주세요.</span
+          >
         </p>
       </section>
 
@@ -324,14 +337,79 @@
         </p>
       </section>
 
+      <!-- 3-2) 휴게시간 무시 (반차·시간차 공용) — 근기법 제54조① 단서(2026-12-10 시행) 대응(BW-07).
+           회사 허용(brkWaiveAllowYn='Y') + 스케줄 있는 날에만 노출. 시각·경고는 전부 서버값 표시(FE 재계산 금지).
+           반차/시간차 섹션은 상호배타라 한 곳(두 섹션 뒤)에만 둔다(plan 골격의 "각각 삽입"은 이중 렌더가 되어 단일화). -->
+      <section
+        v-if="
+          (isHalfUnit || isTimeUnit) &&
+          daySchedule &&
+          daySchedule.hasSchedule &&
+          daySchedule.brkWaiveAllowYn === 'Y'
+        "
+        class="fs"
+      >
+        <label class="brk-waive">
+          <input
+            v-model="brkWaive"
+            type="checkbox"
+            class="brk-waive__cb"
+            :disabled="isHalfUnit && halfPartBlocked"
+          />
+          <span class="brk-waive__body">
+            <span class="brk-waive__txt">휴게시간 무시</span>
+            <span class="brk-waive__sub"
+              >쉬는 시간 쪽에 붙은 휴게를 건너뛰지 않고 바로 퇴근·출근해요</span
+            >
+          </span>
+        </label>
+
+        <!-- G-2: 휴게 시각 미등록(분만) 타입 — 시각 불변, 요청만 기록 -->
+        <p
+          v-if="brkWaive && daySchedule.brkTimeRegisteredYn !== 'Y'"
+          class="half-note half-note--info"
+        >
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          <span class="half-note__text"
+            >휴게 시각이 등록되지 않아 시각은 바뀌지 않아요. 휴게 미이용 요청만 기록돼요.</span
+          >
+        </p>
+        <!-- 기록 전용: 휴게가 쉬는 구간 안에 있어 결과가 미체크와 같음 (반차=day-schedule / 시간차=preview 값) -->
+        <p v-else-if="brkWaive && brkWaiveRecordOnly" class="half-note half-note--info">
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          <span class="half-note__text"
+            >휴게가 쉬는 시간 안에 있어 시각은 그대로예요. 휴게 미이용 요청만 기록돼요.</span
+          >
+        </p>
+
+        <!-- 시간차 체크 결과(preview): 편입된 휴게·실제 쉬는 구간·차감 분 — 서버 산출값 -->
+        <div
+          v-if="isTimeUnit && brkWaive && brkWaiveExemptRangeText"
+          class="sch-info sch-info--result"
+        >
+          <div class="sch-info__row">
+            <span class="sch-info__lbl">실제 쉬는 구간</span>
+            <span class="sch-info__val">{{ brkWaiveExemptRangeText }}</span>
+          </div>
+          <div class="sch-info__row">
+            <span class="sch-info__lbl">휴게 편입</span>
+            <span class="sch-info__val"
+              >{{ brkWaivedMinutesText }} · 차감 {{ brkChargeMinutesText }}</span
+            >
+          </div>
+        </div>
+
+        <!-- 법정 하한 경고(차단 없음). 문구는 서버 legalWarnMsg 그대로. 체크/미체크 모두 대상. -->
+        <p v-if="brkLegalWarnText" class="half-note half-note--warn" role="status">
+          <span class="half-note__dot" aria-hidden="true">·</span>
+          <span class="half-note__text">{{ brkLegalWarnText }}</span>
+        </p>
+      </section>
+
       <!-- 4-1) 가불(미래 연차 당겨쓰기) 동의 — 시스템 법정 연차 + 가불 가능 + 잔여 부족 시에만 노출 (prafta-com-011-4) -->
       <section v-if="showBorrowToggle" class="fs">
         <label class="borrow-toggle">
-          <input
-            v-model="borrowAgreed"
-            type="checkbox"
-            class="borrow-toggle__cb"
-          />
+          <input v-model="borrowAgreed" type="checkbox" class="borrow-toggle__cb" />
           <span class="borrow-toggle__txt">미래 연차를 당겨 사용(가불)</span>
         </label>
 
@@ -466,9 +544,7 @@
             <template v-if="grantAvailFromText">
               연차 부여 시작일({{ grantAvailFromText }}) 이후 날짜로 신청해 주세요.
             </template>
-            <template v-else>
-              연차 부여의 사용 가능 기간 안의 날짜로 신청해 주세요.
-            </template>
+            <template v-else> 연차 부여의 사용 가능 기간 안의 날짜로 신청해 주세요. </template>
           </p>
           <p v-else-if="preview.insufficientBalance" class="preview-card__warn">
             예상 차감이 남은 연차를 초과해요. 이대로 신청하면 거절될 수 있어요.
@@ -553,6 +629,10 @@ const props = defineProps({
   //   HB-03(반차 시간대 도입): 뒤 3필드는 반차 경계 미리보기(서버 산출 권위값 — FE 재계산 금지).
   //     halfDayBoundaryTime='HHMM' / halfStartPartRange·halfEndPartRange='HHMM~HHMM'.
   //     스케줄 없음/산출 불가면 전부 null(구 응답도 부재 → null 취급).
+  //   BW-07(휴게시간 무시): 추가 필드 halfDayBoundaryTimeStart(START 미체크 경계, G-3), halfDayBoundaryTimeWaiveStart/
+  //     halfDayBoundaryTimeWaiveEnd(체크 시 파트별 경계), halfStartWaiveRange/halfEndWaiveRange(체크 시 쉬는 구간),
+  //     brkWaiveAllowYn(회사 토글), brkTimeRegisteredYn(휴게 시각 등록 여부·G-2), brkWaiveRecordOnlyYn,
+  //     halfLegalWarn{ start:{plain,waive}, end:{plain,waive} } 각 {warnYn,msg,recordOnlyYn}. 전부 서버 산출 표시 전용.
   daySchedule: { type: Object, default: null },
 })
 const emit = defineEmits(['submit', 'cancel', 'preview-request', 'day-schedule-request'])
@@ -590,6 +670,9 @@ const useUnitType = ref('') // SYS025 코드
 // halfPart: 'START'(늦게 출근) | 'END'(일찍 퇴근). 제출 payload 키와 1:1.
 //   반차('01') 신청 시 필수 — 미선택 제출은 서버가 fail-closed 거부(ATTD_400_195)하므로 FE 도 차단한다.
 const halfPart = ref('')
+// ── BW-07: 휴게시간 무시 체크(반차·시간차 공용) — 제출 payload brkWaiveYn('Y'/'N')과 1:1 ──
+//   종류·단위·날짜 변경 시 false 로 리셋(HB-10 리셋 지점과 동일). 파생 computed 는 halfEndRangeText 아래 블록.
+const brkWaive = ref(false)
 const workDateInput = ref('') // 'YYYY-MM-DD' (DateStepperField v-model)
 const startTimeInput = ref('') // 'HH:MM' (TimeStepperField v-model, 30분 단위)
 // 종료 시각 = 시작 + stepCount × 단위분. [+]/[−] 로 stepCount 조정(최소 1).
@@ -756,6 +839,8 @@ const ctxSiteDisplay = computed(() => props.context?.siteName || '')
 const unitGuideText = computed(() => {
   const label = UNIT_LABELS[useUnitType.value] || ''
   // developer: 휴게시간 가로지름 불가 등 정책 문구 확정(attd §8.5). 골격은 기본 안내만.
+  // BW-07: 휴게시간 무시 체크 시 붙은 휴게가 쉬는 시간에 편입되므로 안내 문구를 전환한다.
+  if (brkWaive.value) return `${label} 단위로 신청해 주세요. 휴게를 쉬는 시간에 포함해요.`
   return `${label} 단위로 신청해 주세요. 휴게시간을 가로지를 수 없어요.`
 })
 
@@ -815,9 +900,93 @@ const halfPartBlocked = computed(() => {
   return props.daySchedule.hasSchedule !== true || !halfBoundaryText.value
 })
 // 시작기준(늦게 출근)이 쉬는 구간 = [근무 시작, 경계)
-const halfStartRangeText = computed(() => fmtServerRange(props.daySchedule?.halfStartPartRange))
+//   BW-07(G-3 끝걷기): 기존 halfStartPartRange 는 END 경계 공용값이라 START 미체크 경계(halfDayBoundaryTimeStart)와
+//   다를 수 있다. 새 필드가 있으면 서버 구간의 시작값은 그대로 두고 끝만 새 경계로 바꾼다(값 조합만, 산출은 서버).
+//   구서버(필드 부재)면 종전 표시 그대로.
+const halfStartRangeText = computed(() => {
+  const ds = props.daySchedule
+  const base = fmtServerRange(ds?.halfStartPartRange)
+  const startBoundary = fmtHHMM(ds?.halfDayBoundaryTimeStart)
+  if (!base || !startBoundary) return base
+  return `${base.split('~')[0]}~${startBoundary}`
+})
 // 종료기준(일찍 퇴근)이 쉬는 구간 = [경계, 근무 종료)
 const halfEndRangeText = computed(() => fmtServerRange(props.daySchedule?.halfEndPartRange))
+
+// ── BW-07: 휴게시간 무시(brk-waive) — 근기법 제54조① 단서 ───────────────────
+// ★ 아래 computed 는 전부 서버 응답(daySchedule / preview) 값의 포맷 전용. 경계·차감 재계산 금지.
+// 체크 상태 ref(brkWaive)는 halfPart 선언 옆(unitGuideText 가 먼저 참조하므로 위쪽)에 있다.
+// 체크 시 파트별 쉬는 구간(서버 halfStartWaiveRange / halfEndWaiveRange). recordOnly 면 서버가 미체크 값과 같게 내린다.
+const halfStartRangeWaiveText = computed(() =>
+  fmtServerRange(props.daySchedule?.halfStartWaiveRange),
+)
+const halfEndRangeWaiveText = computed(() => fmtServerRange(props.daySchedule?.halfEndWaiveRange))
+// 선택 파트 키('start'|'end'). 미선택이면 null.
+const halfPartKey = computed(() =>
+  halfPart.value === 'START' ? 'start' : halfPart.value === 'END' ? 'end' : null,
+)
+// 기준 시각 표시값 — 파트×체크 4조합의 서버 경계. 해당 조합 값이 없으면(구서버) 기존 halfBoundaryText 로 폴백.
+//   미체크: START=halfDayBoundaryTimeStart(G-3) / END=halfDayBoundaryTime(HB-03 기존값).
+//   체크:   START=halfDayBoundaryTimeWaiveStart / END=halfDayBoundaryTimeWaiveEnd.
+//   파트 미선택이면 END 기준(기존 표시와 동일).
+const halfBoundaryDisplayText = computed(() => {
+  const ds = props.daySchedule
+  const isStart = halfPart.value === 'START'
+  let raw
+  if (brkWaive.value)
+    raw = isStart ? ds?.halfDayBoundaryTimeWaiveStart : ds?.halfDayBoundaryTimeWaiveEnd
+  else raw = isStart ? ds?.halfDayBoundaryTimeStart : ds?.halfDayBoundaryTime
+  return fmtHHMM(raw) || halfBoundaryText.value
+})
+// 파트별 법정 경고 정보({warnYn,msg,recordOnlyYn}). 반차 + 파트 선택 시에만, 체크 상태에 맞는 쪽(plain/waive).
+const halfLegalWarnInfo = computed(() => {
+  if (!isHalfUnit.value || !halfPartKey.value) return null
+  const part = props.daySchedule?.halfLegalWarn?.[halfPartKey.value]
+  if (!part) return null
+  return (brkWaive.value ? part.waive : part.plain) || null
+})
+// 기록 전용 여부(체크해도 시각 불변) — 반차: 파트별 waive.recordOnlyYn(미선택이면 양 파트 공통값) / 시간차: preview.
+const brkWaiveRecordOnly = computed(() => {
+  if (isHalfUnit.value) {
+    if (halfPartKey.value) {
+      return props.daySchedule?.halfLegalWarn?.[halfPartKey.value]?.waive?.recordOnlyYn === 'Y'
+    }
+    return props.daySchedule?.brkWaiveRecordOnlyYn === 'Y'
+  }
+  if (isTimeUnit.value) return props.preview?.brkWaiveRecordOnlyYn === 'Y'
+  return false
+})
+// QA D3(2026-09-04): 반차 경계 안내 문구가 "휴게를 건너뛴 값"을 설명해도 되는지.
+//   체크(brkWaive)만 보고 문구를 고르면, 기록 전용 파트(휴게가 쉬는 구간 안에 있어 경계가 그대로인
+//   케이스 — 예: 09~18 휴게 12~13 의 '늦게 출근' 14:00)에서 값과 설명이 어긋난다(D3).
+//   ★판정은 서버값만 사용한다(클라 경계 재계산 금지): 파트별 waive.recordOnlyYn(=brkWaiveRecordOnly)
+//   와 휴게 시각 등록 여부(brkTimeRegisteredYn). 필드가 아예 없는 구서버 응답에서는 종전 동작을
+//   유지하려고 'N' / 'Y' 명시값일 때만 뒤집는다.
+//   파트 미선택이면 어느 파트의 기록 전용인지 특정할 수 없어 현행(체크=건너뛰기 문구) 유지.
+const halfBoundaryWaiveApplied = computed(() => {
+  if (!brkWaive.value) return false
+  if (!halfPartKey.value) return true
+  if (props.daySchedule?.brkTimeRegisteredYn === 'N') return false
+  return !brkWaiveRecordOnly.value
+})
+// 법정 휴게 하한 경고 문구(차단 없음) — 반차: halfLegalWarn[part][plain|waive] / 시간차: preview. 없으면 ''.
+const brkLegalWarnText = computed(() => {
+  if (isHalfUnit.value) {
+    const info = halfLegalWarnInfo.value
+    return info && info.warnYn === 'Y' ? info.msg || '' : ''
+  }
+  if (isTimeUnit.value) {
+    const p = props.preview
+    return p && p.brkLegalWarnYn === 'Y' ? p.brkLegalWarnMsg || '' : ''
+  }
+  return ''
+})
+// 시간차 체크 결과(preview): 실제 쉬는 구간 'HHMM~HHMM' → 'HH:MM~HH:MM', 편입 휴게분·차감분은 "N분" 표기.
+const brkWaiveExemptRangeText = computed(() => fmtServerRange(props.preview?.brkWaiveExemptRange))
+const fmtPlainMinutes = (v) =>
+  v === null || v === undefined || v === '' || Number.isNaN(Number(v)) ? '-' : `${Number(v)}분`
+const brkWaivedMinutesText = computed(() => fmtPlainMinutes(props.preview?.brkWaivedMinutes))
+const brkChargeMinutesText = computed(() => fmtPlainMinutes(props.preview?.brkChargeMinutes))
 
 // F-5(HB-12): 휴무·미배정일에 종일('00') 연차를 고를 때만 안내. 차단하지 않는다(사용자 확정 2026-08-05).
 //   신규 조회 없이 기존 day-schedule 응답만 재사용(미조회/실패 시엔 안내 생략 — 오안내 방지).
@@ -884,6 +1053,7 @@ watch(
   () => props.daySchedule,
   () => {
     halfPart.value = ''
+    brkWaive.value = false // BW-07: 날짜(스케줄) 변경 시 휴게시간 무시 체크 리셋
   },
 )
 
@@ -1047,6 +1217,8 @@ const previewPayload = computed(() => {
       useUnitType: unit,
       startTime: toHHMM(startTimeInput.value),
       endTime: toHHMM(endTimeInput.value),
+      // BW-07: 휴게시간 무시 — 토글이 payload 에 포함되므로 체크 변경 시 preview 가 자동 재요청된다.
+      brkWaiveYn: brkWaive.value ? 'Y' : 'N',
     }
   }
   return null
@@ -1193,6 +1365,7 @@ const onSelectType = (lt) => {
   startTimeInput.value = ''
   stepCount.value = 1
   halfPart.value = '' // HB-10: 종류 변경 시 반차 파트 초기화
+  brkWaive.value = false // BW-07: 종류 변경 시 휴게시간 무시 체크 리셋
   selectedPresetId.value = ''
   approverList.value = []
   borrowAgreed.value = false // 가불 동의는 종류별 — 종류 변경 시 해제
@@ -1211,6 +1384,7 @@ const onSelectUnit = (code) => {
     stepCount.value = 1
   }
   if (code !== '01') halfPart.value = ''
+  brkWaive.value = false // BW-07: 단위 변경 시 휴게시간 무시 체크 리셋(종일 전환 포함)
 }
 
 // 종료 스텝 증감 — 최소 N=1. 증가 시 자정 초과(익일 wrap)면 무시.
@@ -1231,6 +1405,7 @@ const onQuickFill = (unitCode) => {
   startTimeInput.value = ''
   stepCount.value = 1
   if (unitCode !== '01') halfPart.value = '' // HB-10: 종일 전환 시 반차 파트 초기화
+  brkWaive.value = false // BW-07: 편의버튼 단위 전환 시 휴게시간 무시 체크 리셋
 }
 
 // 프리셋 선택 → steps 를 approverList 로 전개(STEP_NO=배열 순서 보존). 같은 프리셋 재선택 시 토글 해제.
@@ -1325,6 +1500,8 @@ const onSubmit = () => {
     presetId: undefined,
     // 가불 동의(prafta-com-011-4): 토글 ON 시 true. 미선택이면 false(서버 미전송 시 false 취급).
     isBorrow: borrowAgreed.value,
+    // BW-07: 휴게시간 무시 요청(근기법 제54조① 단서). 반차·시간차에서 체크 시 'Y', 그 외 'N'(서버 미전송=N 취급).
+    brkWaiveYn: (isHalfUnit.value || timeUnit) && brkWaive.value ? 'Y' : 'N',
     // 연차 신청 증빙 필수화(2026-08-29): Phase2 는 미첨부여도 제출 허용(강제는 서버 Phase3).
     //   부모 뷰(LeaveApplyView.vue)가 업로드 후 fileMgmtCd 로 치환한다.
     evidenceFile: evidenceFile.value?.file || null,
@@ -1578,6 +1755,59 @@ onMounted(() => {
 .half-note__text {
   flex: 1;
   min-width: 0;
+}
+
+/* ── BW-07: 휴게시간 무시 체크(.borrow-toggle 관례 미러) ── */
+.brk-waive {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  min-height: 44px;
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-surface);
+  border: 0.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+.brk-waive__cb {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  accent-color: var(--color-primary);
+  cursor: pointer;
+}
+.brk-waive__cb:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+.brk-waive__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.brk-waive__txt {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+.brk-waive__sub {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  word-break: keep-all;
+}
+/* 정보성 안내(기록 전용·G-2) — warning 과 구분되는 primary 톤 */
+.half-note--info {
+  color: var(--color-primary-text-deep);
+}
+/* 시간차 체크 결과 박스 — .sch-info 의 warning 톤을 primary 톤으로 바꾼 변형 */
+.sch-info--result {
+  background: var(--color-primary-tint);
+  border-color: var(--color-primary-tint-border);
+}
+.sch-info--result .sch-info__lbl {
+  color: var(--color-primary-text-deep);
 }
 
 /* 시간차 입력 영역 헤더(제목 + 편의버튼) */

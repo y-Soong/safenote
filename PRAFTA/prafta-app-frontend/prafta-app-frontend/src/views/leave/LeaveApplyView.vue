@@ -202,6 +202,8 @@ const onDayScheduleRequest = async (workYmd) => {
 // payload(폼 emit): { leaveCd, leaveType, workYmd, useUnitType, halfPart, startTime, endTime,
 //                     reason, approverUserCds, presetId } ← 018-B 요청 본문과 1:1
 //   HB-10: halfPart('START'|'END')는 반차('01') 신청 시 필수 — 미전송이면 서버가 ATTD_400_195 로 거부한다.
+//   BW-07: brkWaiveYn('Y'|'N', 휴게시간 무시 요청)은 폼 payload 에 실려 그대로 /apply 본문으로 통과한다.
+//     preview 도 폼 payload(brkWaiveYn 포함)를 그대로 /preview-deduction 에 전달한다(별도 가공 없음).
 // prafta-leavemulti: 기간(From-To) 신청 화면으로 이동. 종일 연차 전용 별도 화면이다.
 const onGoMulti = () => router.push({ name: 'LeaveApplyMulti' })
 

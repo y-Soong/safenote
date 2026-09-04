@@ -230,4 +230,18 @@
        AND U.END_TIME   IS NOT NULL
     </select>
 
+    <!--
+      BW-12(§7-1, 2026-09-04): 휴게 미이용 상시 요청 현행값. 단시간(소정 240·휴게 0) 근무일 배지의 판정 입력.
+      앱 홈 today / 웹 근태 일자상세 공용(판정 입력을 두 곳에서 다르게 읽지 않게 하는 단일 조회).
+      ★ prafta-brk-waive-3-standing-ddl.sql 선적용 필수.
+    -->
+    <select id="selectBrkWaiveStandingYn" resultType="string">
+    /* LeaveDeductionMapper.selectBrkWaiveStandingYn */
+    SELECT IFNULL(U.BRK_WAIVE_STANDING_YN, 'N')
+      FROM TB_USER U
+     WHERE U.CMPNY_CD = #{cmpnyCd}
+       AND U.USER_CD  = #{userCd}
+     LIMIT 1
+    </select>
+
 </mapper>

@@ -143,7 +143,14 @@ public class Attd01ServiceImpl implements Attd01Service{
 		SchInfoCommand command = SchInfoCommand.from(param, schCd);
 
 		// F-2: 휴게시각 서버 검증(fail-open 봉합). 신규/수정 공통 — API 직접 호출 등 프론트 우회 경로도 방어.
+		//   BW-10(G-6): 공용 BreakTimeValidator 로 위임(Platform_01 프로비저닝과 같은 함수) — 폭≠분 거부 + '2400'/자정 넘김 종료 파싱.
 		validateBreakTimeRange(command);
+
+		// BW-10(G-6): 휴게 종료 미전송(구 FE/API 직접 호출)이면 시작 + 휴게분으로 서버가 파생 저장(FE 파생과 동치).
+		//   전송된 값은 위 검증(폭 == 분)을 통과한 그대로 둔다. 현행/이력 짝 규약대로 이력 스냅샷에도 동일 값.
+		String fstBrkEndTime = resolveBreakEnd(command.fstBrkEndTime(), command.fstBrkStrTime(), command.fstSchBrkMin());
+		String secBrkEndTime = resolveBreakEnd(command.secBrkEndTime(), command.secBrkStrTime(), command.secSchBrkMin());
+		command = command.withBreakEndTimes(fstBrkEndTime, secBrkEndTime);
 
 		// PRAFTA-FIXEDOT-1: 고정연장근무 검증(V1~V6). 고정연장 미입력(4필드 전부 NULL)이면 즉시 통과
 		// — 기존 근무타입 저장 경로는 동작 변화 없음.
@@ -163,7 +170,8 @@ public class Attd01ServiceImpl implements Attd01Service{
 		// 기존에는 param.schCd()(신규 시 빈값) 기준으로 계산되어 신규 생성 이력이 어긋날 수 있었다.
 		int histIdx = attd01Mapper.selectSchHistIdx(SchInfoHistQuery.of(param, schCd));
 
-		attd01Mapper.insertSchHistInfo(SchInfoHistCommand.from(param, histIdx, schCd));
+		attd01Mapper.insertSchHistInfo(SchInfoHistCommand.from(param, histIdx, schCd)
+				.withBreakEndTimes(fstBrkEndTime, secBrkEndTime)); // BW-10: 파생 종료를 이력에도 동일 반영
 
 		// PRAFTA-SUBCON-T2-05: 저장 후 미러 재귀 전파(신규 추가·사용중지·APPLY_DATE 포함 —
 		//   활성 링크 없으면 no-op, 실패 시 원본 저장 전체 롤백. 미러 테넌트 HIST 도 함께 기록).
@@ -288,54 +296,27 @@ public class Attd01ServiceImpl implements Attd01Service{
 	 * withinSpan 을 구간별로 독립 적용한다(교차 케이스 별도 규칙 불필요).
 	 */
 	private void validateBreakTimeRange(SchInfoCommand command) {
-
-		validateBreakTimeRangeForSegment("구간1",
-				command.fstSchStrTime(), command.fstSchEndTime(),
-				command.fstSchBrkMin(), command.fstBrkStrTime());
-
-		if("02".equals(command.schType())) {
-			validateBreakTimeRangeForSegment("구간2",
-					command.secSchStrTime(), command.secSchEndTime(),
-					command.secSchBrkMin(), command.secBrkStrTime());
-		}
+		// BW-10(G-6): 검증 본문은 공용 BreakTimeValidator(common.cmm.sch.util)로 이관 — 프로비저닝 경로와 단일 함수.
+		//   종전 3규칙(휴게분 ≤ 근무시간 / 시작 ∈ 범위 / 시작+분 ≤ 종료) + 신규 "휴게 시각 폭 == 휴게분"(종료 전송 시).
+		com.prafta.common.cmm.sch.util.BreakTimeValidator.validate(command.schType(),
+				command.fstSchStrTime(), command.fstSchEndTime(), command.fstSchBrkMin(),
+				command.fstBrkStrTime(), command.fstBrkEndTime(),
+				command.secSchStrTime(), command.secSchEndTime(), command.secSchBrkMin(),
+				command.secBrkStrTime(), command.secBrkEndTime());
 	}
 
-	/** 구간 1개(근무시간 + 휴게시간)에 대한 휴게시각 범위 검증. */
-	private void validateBreakTimeRangeForSegment(String segmentLabel,
-			String schStrTime, String schEndTime, String schBrkMin, String brkStrTime) {
-
-		// 휴게시각이 없으면(NULL/빈값) 검증 생략 — NULL 허용 정책(§4).
-		Integer brkStart = toBreakMinutes(brkStrTime);
-		if(brkStart == null) {
-			return;
+	/**
+	 * BW-10(G-6): 저장할 휴게 종료 시각. 전송값이 있으면(검증 통과분) 그대로, 없으면 시작 + 휴게분 파생(시작도 없으면 null).
+	 */
+	private static String resolveBreakEnd(String sentBrkEndTime, String brkStrTime, String schBrkMin) {
+		if(sentBrkEndTime != null && !sentBrkEndTime.isBlank()) {
+			// ★ 프론트는 "HH:mm"(콜론 포함)으로 보낸다. 컬럼은 varchar(4) 이므로 HHMM 4자리로 정규화해 저장한다 (2026-09-04 QA 적발).
+			String normalized = com.prafta.common.cmm.sch.util.BreakTimeValidator.normalizeHhmm(sentBrkEndTime);
+			if(normalized != null) {
+				return normalized;
+			}
 		}
-
-		Integer start = toBreakMinutes(schStrTime);
-		Integer end = toBreakMinutes(schEndTime);
-		if(start == null || end == null || start.equals(end)) {
-			// 근무시간 자체가 비정상이면 이 검증(휴게시각)에서는 판단하지 않는다.
-			return;
-		}
-
-		int brk = parseBreakMin(schBrkMin);
-		int workMin = breakSpanMinutes(start, end);
-
-		if(brk > workMin) {
-			throw new ApiException(AttdErrorCode.ATTD_400_197,
-					segmentLabel + " 휴게시간은 근무시간(" + workMin + "분)보다 많을 수 없습니다.");
-		}
-
-		if(!withinBreakSpan(start, end, brkStart)) {
-			throw new ApiException(AttdErrorCode.ATTD_400_197,
-					segmentLabel + " 휴게시간 시작 시각은 근무시간 범위 안이어야 합니다.");
-		}
-
-		// 갭2(신규): 휴게 시작 + 휴게분(=종료)도 근무범위(오버나이트 포함) 안이어야 한다.
-		int brkOffset = (brkStart - start + 1440) % 1440;
-		if(brkOffset + brk > workMin) {
-			throw new ApiException(AttdErrorCode.ATTD_400_197,
-					segmentLabel + " 휴게시간 종료 시각이 근무 종료 시각을 초과합니다.");
-		}
+		return com.prafta.common.cmm.sch.util.BreakTimeValidator.deriveBreakEnd(brkStrTime, schBrkMin);
 	}
 
 	/** "HH:mm" 또는 "HHmm" 문자열을 0~1440(24:00 포함) 분값으로 변환. 형식 오류/미입력 시 null. */
@@ -373,15 +354,6 @@ public class Attd01ServiceImpl implements Attd01Service{
 	/** 오버나이트 고려 근무 길이(분): 종료&lt;=시작이면 자정을 넘긴 것으로 보고 1440을 더한다. */
 	private static int breakSpanMinutes(int start, int end) {
 		return end > start ? end - start : end + 1440 - start;
-	}
-
-	/** 오버나이트 고려 시각 포함 여부: t 가 [start, end) 구간(자정 넘김 포함) 안인지. */
-	private static boolean withinBreakSpan(int start, int end, int t) {
-		if(end > start) {
-			return t >= start && t < end;
-		}
-		// 오버나이트: [start, 24:00) ∪ [00:00, end)
-		return t >= start || t < end;
 	}
 
 	/**

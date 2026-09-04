@@ -95,6 +95,20 @@ public record AttdListsResult(
      * ⚠️ record 끝 = SELECT 끝 동일 순서(위치 매핑) — UNION 양 분기 끝에 동수로 추가되어 있다.
      */
     , String employmentType
+
+    /* ────────────────────────────────────────────────────────────────
+       BW-05(2026-09-04): 스케줄 휴게 시각(1·2구간). 화면 인정시간/실근로가 "실제로 쉰 휴게만 공제"
+       (휴게 시각 ∩ 실근태 ∩ 유효 소정) 교집합을 계산하는 입력. 시각 없는(분만) 타입은 null → 종전 분 공제.
+       ⚠️ record 끝 = SELECT 끝 동일 순서(위치 매핑, UNION 양 분기 동수). OT 행은 전부 NULL.
+       ──────────────────────────────────────────────────────────────── */
+    /** 1구간 휴게 시작(HHMM, 없으면 null). */
+    , String plan1BrkStr
+    /** 1구간 휴게 종료(HHMM 또는 '2400', 없으면 null. 종료 &lt; 시작이면 자정 넘김). */
+    , String plan1BrkEnd
+    /** 2구간 휴게 시작(HHMM, 없으면 null). */
+    , String plan2BrkStr
+    /** 2구간 휴게 종료(HHMM 또는 '2400', 없으면 null). */
+    , String plan2BrkEnd
 ) {
 
     /**
@@ -113,6 +127,7 @@ public record AttdListsResult(
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, fixedOtUnfulfilledYn, fixedOtActMinutes
             , employmentType
+            , plan1BrkStr, plan1BrkEnd, plan2BrkStr, plan2BrkEnd
         );
     }
 
@@ -132,6 +147,7 @@ public record AttdListsResult(
             , preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
             , fixedOtExemptYn, newFixedOtUnfulfilledYn, newFixedOtActMinutes
             , employmentType
+            , plan1BrkStr, plan1BrkEnd, plan2BrkStr, plan2BrkEnd
         );
     }
 }

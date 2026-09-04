@@ -37,6 +37,10 @@ public record SnapshotSourceRow(
     //   ATTD=A.NODE_CD, OT_ONLY=MIN(O.NODE_CD), LEAVE_ONLY=U.NODE_CD(일용직은 NULL → '*' 전용).
     //   서버 내부 판정 전용 — 스냅샷 상세행/응답에 저장·노출하지 않는다.
     , String nodeCd
+    /** BW-05: 해당 차수 스케줄 휴게 시각 시작 'HHmm'(없으면 null). 인정시간 교집합 공제용. ★record 끝(3쿼리 동수). */
+    , String planBrkStrTime
+    /** BW-05: 해당 차수 스케줄 휴게 시각 종료 'HHmm' 또는 '2400'(없으면 null). ★record 끝(3쿼리 동수). */
+    , String planBrkEndTime
 ){
 
     /**
@@ -52,6 +56,6 @@ public record SnapshotSourceRow(
                 , schNm, schType, planStrTime, planEndTime, planBrkMin
                 , checkInDate, checkInTime, checkOutDate, checkOutTime
                 , newAttdStatusCd, otMinutes, leaveNm, leaveDays, leaveMinutes, leaveEndYmd
-                , nodeCd);
+                , nodeCd, planBrkStrTime, planBrkEndTime);
     }
 }

@@ -62,4 +62,20 @@ public class LeaveDeductionPreviewResponse {
 
     /** HB-03: 종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 반차 외/산출 불가면 {@code null}. */
     private final String halfEndPartRange;
+
+    // ===== BW-04 휴게 무시(앱 LeaveDeductionPreviewResponse 미러) =====
+    /** 체크 요청이 저장 시각에 반영됐는지 'Y'/'N'. 미체크 요청은 'N'. */
+    private final String brkWaiveAppliedYn;
+    /** 체크했지만 시각 불변·요청 기록만 'Y'/'N'(휴게가 쉬는 구간 안 / 분만 타입 G-2 / 붙은 휴게 없음). */
+    private final String brkWaiveRecordOnlyYn;
+    /** 시간차 체크 시 합친 쉬는 구간 "HHMM~HHMM"(반차는 day-schedule 값 사용). 그 외 null. */
+    private final String brkWaiveExemptRange;
+    /** 쉬는 구간에 편입된 휴게 분(시간차 체크 시). 그 외 null. */
+    private final Integer brkWaivedMinutes;
+    /** 시간차 차감 분 = 신청 − 휴게 겹침(체크 시). 미체크 시간차는 신청 분. 그 외 null. */
+    private final Integer brkChargeMinutes;
+    /** BW-06: 법정 휴게 하한 경고 'Y'/'N'(차단 없음). */
+    private final String brkLegalWarnYn;
+    /** BW-06: 경고 문구(서버 생성). 경고 없으면 null. */
+    private final String brkLegalWarnMsg;
 }

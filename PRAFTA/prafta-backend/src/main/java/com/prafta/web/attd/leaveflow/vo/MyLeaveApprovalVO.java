@@ -50,5 +50,16 @@ public record MyLeaveApprovalVO(
      * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
      */
     , String evidenceFileId
+    /**
+     * QA D2(2026-09-04): 휴게 미이용 요청 여부('Y'/'N', 미요청·구데이터는 null).
+     * 근기법 제54조① 단서의 요건이 "근로자의 명시적 요청"이라 결재 화면에 요청 사실을 표시한다.
+     * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , String brkWaiveYn
+    /**
+     * QA D2(2026-09-04): 휴게 미이용 요청 시각('yyyy-MM-dd'T'HH:mm:ss' 서버 포맷, 미요청이면 null).
+     * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , String brkWaiveReqDtime
 ) {
 }

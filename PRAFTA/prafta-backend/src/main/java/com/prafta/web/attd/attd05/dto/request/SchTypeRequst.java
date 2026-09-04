@@ -23,4 +23,9 @@ public class SchTypeRequst {
 	 * true 면 서버가 후보(연차/월차) 중 소멸 임박 통합순으로 1일을 자동 차감한다(leaveCd 무시).
 	 */
 	private boolean autoLegalLeave;
+	/**
+	 * BW-04(qa §5-8): 관리자 직접 차감(근무계획 저장/엑셀) 경로는 휴게시간 무시 요청을 받지 않는다.
+	 * 값이 'Y' 로 실려 오면 서버가 ATTD_400_218 로 거부한다(근로자 본인 앱/웹 신청 경로 한정). 정상 요청은 미전송.
+	 */
+	private String brkWaiveYn;
 }

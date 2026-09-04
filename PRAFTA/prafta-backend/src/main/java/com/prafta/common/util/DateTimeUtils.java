@@ -60,6 +60,25 @@ public final class DateTimeUtils {
     }
 
     /**
+     * 스케줄 "휴게 종료(break end)" 시각 전용 HHmm → 분 변환 (부분휴가 휴게 무시 도입 G-1, 2026-09-04).
+     *
+     * <p>근무타입의 휴게가 자정에 걸치면(예: 23:30~00:30) 종료가 시작보다 이른 값으로 저장되고, 보정 전
+     * 데이터에는 웹 파생 클램프로 {@code "2400"} 이 남아 있다(요청서 §3 G-1). 본 파서는
+     * {@code "2400"} 을 1440 으로 인정하고 그 외는 {@link #hhmmToMinutes(String)} 에 위임한다.
+     * 값만 파싱하며 "종료 &lt; 시작 이면 +1440" 익일 wrap 은 호출부
+     * ({@code ScheduleWorkMinutesUtils} 휴게 구간 산출·{@code LeaveDeductionServiceImpl.overlapsBreak})가 수행한다.
+     *
+     * <p><b>주의:</b> 휴게 시작·실근태·연차 신청 시각에는 사용하지 말 것 — 그쪽은 "2400" 을 거부(null)하는
+     * 기존 규약을 유지한다. 근무 구간 종료는 {@link #schEndToMinutes(String)} 를 쓴다(의미가 다르므로 분리).
+     */
+    public static Integer brkEndToMinutes(String hhmm) {
+        if ("2400".equals(hhmm)) {
+            return Integer.valueOf(1440);
+        }
+        return hhmmToMinutes(hhmm);
+    }
+
+    /**
      * (date - base)의 부호 있는 일수 차이를 반환한다. 두 입력 모두 길이 8의 yyyyMMdd
      * 문자열이어야 한다. 논리적으로 유효한 입력에는 예외를 던지지 않으며, 실제 일수
      * 차이를 반환한다 ({@code yyyymmdd}가 {@code baseYyyymmdd}보다 이전이면 음수).

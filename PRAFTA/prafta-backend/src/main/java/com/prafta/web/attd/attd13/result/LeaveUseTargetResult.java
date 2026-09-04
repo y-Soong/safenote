@@ -37,5 +37,9 @@ public record LeaveUseTargetResult(
     , String leaveReason
     , String evidenceFileId
     , String reqStatus
+    /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_YN. ★위치매핑 — 맨 끝. */
+    , String brkWaiveYn
+    /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_REQ_DTIME('yyyy-MM-dd HH:mm:ss' 문자열, null 가능). ★위치매핑 — 맨 끝. */
+    , String brkWaiveReqDtime
 ) {
 }

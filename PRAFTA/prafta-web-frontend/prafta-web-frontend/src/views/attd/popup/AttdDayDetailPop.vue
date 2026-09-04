@@ -85,10 +85,7 @@
                   <span v-if="cfg.timeCard.fixedOt.act" class="time-meta">
                     실적 {{ cfg.timeCard.fixedOt.act }}
                   </span>
-                  <span
-                    v-if="cfg.timeCard.fixedOt.unmet"
-                    class="fixedot-unmet"
-                  >
+                  <span v-if="cfg.timeCard.fixedOt.unmet" class="fixedot-unmet">
                     연장 미이행
                   </span>
                 </div>
@@ -273,6 +270,19 @@
                           v-if="card.borrowDays > 0"
                           class="req-leave-seg req-leave-seg--borrow"
                           >가불 {{ card.borrowDays }}일</span
+                        >
+                        <!-- BW-09: 휴게 미이용 요청 배지(근기법 제54조① 단서) — 서버 값 표시 전용 -->
+                        <span
+                          v-if="card.brkWaiveYn === 'Y'"
+                          class="req-leave-seg req-leave-seg--brk-waive"
+                          >휴게 미이용 요청 {{ card.brkWaiveReqDtime }}</span
+                        >
+                        <!-- 법정 휴게 하한 경고(차단 없음) — 문구 서버 제공(brkLegalWarnText) -->
+                        <span
+                          v-if="card.brkLegalWarnYn === 'Y'"
+                          class="req-leave-seg req-leave-seg--legal-warn"
+                          :title="card.brkLegalWarnText"
+                          >{{ card.brkLegalWarnText }}</span
                         >
                       </div>
                     </template>
@@ -470,6 +480,18 @@
                   <span v-if="card.leaveDaysLabel" class="req-leave-seg">{{
                     card.leaveDaysLabel
                   }}</span>
+                  <!-- BW-09: 확정 연차에도 휴게 미이용 요청·법정 휴게 경고 배지(요청 카드와 동일 조각) -->
+                  <span
+                    v-if="card.brkWaiveYn === 'Y'"
+                    class="req-leave-seg req-leave-seg--brk-waive"
+                    >휴게 미이용 요청 {{ card.brkWaiveReqDtime }}</span
+                  >
+                  <span
+                    v-if="card.brkLegalWarnYn === 'Y'"
+                    class="req-leave-seg req-leave-seg--legal-warn"
+                    :title="card.brkLegalWarnText"
+                    >{{ card.brkLegalWarnText }}</span
+                  >
                 </div>
               </div>
             </div>
@@ -794,8 +816,8 @@
                         <p class="ot-claim-help">
                           육아기·가족돌봄 근로시간 단축 기간의 근로자는 본인이
                           청구한 경우에만 연장근로를 등록할 수 있습니다(임신기
-                          단축은 등록 불가). 단축 기간이 아닌 근로자는 체크 여부와
-                          무관합니다.
+                          단축은 등록 불가). 단축 기간이 아닌 근로자는 체크
+                          여부와 무관합니다.
                         </p>
                       </div>
                       <div
@@ -1674,7 +1696,9 @@ const buildFixedOtRow = (r) => {
   if (!r) return null;
   const ranges = [];
   if (r.preFixedOtStrTime && r.preFixedOtEndTime) {
-    ranges.push(`${fmtTime(r.preFixedOtStrTime)} → ${fmtTime(r.preFixedOtEndTime)}`);
+    ranges.push(
+      `${fmtTime(r.preFixedOtStrTime)} → ${fmtTime(r.preFixedOtEndTime)}`
+    );
   }
   if (r.fixedOtStrTime && r.fixedOtEndTime) {
     ranges.push(`${fmtTime(r.fixedOtStrTime)} → ${fmtTime(r.fixedOtEndTime)}`);
@@ -1945,6 +1969,11 @@ const reqCards = computed(() => {
         leaveDaysLabel: chargeDaysLabel(req.leaveDays),
         // 가불표시-06: 가불 충당 일수(서버 산출, 0 이상). 0/구서버(undefined)는 0 정규화 → 배지 미표시.
         borrowDays: Number(req.borrowDays) || 0,
+        // BW-09: 휴게 미이용 요청·법정 휴게 하한 경고(attd07 monthlyAttdReqResultList 4필드 그대로 전달, 부재=null → 배지 미표시)
+        brkWaiveYn: req.brkWaiveYn ?? null,
+        brkWaiveReqDtime: req.brkWaiveReqDtime ?? null,
+        brkLegalWarnYn: req.brkLegalWarnYn ?? null,
+        brkLegalWarnText: req.brkLegalWarnText ?? null,
       };
     }
     // 그 외(01~04): 출퇴근 시각 BEFORE/AFTER 모델.
@@ -1985,6 +2014,11 @@ const confirmedLeaveCards = computed(() =>
       unitLabel,
       timeRange: isTimed ? hourlyRangeLabel(lv.startTime, lv.endTime) : null,
       leaveDaysLabel: chargeDaysLabel(lv.leaveDays),
+      // BW-09: 휴게 미이용 요청·법정 휴게 하한 경고(attd07 confirmedLeaveResultList 4필드 그대로 전달, 부재=null)
+      brkWaiveYn: lv.brkWaiveYn ?? null,
+      brkWaiveReqDtime: lv.brkWaiveReqDtime ?? null,
+      brkLegalWarnYn: lv.brkLegalWarnYn ?? null,
+      brkLegalWarnText: lv.brkLegalWarnText ?? null,
     };
   })
 );
@@ -2062,7 +2096,8 @@ const leaveChangeCards = computed(() => {
       fromDateLabel: fmtLeaveChangeDate(r.targetStartDate),
       // 위치선택 확장: 지정 파트/시각이 있으면 접미 병기(미지정이면 종전 문자열 바이트 그대로)
       toDateLabel: isMove
-        ? fmtLeaveChangeDate(r.moveTargetDate) + (movePos ? ` · ${movePos}` : "")
+        ? fmtLeaveChangeDate(r.moveTargetDate) +
+          (movePos ? ` · ${movePos}` : "")
         : "삭제",
       // 연차 상세 1줄(종류·단위·시간차 범위·차감일수) — 연차 카드 표기 규칙 재사용
       leaveNm: r.leaveNm || "연차",
@@ -4161,6 +4196,25 @@ onMounted(() => {
   padding: 1px 6px;
 }
 .req-leave-seg + .req-leave-seg--borrow::before {
+  content: none;
+}
+/* BW-09: 휴게 미이용 요청 배지 — primary 톤(요청 사실), 법정 휴게 경고 배지 — warning 토큰(tokens.css).
+   칩 형태라 세그먼트 구분점(·)은 배경 안에 들어가지 않도록 제거한다(가불 배지와 동일). */
+.req-leave-seg--brk-waive {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-primary, #16a34a);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.req-leave-seg--legal-warn {
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+  border-radius: 4px;
+  padding: 1px 6px;
+}
+.req-leave-seg + .req-leave-seg--brk-waive::before,
+.req-leave-seg + .req-leave-seg--legal-warn::before {
   content: none;
 }
 /* PRAFTA-APP-018-F: 확정 연차 사용 섹션 (요청 카드와 구분, 표시 전용) */

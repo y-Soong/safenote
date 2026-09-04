@@ -491,6 +491,11 @@
             , E.SEC_SCH_STR_TIME
             , E.SEC_SCH_END_TIME
             , E.SEC_SCH_BRK_MIN
+            <!-- BW-05: 휴게 시각 4컬럼(현재본·이력 공통, prafta-019-E) - 인정시간 교집합 공제 입력. -->
+            , E.FST_BRK_STR_TIME
+            , E.FST_BRK_END_TIME
+            , E.SEC_BRK_STR_TIME
+            , E.SEC_BRK_END_TIME
             <!-- PRAFTA-FIXEDOT-3(M21): 고정연장(전방·후방) 4컬럼 동반 — 스냅샷 "고정연장 실적" 산출 입력.
                  판정(ATTD_STATUS_CD)식은 이 컬럼을 쓰지 않는다(정책 ② — 조퇴 기준선 불변). -->
             , E.PRE_FIXED_OT_STR_TIME
@@ -503,6 +508,7 @@
                   M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                 , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                 , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                , M.FST_BRK_STR_TIME, M.FST_BRK_END_TIME, M.SEC_BRK_STR_TIME, M.SEC_BRK_END_TIME
                 , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
                 , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                 , 2147483647 AS HIST_IDX
@@ -514,6 +520,7 @@
                   H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                 , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                 , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                , H.FST_BRK_STR_TIME, H.FST_BRK_END_TIME, H.SEC_BRK_STR_TIME, H.SEC_BRK_END_TIME
                 , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
                 , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                 , H.HIST_IDX
@@ -619,6 +626,9 @@
         , NULL                                                          AS leaveEndYmd
         <!-- [PS-04] 마감 커버리지 필터용 노드(record 끝 append — 3쿼리 동일 순서 엄수). -->
         , A.NODE_CD                                                     AS nodeCd
+        <!-- BW-05: 해당 차수 휴게 시각(인정시간 "실제로 쉰 휴게만 공제" 교집합용). record 끝 append - 3쿼리 동수. -->
+        , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_BRK_STR_TIME ELSE SCH.FST_BRK_STR_TIME END AS planBrkStrTime
+        , CASE WHEN A.WORK_SEQ = 2 THEN SCH.SEC_BRK_END_TIME ELSE SCH.FST_BRK_END_TIME END AS planBrkEndTime
     FROM TB_USER_ATTD_MGMT A
         LEFT OUTER JOIN TB_USER U
             ON  U.CMPNY_CD = A.CMPNY_CD
@@ -825,6 +835,8 @@
         <!-- [PS-04] 커버리지 필터용 노드(record 끝 append). 같은 날 OT 가 복수 노드에 걸치는
              이례 케이스는 MIN 으로 결정화한다(GROUP BY (USER_CD, WORK_YMD) 유지). -->
         , MIN(O.NODE_CD)                                                AS nodeCd
+        , NULL                                                          AS planBrkStrTime
+        , NULL                                                          AS planBrkEndTime
     FROM TB_USER_OVERTIME_MGMT O
         LEFT OUTER JOIN TB_USER U
             ON  U.CMPNY_CD = O.CMPNY_CD
@@ -904,6 +916,8 @@
              정규직은 현재 소속(TB_USER.NODE_CD — attd07 isClosedForUser 와 동일 해석 원리),
              일용직(TB_DAILY_USER)은 NULL 로 남아 전체마감('*') 전용으로 판정된다. -->
         , U.NODE_CD                                                     AS nodeCd
+        , NULL                                                          AS planBrkStrTime
+        , NULL                                                          AS planBrkEndTime
     FROM TB_USER_LEAVE_USE L
         LEFT OUTER JOIN TB_LEAVE_TYPE_MGMT T
             ON  T.CMPNY_CD = L.CMPNY_CD
@@ -946,10 +960,13 @@
     <select id="selectHalfLeaveWindows" resultType="com.prafta.web.subcon.subcon03.result.HalfLeaveWindowRow">
     /* Subcon03Mapper.selectHalfLeaveWindows */
     SELECT DISTINCT
-          L.USER_CD     AS userCd
-        , L.START_DATE  AS workYmd
-        , L.START_TIME  AS startTime
-        , L.END_TIME    AS endTime
+          L.USER_CD       AS userCd
+        , L.START_DATE    AS workYmd
+        , L.START_TIME    AS startTime
+        , L.END_TIME      AS endTime
+        <!-- BW-05: 사용단위 + 휴게 무시 요청(반차 01 + Y 면 그날 스케줄 휴게 공제 0). record 끝 append. -->
+        , L.USE_UNIT_TYPE AS useUnitType
+        , L.BRK_WAIVE_YN  AS brkWaiveYn
       FROM TB_USER_LEAVE_USE L
      WHERE L.CMPNY_CD      = #{prvCmpnyCd}
        AND L.SITE_CD       = #{targetSiteCd}

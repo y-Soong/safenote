@@ -31,6 +31,8 @@ public record LeaveApplyParam(
      * 서버 강제 검증(4중 — 존재/타입/회사/소유권)은 {@code LeaveFlowServiceImpl.submitLeave} 가 수행한다.
      */
     , String evidenceFileId
+    /** 휴게시간 무시 요청(BW-04, 앱 미러). 'Y'/'N' — 미전송(null)은 'N'. */
+    , String brkWaiveYn
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -62,6 +64,7 @@ public record LeaveApplyParam(
             , tokenInfo.gv_siteCd()
             , tokenInfo.gv_userCd()
             , request.getEvidenceFileId()
+            , "Y".equals(request.getBrkWaiveYn()) ? "Y" : "N" // 미전송/null/'N' → 'N'
         );
     }
 }

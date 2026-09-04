@@ -67,6 +67,12 @@ public class LeaveApplyRequest {
     @Size(max = 50)
     private String nodeCd;
 
+    /** 휴게시간 무시 요청(BW-04, 앱 미러). 'Y'/'N', 미전송=N. 반차·시간차만 'Y' 허용 + 회사 토글 필요. */
+    @FieldLabel("휴게시간무시")
+    @Size(max = 1)
+    @Pattern(regexp = "[YN]")
+    private String brkWaiveYn;
+
     /** 결재 필요 시 사용자가 구성한 결재자 순서(1단계부터). 결재 불요면 비워둠. */
     private List<String> approverUserCds;
 

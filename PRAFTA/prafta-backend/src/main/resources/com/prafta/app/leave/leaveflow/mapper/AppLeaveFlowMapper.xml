@@ -55,14 +55,16 @@
     <!-- ============================================================
          apply-meta: 회사 활성 법정정책의 단일 허용단위 + 법정 결재여부
          - tb_leave_policy(활성 1건) JOIN tb_leave_usage_policy(POLICY_SEQ 1:1).
-         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn) 순서 일치.
+         - 결과 record LeaveUsagePolicyRow(usageUnit, policyAprvUseYn, brkWaiveAllowYn) 순서 일치(위치매핑 - 맨 끝 추가).
          - LC-10: 반반차는 USAGE_UNIT='QUARTER_DAY' 로 표현(구 ALLOW_QUARTER 컬럼 미조회).
+         - BW-04: BRK_WAIVE_ALLOW_YN(휴게 무시 요청 허용, 기본 Y) 추가 조회 - 신청/preview 게이트(ATTD_400_217).
          ============================================================ -->
     <select id="selectCompanyUsageUnit" resultType="com.prafta.app.leave.leaveflow.result.LeaveUsagePolicyRow">
     /* AppLeaveFlowMapper.selectCompanyUsageUnit */
     SELECT
-          UP.USAGE_UNIT    AS usageUnit
-        , P.APRV_USE_YN    AS policyAprvUseYn
+          UP.USAGE_UNIT          AS usageUnit
+        , P.APRV_USE_YN          AS policyAprvUseYn
+        , UP.BRK_WAIVE_ALLOW_YN  AS brkWaiveAllowYn
       FROM TB_LEAVE_POLICY P
       JOIN TB_LEAVE_USAGE_POLICY UP
         ON UP.POLICY_SEQ = P.POLICY_SEQ
@@ -446,6 +448,7 @@
     )
     </insert>
 
+    <!-- BW-04: BRK_WAIVE_YN / BRK_WAIVE_REQ_DTIME(서버 시각, Y 일 때만) 추가. 분할 차감 시 모든 행 동일 값. -->
     <insert id="insertLeaveUse" parameterType="com.prafta.app.leave.leaveflow.application.command.LeaveUseCommand">
     /* AppLeaveFlowMapper.insertLeaveUse */
     INSERT INTO TB_USER_LEAVE_USE (
@@ -463,6 +466,8 @@
         , USE_UNIT_TYPE
         , LEAVE_DAYS
         , LEAVE_MINUTES
+        , BRK_WAIVE_YN
+        , BRK_WAIVE_REQ_DTIME
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -485,6 +490,8 @@
         , #{useUnitType}
         , #{leaveDays}
         , #{leaveMinutes}
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN NOW() ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , #{leaveStatus}

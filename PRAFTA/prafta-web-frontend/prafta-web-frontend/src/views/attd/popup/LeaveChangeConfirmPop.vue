@@ -52,6 +52,12 @@
               <dt>차감 일수</dt>
               <dd>{{ detail.leaveDaysLabel }}</dd>
             </div>
+            <!-- BW-12 잔여 B-1: 원 연차의 휴게 미이용 요청은 이동해도 소멸하지 않고 새 행에 승계된다
+                 (정책서 attd/08-leave.md §8.5.10(b)). 서버 brkWaiveYn='Y' 일 때만 1줄 표시. -->
+            <div v-if="detail.brkWaiveYn === 'Y'">
+              <dt>휴게</dt>
+              <dd>휴게 미이용 요청 승계</dd>
+            </div>
             <div>
               <dt>요청유형</dt>
               <dd>{{ detail.reqTypeNm }}</dd>
@@ -303,6 +309,8 @@ const fnLoadDetail = async () => {
             d.useUnitType,
             d.leaveMinutes
           ),
+          // BW-12 잔여 B-1: 휴게 미이용 요청 승계 표시(구서버 응답은 undefined → 미노출).
+          brkWaiveYn: d.brkWaiveYn ?? null,
           reqTypeNm: REQ_TYPE_NM[d.reqType] || d.reqType,
           initiatorTypeNm:
             INITIATOR_TYPE_NM[d.initiatorType] || d.initiatorType,

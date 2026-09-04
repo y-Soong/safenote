@@ -41,8 +41,8 @@
         </header>
         <p class="lp-card__desc">
           회사 전체에 <strong>법정 연차를 자동으로 부여할지</strong> 결정합니다.
-          5인 미만 사업장 등
-          <strong>연차유급휴가 적용 제외 사업장</strong>에서 해제합니다.
+          5인 미만 사업장 등 <strong>연차유급휴가 적용 제외 사업장</strong>에서
+          해제합니다.
         </p>
         <label class="lp-check lp-autogrant__check">
           <input
@@ -676,8 +676,10 @@
               </label>
             </div>
           </div>
+          <!-- 2026-09-04: 적용 범위를 법정 3종(연차·월차·근속가산)으로 확정하고 라벨을 일치시켰다.
+               종전 라벨은 "법정연차 신청 결재" 였으나 실제로는 시스템 시드 7종 전체가 이 값을 탔다. -->
           <div class="lp-field">
-            <label class="lp-field__label">법정연차 신청 결재</label>
+            <label class="lp-field__label">연차·월차·근속가산 신청 결재</label>
             <label class="lp-check">
               <input
                 type="checkbox"
@@ -687,11 +689,31 @@
               />
               결재 필요 (해제 시 즉시 확정)
             </label>
+            <p class="lp-field__hint">
+              연차 · 월차 · 근속가산 연차 3종에만 적용됩니다. 그 외 휴가는
+              [연차타입 관리]에서 종류별로 설정합니다.
+            </p>
+          </div>
+          <!-- BW-09(Q-4): 휴게시간 무시 요청 허용 — 근기법 제54조① 단서(2026-12-10 시행).
+               허용(Y) 시 근로자가 앱에서 반차·시간차 신청할 때 "휴게시간 무시" 를 체크할 수 있다.
+               미허용(N) 이면 체크박스 미노출·서버 ATTD_400_217 거부. 저장 미전송 시 서버 기본 Y. -->
+          <div class="lp-field">
+            <label class="lp-field__label">휴게시간 무시 요청 허용</label>
+            <div class="lp-checks">
+              <label class="lp-check">
+                <input type="radio" value="Y" v-model="brkWaiveAllowYn" />
+                허용 (근로자가 반차·시간차 신청 시 휴게 미이용을 요청할 수 있음)
+              </label>
+              <label class="lp-check">
+                <input type="radio" value="N" v-model="brkWaiveAllowYn" />
+                미허용
+              </label>
+            </div>
           </div>
         </div>
         <p class="lp-strong-note">
-          ※ 선택한 단위보다 <strong>굵은 단위는 자동으로 허용</strong>됩니다. (예:
-          [시간차 1시간] 선택 → 1일·반차·2시간·1시간 모두 신청 가능)
+          ※ 선택한 단위보다 <strong>굵은 단위는 자동으로 허용</strong>됩니다.
+          (예: [시간차 1시간] 선택 → 1일·반차·2시간·1시간 모두 신청 가능)
         </p>
         <p class="lp-strong-note">
           ※ <strong>[비례 부여 시 반올림]</strong> 값이
@@ -716,9 +738,9 @@
           <h3 class="lp-card__title">1일 환산시간</h3>
         </header>
         <p class="lp-card__desc">
-          시간차 연차는 <strong>당일 배정 스케줄(근무계획)의
-          소정근로시간</strong>을 1일로 환산해 차감됩니다. (예: 그날 7시간
-          배정일의 1시간 = 1/7일)
+          시간차 연차는
+          <strong>당일 배정 스케줄(근무계획)의 소정근로시간</strong>을 1일로
+          환산해 차감됩니다. (예: 그날 7시간 배정일의 1시간 = 1/7일)
         </p>
         <p class="lp-strong-note">
           ※ 소정근로가 <strong>8시간을 초과</strong>하는 날은
@@ -749,8 +771,8 @@
           <span>
             하루 시간차 누적 사용이 그날 소정근로시간의
             <strong>¼ · ½ · 전부</strong>에 도달하면 각각
-            <strong>0.25일 · 0.5일 · 1일</strong>이 하한으로 차감되며, 하루
-            차감 합계는 1일을 넘지 않습니다.
+            <strong>0.25일 · 0.5일 · 1일</strong>이 하한으로 차감되며, 하루 차감
+            합계는 1일을 넘지 않습니다.
           </span>
         </div>
       </section>
@@ -946,12 +968,16 @@ const changeReason = ref("");
 //   HB-04(2026-08-07): 반반차(QUARTER_DAY) 폐지 — 선택지에서 제거했다. 구 저장값은 아래 fnApplyPolicy
 //   에서 HALF_DAY 로 정규화한다(서버 축소 정규화와 동일 방향).
 const usageUnit = ref("FULL_DAY");
-// 법정연차 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
+// 법정 3종(연차·월차·근속가산) 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
+//   2026-09-04: 서버 적용범위를 SYSTEM_YN='Y' 전체(7종) → SYS_ANNUAL/SYS_MONTHLY/SYS_TENURE_BONUS
+//   3종으로 축소(POLICY_APRV_LEAVE_CDS). 나머지 휴가는 연차타입 관리의 타입별 결재값을 따른다.
 const aprvUseYn = ref("N");
 
 // PC-08(D3·D9-①): 짜투리 잔여 보전 옵션 (TB_LEAVE_USAGE_POLICY.ALLOW_REMNANT_ROUND_UP)
 //   'Y'=최소단위 발동+회사 부담 / 'N'=소멸 임박 리포트 지원(미사용분은 연차미사용수당 정산 대상)
 const allowRemnantRoundUp = ref("N");
+// BW-09(Q-4): 휴게시간 무시 요청 허용 토글 — 기본 'Y'(허용). 저장/조회 키 brkWaiveAllowYn(미전송=Y 서버 정규화).
+const brkWaiveAllowYn = ref("Y");
 // 보전 카드 [자세히] 펼침 상태 (UI 전용)
 const remnantDetailOpen = ref(false);
 
@@ -1190,6 +1216,8 @@ const fnBuildSaveRequest = () => {
     aprvUseYn: aprvUseYn.value,
     // PC-08(D3): 짜투리 잔여 보전 옵션 저장 (동일 키 왕복 — 미전송 시 백엔드 'N' 정규화)
     allowRemnantRoundUp: allowRemnantRoundUp.value,
+    // BW-09(Q-4): 휴게시간 무시 요청 허용 (미전송 시 백엔드 'Y' 정규화 — 항상 현재값을 실어 왕복)
+    brkWaiveAllowYn: brkWaiveAllowYn.value,
 
     applyFromDate: applyFromDate.value,
     changeReason: changeReason.value,
@@ -1253,6 +1281,8 @@ const fnApplyPolicyToState = (p) => {
   aprvUseYn.value = p.aprvUseYn ?? "N";
   // PC-08(D3): 짜투리 잔여 보전 옵션 — 미지정/구버전 데이터는 'N'(OFF) 폴백
   allowRemnantRoundUp.value = p.allowRemnantRoundUp ?? "N";
+  // BW-09(Q-4): 휴게시간 무시 요청 허용 — 미지정/구버전 데이터는 'Y'(허용) 폴백(서버 정규화 방향과 동일)
+  brkWaiveAllowYn.value = p.brkWaiveAllowYn ?? "Y";
 };
 
 // 신규 작성 모드(활성 정책 없음) — 기본값으로 초기화
@@ -1275,6 +1305,7 @@ const fnResetToDefault = () => {
   usageUnit.value = "FULL_DAY";
   aprvUseYn.value = "N";
   allowRemnantRoundUp.value = "N"; // PC-08: 기본 OFF
+  brkWaiveAllowYn.value = "Y"; // BW-09: 기본 허용
 };
 
 // --- axis 선택 핸들러 (UI 토글; 매트릭스 보정은 watch 가 담당) ---
@@ -1429,6 +1460,8 @@ const fnBuildTargetForImpact = () => {
     // PC-08(D3): 영향 분석 경유 [정책 변경 진행] 저장 시에도 옵션이 'N'으로
     //   묵시 초기화되지 않도록 fnBuildSaveRequest 와 동일하게 포함한다.
     allowRemnantRoundUp: allowRemnantRoundUp.value,
+    // BW-09(Q-4): 영향 분석 경유 저장에서도 토글이 'Y'로 묵시 초기화되지 않도록 포함
+    brkWaiveAllowYn: brkWaiveAllowYn.value,
   };
 
   if (axis4Active.value) {
@@ -1869,6 +1902,14 @@ const fnTomorrowYyyymmdd = () => {
   font-weight: 500;
   color: var(--color-text-muted);
   margin-bottom: 0.5rem;
+}
+
+/* 결재 스위치 적용범위 안내(법정 3종 한정) */
+.lp-field__hint {
+  margin: 0.375rem 0 0;
+  font-size: 0.6875rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
 }
 
 .lp-checks {

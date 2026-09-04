@@ -3,26 +3,23 @@ package com.prafta.app.leave.leaveflow.dto.response;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 
 /**
- * 앱 연차 신청 폼 일자별 스케줄(휴게 포함) 응답.
+ * 앱 연차 신청 화면의 근무일 스케줄 조회 응답(day-schedule).
  *
- * <p>시간차 연차는 휴게시간을 가로지를 수 없으므로(ATTD_400_055), 신청 시각 선택 전에
- * 해당 일자의 근무/휴게 구간을 사용자에게 안내하기 위한 조회 전용 응답이다.
- * 시각은 모두 HHMM 문자열(미설정 구간은 null). 스케줄이 없는 날(근무계획 없음/연차 배정)은
- * {@code hasSchedule=false} 로 내리고 시각 필드는 모두 null.
+ * <p>HB-03: 반차 경계 미리보기 3필드({@code halfDayBoundaryTime}, {@code halfStartPartRange}, {@code halfEndPartRange})는
+ * <b>END·미체크 경계</b> 기준 — 의미 불변(구 앱 무영향, plan §4-1).
  *
- * @param hasSchedule   해당 일자에 적용된 근무 스케줄 존재 여부
- * @param fstSchStrTime 1구간 근무 시작(HHMM)
- * @param fstSchEndTime 1구간 근무 종료(HHMM)
- * @param secSchStrTime 2구간 근무 시작(HHMM, 없으면 null)
- * @param secSchEndTime 2구간 근무 종료(HHMM, 없으면 null)
- * @param fstBrkStrTime 1구간 휴게 시작(HHMM, 휴게시각 미설정이면 null)
- * @param fstBrkEndTime 1구간 휴게 종료(HHMM, 휴게시각 미설정이면 null)
- * @param secBrkStrTime 2구간 휴게 시작(HHMM, 없으면 null)
- * @param secBrkEndTime 2구간 휴게 종료(HHMM, 없으면 null)
- * @param halfDayBoundaryTime 반차 경계 시각(HHMM). 근로를 절반으로 나누는 시각(휴게 제외 누적 기준).
- *                            스케줄 없음/산출 불가면 null — HB-03(additive, 구 앱 무영향)
- * @param halfStartPartRange  시작기준(늦게 출근) 반차가 쉬는 구간 "HHMM~HHMM". 산출 불가면 null
- * @param halfEndPartRange    종료기준(일찍 퇴근) 반차가 쉬는 구간 "HHMM~HHMM". 산출 불가면 null
+ * <p>BW-06(2026-09-04, 부분휴가 휴게 무시): 체크/미체크 × START/END 4조합의 경계 구간과 법정 휴게 하한 경고를 모두
+ * 내려 화면이 서버값만 표시한다(클라 재계산 금지). 모두 additive.
+ * <ul>
+ *   <li>{@code halfDayBoundaryTimeStart} — START(늦게 출근) 미체크 경계(G-3 끝걷기). 기존 {@code halfStartPartRange} 는
+ *       END 경계를 공용한 값이라 G-3 이후엔 이 값과 다를 수 있다.</li>
+ *   <li>{@code halfStartWaiveRange}/{@code halfEndWaiveRange} — 체크 시 쉬는 구간("HHMM~HHMM"). recordOnly 면 미체크 값과 같다.</li>
+ *   <li>{@code halfDayBoundaryTimeWaiveStart}/{@code halfDayBoundaryTimeWaiveEnd} — 체크 시 파트별 경계(HHMM).</li>
+ *   <li>{@code brkWaiveAllowYn} — 회사 토글(N 이면 체크박스 미노출). {@code brkTimeRegisteredYn} — 휴게 시각 등록 여부(G-2 안내).</li>
+ *   <li>{@code brkWaiveRecordOnlyYn} — 양 파트 모두 체크해도 시각이 바뀌지 않으면 'Y'(휴게 시각 미등록·휴게가 쉬는 구간 안).
+ *       파트별 값은 {@code halfLegalWarn.start/end.waive.recordOnlyYn}.</li>
+ *   <li>{@code halfLegalWarn} — {@code { start: { plain, waive }, end: { plain, waive } }}, 각 {@code {warnYn, msg, recordOnlyYn}}.</li>
+ * </ul>
  */
 public record LeaveDayScheduleResponse(
       boolean hasSchedule
@@ -37,20 +34,60 @@ public record LeaveDayScheduleResponse(
     , String halfDayBoundaryTime
     , String halfStartPartRange
     , String halfEndPartRange
+    , String halfDayBoundaryTimeStart
+    , String halfDayBoundaryTimeWaiveStart
+    , String halfDayBoundaryTimeWaiveEnd
+    , String halfStartWaiveRange
+    , String halfEndWaiveRange
+    , String brkWaiveAllowYn
+    , String brkTimeRegisteredYn
+    , String brkWaiveRecordOnlyYn
+    , HalfLegalWarn halfLegalWarn
 ) {
-    /** 스케줄 없는 날 응답(시각 전부 null). */
-    public static LeaveDayScheduleResponse empty() {
-        return new LeaveDayScheduleResponse(false, null, null, null, null, null, null, null, null,
-                null, null, null);
+
+    /** 파트별(START/END) 법정 경고 묶음. */
+    public record HalfLegalWarn(PartWarn start, PartWarn end) {
     }
 
-    /** 스케줄 VO → 응답 매핑(반차 경계 필드 포함 — HB-03). */
-    public static LeaveDayScheduleResponse from(DailyScheduleVO sch,
-                                                String halfDayBoundaryTime,
-                                                String halfStartPartRange,
-                                                String halfEndPartRange) {
+    /** 미체크(plain) / 체크(waive) 법정 경고. */
+    public record PartWarn(WarnInfo plain, WarnInfo waive) {
+    }
+
+    /** 경고 1건: warnYn 'Y'/'N', msg(서버 문구, 없으면 null), recordOnlyYn(체크 요청이 기록 전용인지 — plain 은 항상 'N'). */
+    public record WarnInfo(String warnYn, String msg, String recordOnlyYn) {
+    }
+
+    /** 스케줄 없음 응답(경계·경고 전부 null, 회사 토글만 전달). */
+    public static LeaveDayScheduleResponse empty(String brkWaiveAllowYn) {
+        return new LeaveDayScheduleResponse(false, null, null, null, null, null, null, null, null,
+                null, null, null,
+                null, null, null, null, null,
+                brkWaiveAllowYn, "N", null, null);
+    }
+
+    /**
+     * 스케줄 있음 응답.
+     *
+     * @param sch                    그날 스케줄(null 이면 {@link #empty(String)})
+     * @param halfDayBoundaryTime    END·미체크 경계(HB-03 불변)
+     * @param halfStartPartRange     HB-03 불변(END 경계 공용값)
+     * @param halfEndPartRange       HB-03 불변
+     */
+    public static LeaveDayScheduleResponse of(DailyScheduleVO sch,
+                                              String halfDayBoundaryTime,
+                                              String halfStartPartRange,
+                                              String halfEndPartRange,
+                                              String halfDayBoundaryTimeStart,
+                                              String halfDayBoundaryTimeWaiveStart,
+                                              String halfDayBoundaryTimeWaiveEnd,
+                                              String halfStartWaiveRange,
+                                              String halfEndWaiveRange,
+                                              String brkWaiveAllowYn,
+                                              String brkTimeRegisteredYn,
+                                              String brkWaiveRecordOnlyYn,
+                                              HalfLegalWarn halfLegalWarn) {
         if (sch == null) {
-            return empty();
+            return empty(brkWaiveAllowYn);
         }
         return new LeaveDayScheduleResponse(
               true
@@ -65,6 +102,15 @@ public record LeaveDayScheduleResponse(
             , halfDayBoundaryTime
             , halfStartPartRange
             , halfEndPartRange
+            , halfDayBoundaryTimeStart
+            , halfDayBoundaryTimeWaiveStart
+            , halfDayBoundaryTimeWaiveEnd
+            , halfStartWaiveRange
+            , halfEndWaiveRange
+            , brkWaiveAllowYn
+            , brkTimeRegisteredYn
+            , brkWaiveRecordOnlyYn
+            , halfLegalWarn
         );
     }
 }

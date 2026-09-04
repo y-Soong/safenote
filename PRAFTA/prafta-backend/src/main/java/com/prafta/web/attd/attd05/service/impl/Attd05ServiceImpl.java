@@ -549,6 +549,13 @@ public class Attd05ServiceImpl implements Attd05Service {
     		// 잔여 부족이면 해당 셀은 저장하지 않고 스킵. (이미 기록됨/정상 차감은 통과하여 근무계획 저장)
     		// (isLegalLeaveCell 은 위 교대 잠금 가드 분기에서 이미 산출됨 — 재선언하지 않는다.)
     		if (isLegalLeaveCell) {
+    			// BW-04(qa §5-8): 관리자 직접 차감(근무계획 저장/엑셀) 경로는 휴게시간 무시 요청 비대상.
+    			//   값이 'Y' 로 실려 오면 셀 스킵이 아니라 요청 전체 거부(ATTD_400_218) — 우회 경로 차단(fail-closed).
+    			if ("Y".equals(model.brkWaiveYn())) {
+    				log.info("근무계획 연차 적용 거부(휴게시간 무시 요청은 본인 신청 경로 한정) - userCd={}, workYmd={}"
+    						, model.userCd(), model.workYmd());
+    				throw new ApiException(AttdErrorCode.ATTD_400_218);
+    			}
     			DirectLeaveResult result;
     			if (isAutoLegal) {
     				// prafta-com-016-C-4: 종류 미지정 → 후보(연차/월차) 중 소멸 임박 통합순으로 자동 1일 차감.

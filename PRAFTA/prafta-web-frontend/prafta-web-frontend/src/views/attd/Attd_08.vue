@@ -853,13 +853,14 @@ const fnSearch = async () => {
     if (response.status === 200) {
       console.log(response.data);
       rows.value = response.data?.attdListsResultList ?? [];
-      // A안(2026-08-17): 확정 시각 연차 구간 맵 — `${userCd}_${workYmd}` → [[startHHMM,endHHMM],...]
+      // A안(2026-08-17): 확정 시각 연차 구간 맵 — `${userCd}_${workYmd}` → [[startHHMM,endHHMM,useUnitType,brkWaiveYn],...]
       //   구서버 응답(필드 부재)이면 빈 맵 = 종전 값 그대로(무회귀).
+      //   BW-05: 3·4번째 원소(사용단위·휴게 무시 요청)는 "반차(01)+Y 인 날 = 스케줄 휴게 공제 0" 판정 입력.
       const tlMap = {};
       for (const w of response.data?.timeLeaveWindowList ?? []) {
         const key = `${w.userCd}_${w.workYmd}`;
         if (!tlMap[key]) tlMap[key] = [];
-        tlMap[key].push([w.startTime, w.endTime]);
+        tlMap[key].push([w.startTime, w.endTime, w.useUnitType, w.brkWaiveYn]);
       }
       timeLeaveWinMap.value = tlMap;
       // 상세 닫기 (조회 결과가 갱신됨)
@@ -1050,6 +1051,57 @@ const schedBreakMin = (r) => {
   const n = parseInt(isSeq2 ? r.plan2BreakMin : r.plan1BreakMin, 10);
   return isNaN(n) ? 0 : n;
 };
+// BW-05: 휴게 종료 HHMM → 분(근무일 기준). '2400' = 1440 인정(서버 DateTimeUtils.brkEndToMinutes 미러).
+const brkEndMinutes = (r, hhmm) => {
+  if (hhmm === "2400") return dtMinutes(r.workYmd, "0000", r.workYmd) + 1440;
+  return dtMinutes(r.workYmd, hhmm, r.workYmd);
+};
+// BW-05: 그날 확정 반차(01) 중 휴게 무시 체크('Y') 행이 있으면 그날 스케줄 휴게는 근로로 전환(공제 0).
+//   서버 RecognizedMinutesUtils.halfDayBreakWaived 미러(파리티 계약).
+const halfDayBreakWaived = (r) => {
+  const wins = timeLeaveWinMap.value[`${r.userCd}_${r.workYmd}`];
+  if (!wins || !wins.length) return false;
+  return wins.some((w) => w[2] === "01" && w[3] === "Y");
+};
+// BW-05: "실제로 쉰 휴게만 공제" — [sM,eM](실근태 또는 실근태∩스케줄) 구간 기준 휴게 공제 분.
+//   ① 반차 휴게 무시 체크일 → 0
+//   ② 휴게 시각 있음 → Σ(휴게 시각 ∩ [sM,eM] − 연차창)   (연차창 안 휴게는 연차 겹침으로 이미 빠지므로 이중 공제 금지)
+//   ③ 휴게 시각 없음(분만)/0폭/파싱 실패 → 종전대로 휴게분 전액
+//   서버 RecognizedMinutesUtils.breakDeduction 미러(파리티 계약 — 산식 변경 시 양쪽 동시 수정).
+const schedBreakDeduct = (r, sM, eM) => {
+  if (r._isOt) return 0;
+  if (halfDayBreakWaived(r)) return 0;
+  const brkMin = schedBreakMin(r);
+  const isSeq2 = String(r.workSeq) === "2";
+  const brkStr = isSeq2 ? r.plan2BrkStr : r.plan1BrkStr;
+  const brkEnd = isSeq2 ? r.plan2BrkEnd : r.plan1BrkEnd;
+  const schStart = isSeq2 ? r.plan2Start : r.plan1Start;
+  if (!brkStr || !brkEnd || !schStart || sM == null || eM == null || eM <= sM)
+    return brkMin;
+  let bs = dtMinutes(r.workYmd, brkStr, r.workYmd);
+  let be = brkEndMinutes(r, brkEnd);
+  const schStartM = dtMinutes(r.workYmd, schStart, r.workYmd);
+  if (bs == null || be == null || schStartM == null) return brkMin;
+  if (be < bs) be += 1440; // 자정 넘김 휴게(G-1 wrap)
+  if (be === bs) return brkMin; // 0폭 = 휴게 시각 없음 취급
+  while (bs < schStartM) {
+    bs += 1440;
+    be += 1440;
+  }
+  const cs = Math.max(bs, sM);
+  const ce = Math.min(be, eM);
+  if (ce <= cs) return 0; // 휴게 시각이 실근태 밖(쉬지 않음)
+  let deduct = ce - cs;
+  const wins = timeLeaveWinMap.value[`${r.userCd}_${r.workYmd}`];
+  for (const w of wins ?? []) {
+    const ws = dtMinutes(r.workYmd, w[0], r.workYmd);
+    let we = dtMinutes(r.workYmd, w[1], r.workYmd);
+    if (ws == null || we == null) continue;
+    if (we <= ws) we += 1440;
+    deduct -= Math.max(0, Math.min(ce, we) - Math.max(cs, ws));
+  }
+  return Math.max(0, deduct);
+};
 // 실제 출근~퇴근 총 구간(분, 휴게 차감 전).
 const actualGrossMin = (r) => {
   const inM = dtMinutes(r._inDate, r._inTime, r.workYmd);
@@ -1087,11 +1139,14 @@ const workedNetMin = (r) => {
   const inM = dtMinutes(r._inDate, r._inTime, r.workYmd);
   let outM = dtMinutes(r._outDate, r._outTime, r.workYmd);
   let leaveOverlap = 0;
+  let brkDeduct = schedBreakMin(r);
   if (inM != null && outM != null) {
     if (outM < inM) outM += 1440;
     leaveOverlap = leaveOverlapForRange(r, inM, outM);
+    // BW-05: 실근태 구간 기준 "실제로 쉰 휴게만" 공제(BE 파리티 — 요청서 표 "웹·BE 동시").
+    brkDeduct = schedBreakDeduct(r, inM, outM);
   }
-  return Math.max(0, gross - schedBreakMin(r) - leaveOverlap);
+  return Math.max(0, gross - brkDeduct - leaveOverlap);
 };
 // 인정시간(분).
 const recognizedMin = (r) => {
@@ -1119,12 +1174,12 @@ const recognizedMin = (r) => {
     Math.min(outM, schEndM) - Math.max(inM, schStartM)
   );
   // A안: 확정 시각 연차 겹침 차감 — (실제∩스케줄) 구간과의 겹침만 뺀다(과차감 방지).
-  const leaveOverlap = leaveOverlapForRange(
-    r,
-    Math.max(inM, schStartM),
-    Math.min(outM, schEndM)
-  );
-  return Math.max(0, overlap - schedBreakMin(r) - leaveOverlap);
+  const sM = Math.max(inM, schStartM);
+  const eM = Math.min(outM, schEndM);
+  const leaveOverlap = leaveOverlapForRange(r, sM, eM);
+  // BW-05: 휴게 공제 = (휴게 시각 ∩ 실근태∩스케줄 − 연차창) — 반차 휴게 무시 체크일은 0, 시각 없는 타입은 종전 분 공제.
+  //   서버 RecognizedMinutesUtils.recognizedMinutes(12인자) 와 완전 동일 답(파리티 계약 — 하도급 스냅샷 RECOG_MINUTES).
+  return Math.max(0, overlap - schedBreakDeduct(r, sM, eM) - leaveOverlap);
 };
 // 분 → "N시간 M분" 표기. null/0 처리.
 const fmtDuration = (min) => {

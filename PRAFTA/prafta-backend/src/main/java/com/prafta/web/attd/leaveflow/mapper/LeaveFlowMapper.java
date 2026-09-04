@@ -73,6 +73,9 @@ public interface LeaveFlowMapper {
     /** 활성 법정 정책의 결재 여부 (tb_leave_policy.APRV_USE_YN). 없으면 null. */
     String selectPolicyAprvUseYn(@Param("cmpnyCd") String cmpnyCd);
 
+    /** BW-04: 활성 정책의 휴게 무시 요청 허용 토글 (tb_leave_usage_policy.BRK_WAIVE_ALLOW_YN). 없으면 null(fail-closed). */
+    String selectPolicyBrkWaiveAllowYn(@Param("cmpnyCd") String cmpnyCd);
+
     // (삭제) selectPolicyUsageUnit — D-8(2026-08-07). 반반차 폐지(HB-04)로 호출부 0건이 되어 제거.
     //   법정정책 사용단위 계층 판정은 LeaveUnitGranularity(SSOT)가 담당한다.
 

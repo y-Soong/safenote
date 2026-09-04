@@ -156,5 +156,24 @@ public record MonthlyAttdReqResult(
     , String curFixedOtStrTime
     /** 현재 스케줄 후방 고정연장 종료 (HHmm) */
     , String curFixedOtEndTime
+
+    /* BW-06: 연차 요청 카드(05) 휴게 미이용 요청 배지 — REQ→LEAVE_USE 조인(U)에서 파생. 그 외 요청 유형은 NULL.
+       ★record 끝(위치매핑). brkLegalWarn* 는 서비스가 채운다(SELECT 는 NULL 자리). */
+    , String brkWaiveYn
+    , String brkWaiveReqDtime
+    , String brkLegalWarnYn
+    , String brkLegalWarnText
 ) {
+
+    /** BW-06: 서비스가 산출한 법정 경고를 반영한 사본(record 불변, 컴포넌트 순서 변경 시 함께 수정). */
+    public MonthlyAttdReqResult withBrkLegalWarn(String warnYn, String warnText) {
+        return new MonthlyAttdReqResult(cmpnyCd, reqId, siteCd, nodeCd, userCd, reqType, reqTypeNm, reqStatus,
+                reqStatusNm, workSeq, workYmd, startDate, startTime, endDate, endTime, reqReason, insertDate,
+                approvalStep, schCd, tgtSchType, tgtFstStrTime, tgtFstEndTime, tgtSecStrTime, tgtSecEndTime,
+                curSchType, curFstStrTime, curFstEndTime, curSecStrTime, curSecEndTime,
+                leaveDays, useUnitType, unitNm, borrowDays,
+                tgtPreFixedOtStrTime, tgtPreFixedOtEndTime, tgtFixedOtStrTime, tgtFixedOtEndTime,
+                curPreFixedOtStrTime, curPreFixedOtEndTime, curFixedOtStrTime, curFixedOtEndTime,
+                brkWaiveYn, brkWaiveReqDtime, warnYn, warnText);
+    }
 }

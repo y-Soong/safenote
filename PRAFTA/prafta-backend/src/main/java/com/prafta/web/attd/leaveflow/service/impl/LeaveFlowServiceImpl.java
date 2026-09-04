@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +31,9 @@ import com.prafta.common.cmm.leave.service.LeaveRemnantCoverService;
 import com.prafta.common.cmm.leave.util.FiscalYearUtils;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.BreakMergeResult;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfPart;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO;
 import com.prafta.common.cmm.leave.vo.BorrowGrantResultVO.BorrowGrantSlotVO;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
@@ -69,6 +72,20 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 @RequiredArgsConstructor
 public class LeaveFlowServiceImpl implements LeaveFlowService {
+
+    /**
+     * Baim_07 "연차·월차·근속가산 신청 결재" 스위치({@code tb_leave_policy.APRV_USE_YN})가 지배하는 법정 3종.
+     *
+     * <p>2026-09-04 사용자 확정: 종전에는 {@code SYSTEM_YN='Y'} 인 시스템 시드 전체(7종)가 이 스위치를
+     * 탔으나, 실제 신청 대상인 연차·월차·근속가산 3종으로 좁힌다. 나머지 시스템 시드
+     * (SYS_PREGRANT / SYS_PROMOTION / SYS_BIRTHDAY / SYS_CAREER)는 타입별
+     * {@code tb_leave_type_mgmt.APRV_USE_YN} 을 따른다.
+     *
+     * <p>★{@code statutory}(=SYSTEM_YN) 자체의 의미는 불변 — 사용단위 계층 등 다른 분기는 종전 그대로다.
+     * 앱 {@code AppLeaveFlowServiceImpl.POLICY_APRV_LEAVE_CDS} 와 동일 집합(미러).
+     */
+    private static final Set<String> POLICY_APRV_LEAVE_CDS =
+            Set.of("SYS_ANNUAL", "SYS_MONTHLY", "SYS_TENURE_BONUS");
 
     // 요청 유형 [SYS032]
     private static final String REQ_TYPE_LEAVE_USE = "05";
@@ -136,6 +153,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
     /** 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 업로드/열람(공용 FileService 인프라 재사용 — 앱 미러). */
     private final FileService fileService;
     private final FileMapper fileMapper;
+    /** BW-06: preview 시간차 법정 휴게 하한 경고 산출용 그날 스케줄 조회(앱 미러). */
+    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
 
     /** 연차 신청 증빙 필수화(2026-08-29): SYS010 파일타입(연차 증빙자료 — secure 저장, 앱과 동일 상수). */
     private static final String FILE_TYPE_EVIDENCE = "008";
@@ -174,8 +193,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         }
 
         boolean statutory = "Y".equals(type.systemYn());
+        // 결재 판정은 법정 3종(연차·월차·근속가산)만 정책 스위치를 탄다(2026-09-04, 앱 미러).
+        //   statutory 자체는 아래 단위/차감 분기에서 종전 의미 그대로 쓰이므로 건드리지 않는다.
+        boolean policyAprvTarget = statutory && POLICY_APRV_LEAVE_CDS.contains(leaveCd);
         boolean aprvRequired;
-        if (statutory) {
+        if (policyAprvTarget) {
             aprvRequired = "Y".equals(leaveFlowMapper.selectPolicyAprvUseYn(cmpny));
         } else {
             aprvRequired = "Y".equals(type.aprvUseYn());
@@ -190,6 +212,11 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         String startTime = null;
         String endTime = null;
 
+        // 2-B) BW-04 휴게 무시 게이트(앱 미러, 단위 분기 진입 전 순서 고정): ① 반차/시간차 외 단위 거부(ATTD_400_219)
+        //   ② 회사 BRK_WAIVE_ALLOW_YN='N' 거부(ATTD_400_217). 미체크('N')면 게이트 미진입(기존 요청 무회귀).
+        final boolean brkWaive = "Y".equals(p.brkWaiveYn());
+        assertBrkWaiveAllowed(cmpny, user, workYmd, unit, hourlyUnit, brkWaive);
+
         if (UNIT_FULL.equals(unit)) {
             leaveDays = new BigDecimal("1.00000");
         } else if (UNIT_HALF.equals(unit)) {
@@ -197,26 +224,33 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             // 반차는 소정근로의 절반을 차감하므로 근무 스케줄이 있어야 한다.
             //   스케줄 없는 날(경계 산출 불가)은 반차 신청 불가(종일 연차만 가능).
             // HB-02: 파트(시작기준/종료기준)를 받아 경계 시각을 확정 저장한다(정책 §8.5.10). 앱 미러.
-            HalfDayBoundary hb = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd);
+            // BW-04: 파트별 경계 산출(G-3 START = 종료에서 거꾸로 걷기) + 휴게 무시 체크 여부 반영(앱 미러).
+            //   파트 미상(null)은 END 로 산출만 하고 아래 ATTD_400_195 로 거부한다(거부 순서 종전 유지: 110 → 195).
+            String halfPart = normalizeHalfPart(p.halfPart());
+            HalfDayBoundary hb = leaveDeductionService.getHalfDayBoundary(
+                    cmpny, site, user, workYmd, HalfPart.of(halfPart), brkWaive);
             if (hb == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
-            String halfPart = normalizeHalfPart(p.halfPart());
             if (halfPart == null) {
                 // sec L-1: 클라 원시 입력을 그대로 출력하지 않는다(CR/LF 로그 위조 여지). 값은 미출력.
                 log.info("[leaveflow] 반차 신청 거부: 파트 미지정/부적합 (userCd={}, workYmd={})", user, workYmd);
                 throw new ApiException(AttdErrorCode.ATTD_400_195);
             }
-            leaveMinutes = hb.exemptMinutes(); // = daily / 2 (경계 산식과 동일 출처)
-            int startMin = HALF_PART_START.equals(halfPart) ? hb.workStartMin() : hb.boundaryMin();
-            int endMin = HALF_PART_START.equals(halfPart) ? hb.boundaryMin() : hb.workEndMin();
-            startTime = ScheduleWorkMinutesUtils.hhmmOfDay(startMin);
-            endTime = ScheduleWorkMinutesUtils.hhmmOfDay(endMin);
+            leaveMinutes = hb.exemptMinutes(); // = daily / 2 (경계 산식과 동일 출처, H 불변)
+            // 쉬는 구간 = 파트 기준 면제 구간. 체크했는데 recordOnly 면 미체크 경계 그대로 + 요청 기록만.
+            startTime = ScheduleWorkMinutesUtils.hhmmOfDay(hb.exemptStartMin());
+            endTime = ScheduleWorkMinutesUtils.hhmmOfDay(hb.exemptEndMin());
             // ★ Q5 정정(2026-08-07): START_DATE = END_DATE = workYmd 고정(앱 미러).
             //   자정 넘김은 "END_TIME < START_TIME 이면 익일" 시각 wrap 으로만 표현한다
             //   (END_DATE 를 익일로 두면 기간 술어 6곳이 야간 반차를 이틀로 매칭한다).
             log.info("[leaveflow] 반차 경계 확정: userCd={}, workYmd={}, part={}, {}~{}, 면제={}분",
                     user, workYmd, halfPart, startTime, endTime, leaveMinutes);
+            if (brkWaive) {
+                log.info("[leaveflow] 휴게 미이용 요청 확정: userCd={}, workYmd={}, unit={}, part={}, recordOnly={}, "
+                                + "저장구간={}~{}",
+                        user, workYmd, unit, halfPart, hb.recordOnly(), startTime, endTime);
+            }
         } else if (hourlyUnit) {
             startTime = p.startTime();
             endTime = p.endTime();
@@ -227,6 +261,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             }
             int minutes = eMin - sMin;
             int unitMin = unitMinutes(unit);
+            // 단위 배수 검증은 신청 구간 길이 기준(Q-10 확정 — 체크 시 차감 분은 배수 검증 대상 아님).
             if (minutes % unitMin != 0) {
                 throw new ApiException(AttdErrorCode.ATTD_400_054);
             }
@@ -238,11 +273,34 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (minutes > daily) {
                 throw new ApiException(AttdErrorCode.ATTD_400_052);
             }
-            // 휴게 가로지름 거부 (§8.5.9) — 휴게시각 미설정이면 skip
-            if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
-                throw new ApiException(AttdErrorCode.ATTD_400_055);
+            if (brkWaive) {
+                // BW-04(요청서 §1-2, 앱 미러): 체크 시 가로지름 거부 스킵 + 신청 구간에 접하거나 겹치는 휴게 시각 구간을
+                //   쉬는 구간에 합친다. 저장 시각 = 합친 구간, 차감 = 신청 − 휴게 겹침. 차감 0분은 거부(ATTD_400_052).
+                //   근무시간 내 검증은 신청 구간 기준(웹 미러 경로는 종전에도 withinScheduledWorkHours 를 두지 않았으므로
+                //   앱과 동일하게 신청 구간으로 추가 검증한다 — 체크 시에만, 미체크 경로 무회귀).
+                if (!leaveDeductionService.withinScheduledWorkHours(cmpny, site, user, workYmd, sMin, eMin)) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_103);
+                }
+                BreakMergeResult mr = leaveDeductionService.mergeAdjacentBreaks(cmpny, site, user, workYmd, sMin, eMin);
+                if (mr == null || mr.chargeMinutes() <= 0) {
+                    log.info("[leaveflow] 시간차 신청 거부: 휴게 편입 결과 차감 0분/산출 불가 (userCd={}, workYmd={}, {}~{})",
+                            user, workYmd, startTime, endTime);
+                    throw new ApiException(AttdErrorCode.ATTD_400_052);
+                }
+                startTime = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptStartMin());
+                endTime = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptEndMin());
+                leaveMinutes = mr.chargeMinutes();
+                log.info("[leaveflow] 휴게 미이용 요청 확정: userCd={}, workYmd={}, unit={}, part=-, recordOnly={}, "
+                                + "저장구간={}~{}, 신청={}분, 차감={}분, 편입휴게={}분",
+                        user, workYmd, unit, mr.recordOnly(), startTime, endTime,
+                        mr.requestMinutes(), mr.chargeMinutes(), mr.waivedBreakMinutes());
+            } else {
+                // 휴게 가로지름 거부 (§8.5.9) — 휴게시각 미설정이면 skip
+                if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_055);
+                }
+                leaveMinutes = minutes;
             }
-            leaveMinutes = minutes;
             // 차감액(leaveDays)은 lock 획득 후 calcHourlyCharge 로 산출(아래 try 블록).
         } else {
             throw new ApiException(AttdErrorCode.ATTD_400_054);
@@ -493,10 +551,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         if (remnantPlan != null) {
             // PC-05(D6): 짜투리 발동 — 잔여 전액을 대상 5종 부여로 분할 차감(use 행: 신청 REQ_ID·단위,
             //   LEAVE_CD 는 부여 귀속) + 회사 부담분 TB_LEAVE_REMNANT_COVER 기록 + 영향 GRANT 재집계.
-            // ★연차 신청 증빙 필수화(2026-08-29) 범위 밖: applyTrigger 는 evidenceFileId 를 받지 않아
-            //   이 경로로 들어가면 저장되지 않고 유실된다(앱과 동일 — §0 무수정 원칙, 후속 QA 확인 대상).
+            // BW-04(Q-2 확정): brkWaiveYn·evidenceFileId 를 함께 전달(증빙 파일 ID 유실 결함 동시 해소, 앱 미러).
             leaveId = leaveRemnantCoverService.applyTrigger(cmpny, site, user, workYmd, unit,
-                    startTime, endTime, leaveMinutes, p.reason(), reqId, remnantPlan, user);
+                    startTime, endTime, leaveMinutes, p.reason(), reqId, remnantPlan, user,
+                    p.brkWaiveYn(), p.evidenceFileId());
         } else {
             boolean firstCharge = true;
             for (GrantCharge charge : charges) {
@@ -509,6 +567,8 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                         .leaveReason(p.reason())
                         // 연차 신청 증빙 필수화(2026-08-29): 분할 차감 시 첫 charge 행에만 저장(leaveMinutes 관례 동일).
                         .evidenceFileId(firstCharge ? p.evidenceFileId() : null)
+                        // BW-04: 휴게 무시 요청은 판정 속성이라 분할 차감 모든 행에 동일 값(REQ_DTIME 은 매퍼 NOW()).
+                        .brkWaiveYn(p.brkWaiveYn())
                         .leaveStatus(USE_CONFIRMED).insertNo(user)
                         .build();
                 leaveFlowMapper.insertLeaveUse(use);
@@ -585,16 +645,37 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         Integer previewMinutes = null; // 시간차 신청 분(짜투리 발동 판정 입력 — PC-05)
         // HB-03: 반차 경계 미리보기(신청 전 "몇 시부터/까지" 표기). 반차 외 단위/산출 불가면 전부 null.
         HalfDayBoundary halfBoundary = null;
+        // BW-04: 휴게 무시 preview 필드(앱 미러). 미체크/해당 없음이면 null 또는 'N'.
+        final boolean brkWaive = "Y".equals(p.brkWaiveYn());
+        String brkWaiveAppliedYn = "N";
+        String brkWaiveRecordOnlyYn = "N";
+        String brkWaiveExemptRange = null;
+        Integer brkWaivedMinutes = null;
+        Integer brkChargeMinutes = null;
+        // BW-06: 법정 휴게 하한 경고(시간차만 여기서 산출 — 반차는 앱 day-schedule 파트별 값).
+        String brkLegalWarnYn = "N";
+        String brkLegalWarnMsg = null;
+        String overlapStart = p.startTime();
+        String overlapEnd = p.endTime();
+        assertBrkWaiveAllowed(cmpny, user, workYmd, unit, hourlyUnit, brkWaive);
 
         if (UNIT_FULL.equals(unit)) {
             charge = new BigDecimal("1.00000");
         } else if (UNIT_HALF.equals(unit)) {
-            // 반차는 스케줄 필수(submitLeave 동일 거부).
+            // 반차는 스케줄 필수(submitLeave 동일 거부). 기존 3필드는 END·미체크 경계 — 의미 불변.
             halfBoundary = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd);
             if (halfBoundary == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_110);
             }
             charge = new BigDecimal("0.50000");
+            if (brkWaive) {
+                // preview 는 파트를 갖지 않으므로 양 파트를 산출해 요약(파트별 정확한 구간은 day-schedule/앱 값 사용).
+                HalfDayBoundary hbS = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd, HalfPart.START, true);
+                HalfDayBoundary hbE = leaveDeductionService.getHalfDayBoundary(cmpny, site, user, workYmd, HalfPart.END, true);
+                boolean anyApplied = (hbS != null && !hbS.recordOnly()) || (hbE != null && !hbE.recordOnly());
+                brkWaiveAppliedYn = anyApplied ? "Y" : "N";
+                brkWaiveRecordOnlyYn = anyApplied ? "N" : "Y";
+            }
         } else if (hourlyUnit) {
             Integer sMin = DateTimeUtils.hhmmToMinutes(p.startTime());
             Integer eMin = DateTimeUtils.hhmmToMinutes(p.endTime());
@@ -612,12 +693,43 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             if (minutes > daily) {
                 throw new ApiException(AttdErrorCode.ATTD_400_052);
             }
-            if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
+            int chargeMinutes = minutes;
+            if (brkWaive) {
+                // BW-04: submitLeave 시간차 체크 분기 미러 — 근무시간 내(신청 구간) + 붙은 휴게 편입.
+                if (!leaveDeductionService.withinScheduledWorkHours(cmpny, site, user, workYmd, sMin, eMin)) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_103);
+                }
+                BreakMergeResult mr = leaveDeductionService.mergeAdjacentBreaks(cmpny, site, user, workYmd, sMin, eMin);
+                if (mr == null || mr.chargeMinutes() <= 0) {
+                    throw new ApiException(AttdErrorCode.ATTD_400_052);
+                }
+                chargeMinutes = mr.chargeMinutes();
+                overlapStart = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptStartMin());
+                overlapEnd = ScheduleWorkMinutesUtils.hhmmOfDay(mr.exemptEndMin());
+                brkWaiveAppliedYn = mr.recordOnly() ? "N" : "Y";
+                brkWaiveRecordOnlyYn = mr.recordOnly() ? "Y" : "N";
+                brkWaiveExemptRange = ScheduleWorkMinutesUtils.toHhmm(mr.exemptStartMin()) + "~"
+                        + ScheduleWorkMinutesUtils.toHhmm(mr.exemptEndMin());
+                brkWaivedMinutes = mr.waivedBreakMinutes();
+            } else if (leaveDeductionService.crossesBreak(cmpny, site, user, workYmd, sMin, eMin)) {
                 throw new ApiException(AttdErrorCode.ATTD_400_055);
+            }
+            brkChargeMinutes = chargeMinutes;
+            // BW-06: 시간차 법정 휴게 하한 경고(§1-3) — 쉬는 구간 = 체크 시 합친 구간 / 미체크 시 신청 구간(앱 미러).
+            Integer exS = DateTimeUtils.hhmmToMinutes(overlapStart);
+            Integer exE = DateTimeUtils.hhmmToMinutes(overlapEnd);
+            if (exS != null && exE != null) {
+                int exEnd = (exE <= exS) ? exE + 1440 : exE;
+                com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result legal =
+                        com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluate(
+                                leaveDeductionMapper.selectDailySchedule(cmpny, site, user, workYmd), exS, exEnd, brkWaive);
+                brkLegalWarnYn = legal.warnYn();
+                brkLegalWarnMsg = legal.message();
             }
             // advisory lock 없이 산출(조회 전용 추정치). 제출 시 lock 하에 재계산되며 코어 산식이
             //   단일 출처(HourlyLeaveChargeUtils)라 동시 신청이 없는 한 preview == 확정값.
-            HourlyChargeVO hc = leaveDeductionService.calcHourlyCharge(cmpny, site, user, workYmd, minutes);
+            //   BW-04: 입력은 차감 분(체크 시 신청 − 휴게 겹침) — submitLeave 의 leaveMinutes 와 동일 값.
+            HourlyChargeVO hc = leaveDeductionService.calcHourlyCharge(cmpny, site, user, workYmd, chargeMinutes);
             if (hc == null) {
                 throw new ApiException(AttdErrorCode.ATTD_400_052);
             }
@@ -626,7 +738,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
             capApplied = hc.capApplied();
             convFromCharge = hc.convMinutes();
             floorDays = hc.floorDays();
-            previewMinutes = minutes;
+            previewMinutes = chargeMinutes;
         } else {
             throw new ApiException(AttdErrorCode.ATTD_400_054);
         }
@@ -649,9 +761,10 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         }
         // HB-09: preview 는 파트 미확정이라 반차 경계 구간으로 검사할 수 없어 시간차만 사전 판정한다
         //   (반차는 submitLeave 에서 최종 판정 — preview 는 사전 안내 용도). 앱 미러.
+        //   BW-04: 체크 시 합친 구간(저장값)으로 검사한다(submitLeave 와 동일 판정).
         if (hourlyUnit
                 && leaveDeductionService.overlapsTimeLeaveOnDate(
-                        cmpny, site, user, workYmd, p.startTime(), p.endTime())) {
+                        cmpny, site, user, workYmd, overlapStart, overlapEnd)) {
             throw new ApiException(AttdErrorCode.ATTD_400_112);
         }
 
@@ -743,7 +856,39 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
                 .halfEndPartRange(halfBoundary == null ? null
                         : ScheduleWorkMinutesUtils.toHhmm(halfBoundary.boundaryMin()) + "~"
                                 + ScheduleWorkMinutesUtils.toHhmm(halfBoundary.workEndMin()))
+                // BW-04 휴게 무시 필드 + BW-06 시간차 법정 휴게 하한 경고(앱 미러).
+                .brkWaiveAppliedYn(brkWaiveAppliedYn)
+                .brkWaiveRecordOnlyYn(brkWaiveRecordOnlyYn)
+                .brkWaiveExemptRange(brkWaiveExemptRange)
+                .brkWaivedMinutes(brkWaivedMinutes)
+                .brkChargeMinutes(brkChargeMinutes)
+                .brkLegalWarnYn(brkLegalWarnYn)
+                .brkLegalWarnMsg(brkLegalWarnMsg)
                 .build();
+    }
+
+    /**
+     * BW-04 휴게 무시 게이트(submit·preview 공용, 앱 AppLeaveFlowServiceImpl.assertBrkWaiveAllowed 미러, 순서 고정).
+     * ① 체크('Y')인데 반차(01)/시간차(02/03/04) 외 단위면 ATTD_400_219.
+     * ② 회사 활성 사용정책 BRK_WAIVE_ALLOW_YN 이 'Y' 가 아니면(정책 없음 포함 — fail-closed) ATTD_400_217.
+     * 미체크('N')면 아무것도 하지 않는다(기존 요청 무회귀).
+     */
+    private void assertBrkWaiveAllowed(String cmpnyCd, String userCd, String workYmd, String unit,
+                                       boolean hourlyUnit, boolean brkWaive) {
+        if (!brkWaive) {
+            return;
+        }
+        if (!UNIT_HALF.equals(unit) && !hourlyUnit) {
+            log.info("[leaveflow] 휴게 무시 요청 거부: 반차/시간차 외 단위 (userCd={}, workYmd={}, unit={})",
+                    userCd, workYmd, unit);
+            throw new ApiException(AttdErrorCode.ATTD_400_219);
+        }
+        String allowYn = leaveFlowMapper.selectPolicyBrkWaiveAllowYn(cmpnyCd);
+        if (!"Y".equals(allowYn)) {
+            log.info("[leaveflow] 휴게 무시 요청 거부: 회사 미허용(BRK_WAIVE_ALLOW_YN) (userCd={}, workYmd={}, 정책존재={})",
+                    userCd, workYmd, allowYn != null);
+            throw new ApiException(AttdErrorCode.ATTD_400_217);
+        }
     }
 
     /** HB-02: 반차 파트 정규화. START/END(대소문자 무관) 외 값·공백은 null(호출부 fail-closed 거부). 앱 미러. */

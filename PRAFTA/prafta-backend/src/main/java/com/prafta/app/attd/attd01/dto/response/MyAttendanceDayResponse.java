@@ -100,4 +100,15 @@ public class MyAttendanceDayResponse {
     //   레코드 자체 SITE_CD 기준(실 근태 우선, 없으면 배정 스케줄). 둘 다 없으면 null(배지 미노출 신호).
     private final String recordSiteCd;
     private final String recordSiteName;
+
+    /**
+     * BW-12(§7-1, 2026-09-04): 법정 휴게 하한 경고 배지 — 단시간(그날 배정 스케줄 소정 240분·휴게 0)
+     * 근로자가 "휴게 미이용 상시 요청"(마이페이지)을 켜지 않은 날에 'Y'. 그 외에는 'N'(배지 미노출).
+     *
+     * <p>표시 전용 — 출퇴근/상태/액션 판정에 일절 영향이 없다. 문구는 서버가 만든다(클라 재계산 금지).
+     * 소정 240 <b>초과</b>·휴게 0 타입은 종전대로 제외(G-5), 부분휴가가 있는 날도 비대상(건별 배지가 담당).
+     * 구 FE 는 무시(additive).
+     */
+    private final String brkLegalWarnYn;
+    private final String brkLegalWarnMsg;
 }

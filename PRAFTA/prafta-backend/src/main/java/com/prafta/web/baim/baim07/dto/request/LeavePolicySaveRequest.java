@@ -125,6 +125,12 @@ public class LeavePolicySaveRequest {
     @Size(max = 1)
     private String allowRemnantRoundUp;
 
+    // BW-04: 부분휴가(반차·시간차) 휴게 미이용 요청 허용. 'Y'(기본) / 'N' = 앱 체크박스 미노출 + 서버 거부(ATTD_400_217).
+    //   미전송/비정상 값은 LeavePolicyServiceImpl 에서 'Y' 로 정규화(기존 회사 동작 불변). 화면 라디오는 BW-09.
+    @FieldLabel("휴게시간 무시 요청 허용")
+    @Size(max = 1)
+    private String brkWaiveAllowYn;
+
     // ===== 메타 =====
     @FieldLabel("변경 사유")
     @Size(max = 500)

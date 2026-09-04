@@ -45,4 +45,10 @@ public class LeaveDeductionPreviewRequest {
     @FieldLabel("종료시각")
     @Size(max = 4)
     private String endTime;
+
+    /** 휴게시간 무시 요청(BW-04). 'Y'/'N', 미전송=N. submit 과 동일 게이트(ATTD_400_217/219)로 사전 차단. */
+    @FieldLabel("휴게시간무시")
+    @Size(max = 1)
+    @Pattern(regexp = "[YN]")
+    private String brkWaiveYn;
 }

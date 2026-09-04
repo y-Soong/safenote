@@ -1696,8 +1696,9 @@ public class Subcon03ServiceImpl implements Subcon03Service {
             if (r.userCd() == null || r.workYmd() == null) {
                 continue;
             }
+            // BW-05: {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN} — 3·4번째는 RecognizedMinutesUtils.halfDayBreakWaived 입력.
             map.computeIfAbsent(r.userCd() + "|" + r.workYmd(), k -> new ArrayList<>())
-                    .add(new String[] { r.startTime(), r.endTime() });
+                    .add(new String[] { r.startTime(), r.endTime(), r.useUnitType(), r.brkWaiveYn() });
         }
         return map;
     }
@@ -1717,13 +1718,17 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         if (row.workSeq() == null || (row.workSeq() != 1 && row.workSeq() != 2)) {
             return null;
         }
+        // BW-05: 휴게 시각 + 그날 반차 휴게 무시 체크 여부 입력(파리티 3중: 웹 Attd_08 recognizedMin · 본 스냅샷 · 유틸).
+        List<String[]> wins = halfLeaveWinByKey.getOrDefault(row.userCd() + "|" + row.workYmd(), List.of());
         return RecognizedMinutesUtils.recognizedMinutes(
                 row.workYmd(),
                 row.checkInDate(), blankToNull(row.checkInTime()),
                 row.checkOutDate(), blankToNull(row.checkOutTime()),
                 blankToNull(row.planStrTime()), blankToNull(row.planEndTime()),
                 row.planBrkMin(),
-                halfLeaveWinByKey.getOrDefault(row.userCd() + "|" + row.workYmd(), List.of()));
+                blankToNull(row.planBrkStrTime()), blankToNull(row.planBrkEndTime()),
+                wins,
+                RecognizedMinutesUtils.halfDayBreakWaived(wins));
     }
 
     // =========================== private — 검증/공통 ===========================

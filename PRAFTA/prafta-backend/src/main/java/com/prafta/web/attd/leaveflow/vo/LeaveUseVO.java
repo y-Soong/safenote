@@ -32,4 +32,6 @@ public class LeaveUseVO {
     private String evidenceFileId;
     private String leaveStatus;
     private String insertNo;
+    /** BW-04: 휴게시간 무시 요청 'Y'/'N'(null=N). 분할 차감 시 모든 행 동일 값. 직접 차감 경로는 항상 null(=N). */
+    private String brkWaiveYn;
 }

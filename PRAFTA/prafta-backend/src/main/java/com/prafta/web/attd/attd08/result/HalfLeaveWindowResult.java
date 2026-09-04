@@ -13,5 +13,9 @@ public record HalfLeaveWindowResult(
     , String workYmd
     , String startTime
     , String endTime
+    /** BW-05: 사용단위(01 반차 / 02~04 시간차). ★record 끝 — 위치매핑(두 select 모두 동수 추가). */
+    , String useUnitType
+    /** BW-05: 휴게 무시 요청 Y/N — 반차(01)+Y 인 날은 FE 인정시간/실근로에서 스케줄 휴게 공제 0. */
+    , String brkWaiveYn
 ) {
 }

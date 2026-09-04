@@ -137,6 +137,13 @@
                  record(AttdListsResult) 마지막 필드 - UNION 분기 동수 유지. -->
             , U.EMPLOYMENT_TYPE                                                  AS employmentType
 
+            <!-- BW-05: 스케줄 휴게 시각(1·2구간) - 화면 인정시간/실근로 "실제로 쉰 휴게만 공제" 교집합 입력.
+                 record(AttdListsResult) 끝 4필드 - UNION 분기 동수 유지(OT 분기는 NULL). -->
+            , SCH.FST_BRK_STR_TIME                                               AS plan1BrkStr
+            , SCH.FST_BRK_END_TIME                                               AS plan1BrkEnd
+            , SCH.SEC_BRK_STR_TIME                                               AS plan2BrkStr
+            , SCH.SEC_BRK_END_TIME                                               AS plan2BrkEnd
+
         FROM TB_USER_ATTD_MGMT A
         INNER JOIN node_tree NT
             ON  A.CMPNY_CD = NT.CMPNY_CD
@@ -171,6 +178,11 @@
                 , E.SEC_SCH_STR_TIME
                 , E.SEC_SCH_END_TIME
                 , E.SEC_SCH_BRK_MIN
+                <!-- BW-05: 휴게 시각 4컬럼(현재본·이력 공통, prafta-019-E) -->
+                , E.FST_BRK_STR_TIME
+                , E.FST_BRK_END_TIME
+                , E.SEC_BRK_STR_TIME
+                , E.SEC_BRK_END_TIME
                 , E.PRE_FIXED_OT_STR_TIME
                 , E.PRE_FIXED_OT_END_TIME
                 , E.FIXED_OT_STR_TIME
@@ -180,6 +192,7 @@
                       M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
                     , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME, M.FST_SCH_BRK_MIN
                     , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME, M.SEC_SCH_BRK_MIN
+                    , M.FST_BRK_STR_TIME, M.FST_BRK_END_TIME, M.SEC_BRK_STR_TIME, M.SEC_BRK_END_TIME
                     , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
                     , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
                     , 2147483647 AS HIST_IDX
@@ -189,6 +202,7 @@
                       H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
                     , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME, H.FST_SCH_BRK_MIN
                     , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME, H.SEC_SCH_BRK_MIN
+                    , H.FST_BRK_STR_TIME, H.FST_BRK_END_TIME, H.SEC_BRK_STR_TIME, H.SEC_BRK_END_TIME
                     , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
                     , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
                     , H.HIST_IDX
@@ -346,6 +360,11 @@
 
             <!-- 고용형태 - 초과근무 행도 동일 표기(정규근태 분기와 컬럼 수/순서 동수 유지) -->
             , U.EMPLOYMENT_TYPE                                                  AS employmentType
+            <!-- BW-05: 휴게 시각 4컬럼 - 초과근무 행은 휴게 없음(NULL). 정규근태 분기와 동수 유지. -->
+            , NULL                                                               AS plan1BrkStr
+            , NULL                                                               AS plan1BrkEnd
+            , NULL                                                               AS plan2BrkStr
+            , NULL                                                               AS plan2BrkEnd
 
         /* 초과근무의 NODE_CD 는 nullable 이다. node_tree 와 INNER JOIN 하므로
            NODE_CD 가 NULL 인 초과근무 행은 결과에서 제외된다. 이는 정규근태 분기와
@@ -387,10 +406,13 @@
     <select id="selectHalfLeaveWindows" parameterType="com.prafta.web.attd.attd08.application.query.AttdListsQuery" resultType="com.prafta.web.attd.attd08.result.HalfLeaveWindowResult">
     /* Attd08Mapper.selectHalfLeaveWindows */
         SELECT DISTINCT
-              L.USER_CD     AS userCd
-            , L.START_DATE  AS workYmd
-            , L.START_TIME  AS startTime
-            , L.END_TIME    AS endTime
+              L.USER_CD       AS userCd
+            , L.START_DATE    AS workYmd
+            , L.START_TIME    AS startTime
+            , L.END_TIME      AS endTime
+            <!-- BW-05: HalfLeaveWindowResult 끝 2필드(위치매핑) - 판정 로직은 읽지 않는다(selectTimeLeaveWindows 와 record 공유). -->
+            , L.USE_UNIT_TYPE AS useUnitType
+            , L.BRK_WAIVE_YN  AS brkWaiveYn
         FROM TB_USER_LEAVE_USE L
         WHERE L.CMPNY_CD      = #{gvCmpnyCd}
           AND L.SITE_CD       = #{siteCd}
@@ -410,10 +432,13 @@
     <select id="selectTimeLeaveWindows" parameterType="com.prafta.web.attd.attd08.application.query.AttdListsQuery" resultType="com.prafta.web.attd.attd08.result.HalfLeaveWindowResult">
     /* Attd08Mapper.selectTimeLeaveWindows */
         SELECT DISTINCT
-              L.USER_CD     AS userCd
-            , L.START_DATE  AS workYmd
-            , L.START_TIME  AS startTime
-            , L.END_TIME    AS endTime
+              L.USER_CD       AS userCd
+            , L.START_DATE    AS workYmd
+            , L.START_TIME    AS startTime
+            , L.END_TIME      AS endTime
+            <!-- BW-05: 사용단위 + 휴게 무시 요청 - FE 인정시간/실근로가 반차(01)+Y 인 날은 스케줄 휴게 공제 0(record 끝 append). -->
+            , L.USE_UNIT_TYPE AS useUnitType
+            , L.BRK_WAIVE_YN  AS brkWaiveYn
         FROM TB_USER_LEAVE_USE L
         WHERE L.CMPNY_CD      = #{gvCmpnyCd}
           AND L.SITE_CD       = #{siteCd}

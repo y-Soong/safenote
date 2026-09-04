@@ -14,5 +14,7 @@ public record HalfLeaveWindowRow(
         , String workYmd        // = TB_USER_LEAVE_USE.START_DATE (연차 1행 = 하루 불변식)
         , String startTime      // HHmm
         , String endTime        // HHmm
+        , String useUnitType    // BW-05: 01 반차 / 02~04 시간차 (★record 끝 - 위치매핑)
+        , String brkWaiveYn     // BW-05: 휴게 무시 요청 Y/N (반차 01 + Y = 그날 휴게 공제 0)
 ) {
 }

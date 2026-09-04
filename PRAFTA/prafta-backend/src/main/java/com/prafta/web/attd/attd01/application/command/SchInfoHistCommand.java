@@ -63,4 +63,14 @@ public record SchInfoHistCommand(
     		, param.gvUserCd()
         );
 	}
+
+	/** BW-10(G-6): 휴게 종료 파생값을 이력 스냅샷에도 동일하게 반영한 사본(현행/이력 짝 규약). */
+	public SchInfoHistCommand withBreakEndTimes(String newFstBrkEndTime, String newSecBrkEndTime) {
+		return new SchInfoHistCommand(
+			cmpnyCd, siteCd, histIdx, schCd, applyDate
+			, fstSchStrTime, fstSchEndTime, fstSchBrkMin, fstBrkStrTime, newFstBrkEndTime
+			, secSchStrTime, secSchEndTime, secSchBrkMin, secBrkStrTime, newSecBrkEndTime
+			, preFixedOtStrTime, preFixedOtEndTime, fixedOtStrTime, fixedOtEndTime
+			, useYn, gvCmpnyCd, gvUserCd);
+	}
 }

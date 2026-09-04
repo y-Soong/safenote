@@ -56,11 +56,17 @@ public interface LeaveRemnantCoverService {
      * LEAVE_CD 는 부여 귀속) + TB_LEAVE_REMNANT_COVER INSERT(ACTIVE) + 영향 GRANT 재집계.
      * 호출자 트랜잭션에 참여한다(원장 음수 금지 — use 합 = 잔여 전액).
      *
+     * <p>BW-04(Q-2 확정, 2026-09-04): {@code brkWaiveYn}(휴게 무시 요청 — 전 행 동일 값, 'Y' 면 REQ_DTIME=NOW())
+     * 과 {@code evidenceFileId}(증빙 파일 — 첫 행에만, LEAVE_MINUTES 관례 동일)를 함께 전달한다.
+     * 종전 시그니처에서 증빙 파일 ID 가 유실되던 결함을 같이 해소했다. 이동 재발동(Attd13)은 원 행 값을 승계한다.
+     *
+     * @param brkWaiveYn     휴게 무시 요청 'Y'/'N'(null 은 'N')
+     * @param evidenceFileId 증빙 파일 ID(nullable)
      * @return 마지막 INSERT 한 사용기록 ID(무결재 즉시확정 PUSH 통보용)
      */
     String applyTrigger(String cmpnyCd, String siteCd, String userCd, String workYmd, String useUnitType,
                         String startTime, String endTime, Integer leaveMinutes, String reason, String reqId,
-                        RemnantTriggerPlanVO plan, String actorUserCd);
+                        RemnantTriggerPlanVO plan, String actorUserCd, String brkWaiveYn, String evidenceFileId);
 
     /**
      * D7 회수: 잔여 복원 시(반려/수정 승인/삭제 동의) 근무일 미도래(WORK_YMD &gt; 오늘) ACTIVE COVER 를

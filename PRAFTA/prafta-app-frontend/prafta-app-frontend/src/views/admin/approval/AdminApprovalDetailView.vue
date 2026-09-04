@@ -124,7 +124,9 @@
               <dt>시스템 계산</dt>
               <dd>{{ detail.body.systemCalcDisplay || '-' }}</dd>
               <dt>근로자 상신</dt>
-              <dd class="ap-meta__dd--break">{{ breakAfterTilde(detail.body.claimedDisplay) || '-' }}</dd>
+              <dd class="ap-meta__dd--break">
+                {{ breakAfterTilde(detail.body.claimedDisplay) || '-' }}
+              </dd>
               <dt v-if="detail.body.approvedDisplay">승인값</dt>
               <dd v-if="detail.body.approvedDisplay">{{ detail.body.approvedDisplay }}</dd>
             </dl>
@@ -145,6 +147,21 @@
               <dd v-if="Number(detail.body.borrowDays) > 0">
                 가불 {{ formatLeaveDaysOnly(detail.body.borrowDays) }} 포함
               </dd>
+              <!-- BW-08: 휴게 미이용 요청(근기법 제54조① 단서) — 서버 body.brkWaiveYn / brkWaiveReqDtime.
+                   필드 부재(구서버)면 미노출. 승인/반려 게이트 무변경(차단 없음). -->
+              <dt v-if="detail.body.brkWaiveYn === 'Y'">휴게 미이용</dt>
+              <dd v-if="detail.body.brkWaiveYn === 'Y'" class="ap-meta__dd--brk-waive">
+                근로자 요청 · {{ detail.body.brkWaiveReqDtime || '-' }}
+              </dd>
+              <!-- 법정 휴게 하한 경고(차단 없음) — 문구 서버 제공 -->
+              <dt v-if="detail.body.brkLegalWarnYn === 'Y'">법정 휴게</dt>
+              <dd
+                v-if="detail.body.brkLegalWarnYn === 'Y'"
+                class="ap-meta__dd--legal-warn"
+                role="status"
+              >
+                {{ detail.body.brkLegalWarnMsg }}
+              </dd>
               <dt>잔여 현황</dt>
               <dd>
                 부여 {{ fnBalanceDays(detail.body.balance?.granted) }} · 사용
@@ -157,14 +174,21 @@
           </div>
 
           <!-- 스케줄수정 / 기본근무타입변경(PRAFTA-003): 현재 → 요청 스케줄 비교(근태보정 ap-compare 패턴 재사용) -->
-          <div v-else-if="detail.group === 'SCHEDULE' || detail.group === 'DEFAULT_SCH_CHANGE'" class="ap-compare">
+          <div
+            v-else-if="detail.group === 'SCHEDULE' || detail.group === 'DEFAULT_SCH_CHANGE'"
+            class="ap-compare"
+          >
             <div class="ap-compare__row">
               <div class="ap-compare__col ap-compare__col--before">
-                <span class="ap-compare__label">{{ detail.group === 'DEFAULT_SCH_CHANGE' ? '현재 기본 근무타입' : '현재 스케줄' }}</span>
+                <span class="ap-compare__label">{{
+                  detail.group === 'DEFAULT_SCH_CHANGE' ? '현재 기본 근무타입' : '현재 스케줄'
+                }}</span>
                 <p class="ap-compare__val">{{ detail.body.beforeDisplay || '없음' }}</p>
               </div>
               <div class="ap-compare__col ap-compare__col--after">
-                <span class="ap-compare__label">{{ detail.group === 'DEFAULT_SCH_CHANGE' ? '요청 기본 근무타입' : '요청 스케줄' }}</span>
+                <span class="ap-compare__label">{{
+                  detail.group === 'DEFAULT_SCH_CHANGE' ? '요청 기본 근무타입' : '요청 스케줄'
+                }}</span>
                 <p class="ap-compare__val">{{ detail.body.afterDisplay || '-' }}</p>
               </div>
             </div>
@@ -681,9 +705,12 @@ const onConfirmAdjust = (adjusted) => {
 
 // ── 당겨서 새로고침 (공통 컴포저블) — 상세(gate/내용)를 재조회. 부작용 없는 조회만. ──
 const scrollRef = ref(null)
-const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(scrollRef, async () => {
-  await loadDetail()
-})
+const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
+  scrollRef,
+  async () => {
+    await loadDetail()
+  },
+)
 
 onMounted(loadDetail)
 </script>
@@ -846,6 +873,17 @@ onMounted(loadDetail)
 .ap-meta__dd--range {
   word-break: keep-all;
   overflow-wrap: normal;
+}
+/* BW-08: 휴게 미이용 요청 — primary 톤(요청 사실) */
+.ap-meta__dd--brk-waive {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+/* BW-08: 법정 휴게 하한 경고 — warning 텍스트 토큰(차단 없음, 표시 전용) */
+.ap-meta__dd--legal-warn {
+  color: var(--color-warning-text);
+  font-weight: 600;
+  word-break: keep-all;
 }
 
 /* 배너 */

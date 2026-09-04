@@ -132,6 +132,20 @@
      LIMIT 1
     </select>
 
+    <!-- BW-04: 활성 정책의 휴게 무시 요청 허용 토글(tb_leave_usage_policy.BRK_WAIVE_ALLOW_YN, 기본 Y).
+         활성 정책/사용정책이 없으면 null(호출부 fail-closed 거부 ATTD_400_217). 앱 selectCompanyUsageUnit 미러. -->
+    <select id="selectPolicyBrkWaiveAllowYn" resultType="string">
+    /* LeaveFlowMapper.selectPolicyBrkWaiveAllowYn */
+    SELECT UP.BRK_WAIVE_ALLOW_YN
+      FROM TB_LEAVE_POLICY P
+      JOIN TB_LEAVE_USAGE_POLICY UP
+        ON UP.POLICY_SEQ = P.POLICY_SEQ
+     WHERE P.CMPNY_CD = #{cmpnyCd}
+       AND P.USE_YN   = 'Y'
+     ORDER BY P.POLICY_SEQ DESC
+     LIMIT 1
+    </select>
+
     <!-- (삭제) selectPolicyUsageUnit — D-8(2026-08-07).
          구 LC-10 에서 "반반차 허용 여부(USAGE_UNIT='QUARTER_DAY')" 판정에 쓰던 조회다.
          반반차 폐지(HB-04)로 호출부가 0건이 되어 매퍼 메서드와 함께 제거했다.
@@ -305,6 +319,7 @@
      LIMIT 1
     </select>
 
+    <!-- BW-04: BRK_WAIVE_YN / BRK_WAIVE_REQ_DTIME(서버 시각, Y 일 때만) 추가(앱 미러). 직접 차감 경로는 null → 'N'. -->
     <insert id="insertLeaveUse" parameterType="com.prafta.web.attd.leaveflow.vo.LeaveUseVO">
     /* LeaveFlowMapper.insertLeaveUse */
     INSERT INTO TB_USER_LEAVE_USE (
@@ -322,6 +337,8 @@
         , USE_UNIT_TYPE
         , LEAVE_DAYS
         , LEAVE_MINUTES
+        , BRK_WAIVE_YN
+        , BRK_WAIVE_REQ_DTIME
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -344,6 +361,8 @@
         , #{useUnitType}
         , #{leaveDays}
         , #{leaveMinutes}
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN NOW() ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , #{leaveStatus}
@@ -615,6 +634,13 @@
         <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID. PRAFTA-002 가 첫 charge 행에만 저장하므로
              위 MIN(LEAVE_ID) 첫 분할행 조인(U)과 정합. record 맨 끝 필드와 순서 일치(위치매핑). -->
         , U.EVIDENCE_FILE_ID                                                 AS evidenceFileId
+        <!-- QA D2(2026-09-04): 휴게 미이용 요청 배지. 근기법 제54조① 단서의 요건이 "근로자의 명시적
+             요청"이라 결재자가 승인 화면(Attd_10 연차 상신 상세)에서 요청 사실을 볼 수 있어야 한다.
+             앱 관리자 승인 상세(AppAdminApprovalMapper.selectLeaveBody)와 같은 값을 그대로 내린다.
+             분할 차감 시 모든 행이 같은 값이라 첫 분할행(U) 기준으로 충분하다.
+             ★record(MyLeaveApprovalVO) 위치 기반 매핑 — 맨 끝 2필드와 순서 일치(SELECT 맨 끝 유지). -->
+        , U.BRK_WAIVE_YN                                                     AS brkWaiveYn
+        , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%dT%H:%i:%s')            AS brkWaiveReqDtime
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD

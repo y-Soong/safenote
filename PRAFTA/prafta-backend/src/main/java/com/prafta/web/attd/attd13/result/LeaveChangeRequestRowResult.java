@@ -65,5 +65,16 @@ public record LeaveChangeRequestRowResult(
 
     /** 이동 대상 시간차 시작 시각 (HHMM / NULL:원 시각 유지. 종료는 원 분량으로 서버 파생) */
     , String moveTargetStartTime
+
+    /* ── BW-12 잔여 B-1(2026-09-04): 휴게 미이용 요청 승계 표시 — 3쿼리 동시 추가(위치매핑) ── */
+
+    /**
+     * 원 연차 사용 행의 휴게 미이용 요청 여부 (TB_USER_LEAVE_USE.BRK_WAIVE_YN, 'Y'/'N').
+     *
+     * <p>이동은 같은 요청의 위치 변경이라 요청이 소멸하지 않고 새 행에 승계된다(정책서 attd/08-leave.md
+     * §8.5.10(b)). 웹 이동 확정 화면이 "휴게 미이용 요청 승계" 배지 1줄을 띄우는 근거값이다.
+     * 구 행(컬럼 DEFAULT 'N')·종일 연차는 'N'.
+     */
+    , String brkWaiveYn
 ) {
 }

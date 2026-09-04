@@ -2,7 +2,9 @@ package com.prafta.common.cmm.leave.service;
 
 import java.math.BigDecimal;
 
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.BreakMergeResult;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
+import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfPart;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 
 /**
@@ -45,6 +47,32 @@ public interface LeaveDeductionService {
      * @return 경계 산출 결과. 근무 계획/스케줄이 없거나 계산 불가 시 {@code null}(호출부가 ATTD_400_110 거부).
      */
     HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd, String userCd, String workYmd);
+
+    /**
+     * 반차 경계 산출 — 파트·휴게 무시 체크 여부 지정 (부분휴가 휴게 무시 도입 BW-02, 2026-09-04).
+     *
+     * <p>그날 배정 스케줄을 조회해 {@code ScheduleWorkMinutesUtils.halfDayBoundary(sch, part, waive)} 로 위임한다.
+     * 4-인자 시그니처는 {@code (END, false)} 와 결과가 같다(무회귀). 늦게 출근(START)은 종료에서 거꾸로 걷는
+     * 파트별 경계(G-3)이며, 체크(waive) 요청은 결과 {@code recordOnly} 로 시각 불변·기록 전용 여부를 알린다.
+     *
+     * @param part  반차 파트(START/END). {@code null} 이면 END.
+     * @param waive 휴게 무시 체크 여부
+     * @return 경계 산출 결과. 근무 계획/스케줄이 없거나 계산 불가 시 {@code null}(호출부가 ATTD_400_110 거부).
+     */
+    HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                       HalfPart part, boolean waive);
+
+    /**
+     * 시간차 휴게 무시 체크 시 "붙은 휴게 편입" 산출 (부분휴가 휴게 무시 도입 BW-03, 2026-09-04 — 요청서 §1-2).
+     *
+     * <p>그날 배정 스케줄을 조회해 {@code ScheduleWorkMinutesUtils.mergeAdjacentBreaks} 로 위임한다.
+     * 신청 {@code [startMin, endMin)} 에 접하거나 겹치는 휴게 시각 구간을 쉬는 구간에 합친 저장 시각과,
+     * 차감 분(= 신청 길이 − 휴게 겹침)을 돌려준다. 체크 경로 전용 — 미체크는 종전 {@link #crossesBreak} 거부.
+     *
+     * @return 편입 결과. 스케줄이 없거나 산출 불가 시 {@code null}(호출부가 ATTD_400_110 거부).
+     */
+    BreakMergeResult mergeAdjacentBreaks(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                         int startMin, int endMin);
 
     /**
      * (구) 시간차 차감 일수 = {@code 신청분 ÷ 1일 소정근로분} (decimal(8,5), 반올림 HALF_UP).

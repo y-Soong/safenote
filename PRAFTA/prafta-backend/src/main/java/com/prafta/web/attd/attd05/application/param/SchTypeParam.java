@@ -29,6 +29,7 @@ public record SchTypeParam(
     				, req.isAutoLegalLeave()
     				, tokenInfo.gv_cmpnyCd()
     				, tokenInfo.gv_userCd()
+    				, req.getBrkWaiveYn() // BW-04: 실려 오면 서비스에서 거부(ATTD_400_218)
 				);
     		})
         	.toList();

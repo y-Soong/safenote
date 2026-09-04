@@ -11,6 +11,8 @@ public record SchTypeModel(
 	, boolean autoLegalLeave
 	, String gvCmpnyCd
 	, String gvUserCd
+	/** BW-04: 요청에 실려 온 휴게시간 무시 값(정상 요청은 null). 'Y' 면 서비스가 ATTD_400_218 거부. */
+	, String brkWaiveYn
 ) {
 
 }

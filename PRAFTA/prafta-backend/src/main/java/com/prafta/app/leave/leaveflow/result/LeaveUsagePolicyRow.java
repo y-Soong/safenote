@@ -15,5 +15,7 @@ package com.prafta.app.leave.leaveflow.result;
 public record LeaveUsagePolicyRow(
       String usageUnit
     , String policyAprvUseYn
+    /** BW-04: tb_leave_usage_policy.BRK_WAIVE_ALLOW_YN (휴게 무시 요청 허용, 기본 'Y'). ★위치매핑 — 맨 끝 유지. */
+    , String brkWaiveAllowYn
 ) {
 }
