@@ -265,8 +265,8 @@ const assessKeys = () => ({
 
 // 파일 경로 + 파일관리코드 → 표시 URL 조합.
 //   공용 유틸(buildFileServingUrl)로 일원화 — 동일 출처 상대경로 조립이라 터널/도메인 경유에도 동작.
-const buildFileUrl = (filePath, fileMgmtCd) =>
-  buildFileServingUrl(filePath, fileMgmtCd) || null;
+const buildFileUrl = (filePath, fileName) =>
+  buildFileServingUrl(filePath, fileName) || null;
 
 // 인쇄 (브라우저 인쇄 — @media print 로 헤더/오버레이 숨김)
 const printReport = () => {
@@ -289,7 +289,9 @@ const loadImprovementItems = async () => {
         improvementSeq: row.improvementSeq,
         improveDate: row.improveDate || "",
         improveDesc: row.improveDesc || "",
-        photoUrl: buildFileUrl(row.filePath, row.fileMgmtCd),
+        // ★서빙 URL 의 파일명은 fileName(FILE_MGMT_CD + FILE_EXT)이다. fileMgmtCd 는 확장자가
+        //   없어 그대로 쓰면 404(이미지 깨짐) — 이 목록 API 는 둘을 별도 필드로 내려준다.
+        photoUrl: buildFileUrl(row.filePath, row.fileName),
         likelihoodScore: row.likelihoodScore != null ? String(row.likelihoodScore) : "",
         severityScore: row.severityScore != null ? String(row.severityScore) : "",
         riskLv: row.riskLv || "",
