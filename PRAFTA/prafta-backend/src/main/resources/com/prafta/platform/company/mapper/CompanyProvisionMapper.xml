@@ -344,6 +344,12 @@
          ★이 6종은 화면(Attd_03)에서 생성할 수 없다(SYSTEM_YN='Y' 는 편집 차단, 신규 생성은 항상 'N'+자동채번 코드).
            따라서 프로비저닝이 넣어주지 않으면 그 고객사는 연차 부여/신청이 영구 불가하다(ATTD_400_059 / ATTD_404_030).
          LEAVE_TYPE '02'=관리자부여 / GRANT_TYPE '01'=자동부여 / PAID_TYPE '01'=유급 / LEAVE_NATURE_TYPE '01'=법정. -->
+    <!-- (1) 시스템 휴가 종류 7종 시드. LEAVE_NATURE_TYPE: '01'=법정 5종 / '02'=약정 2종.
+         2026-09-04: SYS_CAREER(경력 인정 휴가) 추가. 종전 6종 목록에 빠져 있어서, 2026-08-21
+         백필(prafta-credit-dual-1-ddl.sql) 이후 생성되는 고객사는 SYS_CAREER 없이 만들어졌고
+         그 회사에서 경력인정 '일수 모드'(LEAVE_CALC_YN='N') 부여가 조용히 skip 됐다
+         (LeaveGrantEngineServiceImpl 정기/즉시부여 — 예외 없이 warn 로그만). 백필 시점 이후
+         생성된 회사가 아직 없어 실피해는 발생하지 않은 상태에서 선반영. -->
     <insert id="seedSystemLeaveTypes">
     /* CompanyProvisionMapper.seedSystemLeaveTypes */
     INSERT INTO TB_LEAVE_TYPE_MGMT (
@@ -359,6 +365,7 @@
             UNION ALL SELECT 'SYS_PREGRANT'                , '일괄선부여 연차'              , '01'
             UNION ALL SELECT 'SYS_PROMOTION'               , '사용촉진 연차'                , '01'
             UNION ALL SELECT 'SYS_BIRTHDAY'                , '생일 안식휴가'                , '02'
+            UNION ALL SELECT 'SYS_CAREER'                  , '경력 인정 휴가'               , '02'
            ) S
      WHERE NOT EXISTS (
            SELECT 1 FROM TB_LEAVE_TYPE_MGMT T

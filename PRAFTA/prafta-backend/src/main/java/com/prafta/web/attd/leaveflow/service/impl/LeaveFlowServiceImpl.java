@@ -74,18 +74,19 @@ import lombok.extern.slf4j.Slf4j;
 public class LeaveFlowServiceImpl implements LeaveFlowService {
 
     /**
-     * Baim_07 "연차·월차·근속가산 신청 결재" 스위치({@code tb_leave_policy.APRV_USE_YN})가 지배하는 법정 3종.
+     * Baim_07 "법정휴가 신청 결재" 스위치({@code tb_leave_policy.APRV_USE_YN})가 지배하는 법정 5종.
      *
-     * <p>2026-09-04 사용자 확정: 종전에는 {@code SYSTEM_YN='Y'} 인 시스템 시드 전체(7종)가 이 스위치를
-     * 탔으나, 실제 신청 대상인 연차·월차·근속가산 3종으로 좁힌다. 나머지 시스템 시드
-     * (SYS_PREGRANT / SYS_PROMOTION / SYS_BIRTHDAY / SYS_CAREER)는 타입별
+     * <p>2026-09-04 사용자 확정: 종전에는 {@code SYSTEM_YN='Y'} 인 시스템 시드 전체가 이 스위치를 탔다.
+     * 실제 기준은 <b>{@code SYSTEM_YN='Y' AND LEAVE_NATURE_TYPE='01'}(법정)</b> = 아래 5종이다.
+     * 약정 시드(SYS_BIRTHDAY / SYS_CAREER — 둘 다 {@code LEAVE_NATURE_TYPE='02'})는 타입별
      * {@code tb_leave_type_mgmt.APRV_USE_YN} 을 따른다.
+     * 짜투리 보전 대상({@code LeaveRemnantCoverServiceImpl.TARGET_LEAVE_CDS})과 동일 집합.
      *
      * <p>★{@code statutory}(=SYSTEM_YN) 자체의 의미는 불변 — 사용단위 계층 등 다른 분기는 종전 그대로다.
      * 앱 {@code AppLeaveFlowServiceImpl.POLICY_APRV_LEAVE_CDS} 와 동일 집합(미러).
      */
-    private static final Set<String> POLICY_APRV_LEAVE_CDS =
-            Set.of("SYS_ANNUAL", "SYS_MONTHLY", "SYS_TENURE_BONUS");
+    private static final Set<String> POLICY_APRV_LEAVE_CDS = Set.of(
+            "SYS_ANNUAL", "SYS_MONTHLY", "SYS_TENURE_BONUS", "SYS_PREGRANT", "SYS_PROMOTION");
 
     // 요청 유형 [SYS032]
     private static final String REQ_TYPE_LEAVE_USE = "05";
@@ -193,7 +194,7 @@ public class LeaveFlowServiceImpl implements LeaveFlowService {
         }
 
         boolean statutory = "Y".equals(type.systemYn());
-        // 결재 판정은 법정 3종(연차·월차·근속가산)만 정책 스위치를 탄다(2026-09-04, 앱 미러).
+        // 결재 판정은 법정 5종(NATURE='01')만 정책 스위치를 탄다(2026-09-04, 앱 미러).
         //   statutory 자체는 아래 단위/차감 분기에서 종전 의미 그대로 쓰이므로 건드리지 않는다.
         boolean policyAprvTarget = statutory && POLICY_APRV_LEAVE_CDS.contains(leaveCd);
         boolean aprvRequired;

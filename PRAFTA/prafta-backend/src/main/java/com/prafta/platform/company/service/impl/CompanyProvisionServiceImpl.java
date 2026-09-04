@@ -342,10 +342,12 @@ public class CompanyProvisionServiceImpl implements CompanyProvisionService {
                 , param.gvUserCd()
         ));
 
-        // 18-1) ★신규 고객사 필수 시드 — 시스템 연차 6종.
-        //   이 6종(SYS_ANNUAL/MONTHLY/TENURE_BONUS/PREGRANT/PROMOTION/BIRTHDAY)은 SYSTEM_YN='Y' 라
+        // 18-1) ★신규 고객사 필수 시드 — 시스템 휴가 7종.
+        //   법정 5종(NATURE='01', SYS_ANNUAL/MONTHLY/TENURE_BONUS/PREGRANT/PROMOTION)
+        //   + 약정 2종(NATURE='02', SYS_BIRTHDAY/SYS_CAREER). 전부 SYSTEM_YN='Y' 라
         //   화면(Attd_03)에서 만들 수 없다(편집 차단 + 신규 생성은 항상 'N'+자동채번 코드).
         //   여기서 넣어주지 않으면 그 고객사는 연차 부여·신청이 영구 불가하다(ATTD_400_059 / ATTD_404_030).
+        //   2026-09-04: SYS_CAREER 추가(종전 6종 — 경력인정 일수 모드 부여가 조용히 skip 되던 누락).
         int leaveTypes = companyProvisionMapper.seedSystemLeaveTypes(cmpnyCd, param.gvUserCd());
 
         // 18-2) ★신규 고객사 필수 시드 — 기본 연차정책(7축 법정값) + 사용정책(1:1).

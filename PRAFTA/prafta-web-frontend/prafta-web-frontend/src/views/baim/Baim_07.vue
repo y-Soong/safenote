@@ -676,10 +676,11 @@
               </label>
             </div>
           </div>
-          <!-- 2026-09-04: 적용 범위를 법정 3종(연차·월차·근속가산)으로 확정하고 라벨을 일치시켰다.
-               종전 라벨은 "법정연차 신청 결재" 였으나 실제로는 시스템 시드 7종 전체가 이 값을 탔다. -->
+          <!-- 2026-09-04: 적용 범위를 법정 5종(LEAVE_NATURE_TYPE='01' 시스템 시드)으로 확정하고
+               라벨을 일치시켰다. 종전 라벨은 "법정연차 신청 결재" 였으나 실제로는 약정 시드
+               (생일 안식휴가·경력 인정 휴가)까지 포함한 시스템 시드 전체가 이 값을 탔다. -->
           <div class="lp-field">
-            <label class="lp-field__label">연차·월차·근속가산 신청 결재</label>
+            <label class="lp-field__label">법정휴가 신청 결재</label>
             <label class="lp-check">
               <input
                 type="checkbox"
@@ -690,7 +691,8 @@
               결재 필요 (해제 시 즉시 확정)
             </label>
             <p class="lp-field__hint">
-              연차 · 월차 · 근속가산 연차 3종에만 적용됩니다. 그 외 휴가는
+              연차 · 월차 · 근속가산 · 일괄선부여 · 사용촉진 연차 5종에
+              적용됩니다. 생일 안식휴가 · 경력 인정 휴가 등 약정 휴가는
               [연차타입 관리]에서 종류별로 설정합니다.
             </p>
           </div>
@@ -968,9 +970,10 @@ const changeReason = ref("");
 //   HB-04(2026-08-07): 반반차(QUARTER_DAY) 폐지 — 선택지에서 제거했다. 구 저장값은 아래 fnApplyPolicy
 //   에서 HALF_DAY 로 정규화한다(서버 축소 정규화와 동일 방향).
 const usageUnit = ref("FULL_DAY");
-// 법정 3종(연차·월차·근속가산) 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
-//   2026-09-04: 서버 적용범위를 SYSTEM_YN='Y' 전체(7종) → SYS_ANNUAL/SYS_MONTHLY/SYS_TENURE_BONUS
-//   3종으로 축소(POLICY_APRV_LEAVE_CDS). 나머지 휴가는 연차타입 관리의 타입별 결재값을 따른다.
+// 법정휴가 신청 결재 여부 (prafta-019-E 결정 #2). 'Y'=결재라인, 'N'=즉시확정
+//   2026-09-04: 서버 적용범위를 SYSTEM_YN='Y' 전체 → LEAVE_NATURE_TYPE='01' 법정 5종
+//   (SYS_ANNUAL/MONTHLY/TENURE_BONUS/PREGRANT/PROMOTION)으로 축소(POLICY_APRV_LEAVE_CDS).
+//   약정 시드(SYS_BIRTHDAY/SYS_CAREER)와 회사정의 휴가는 연차타입 관리의 타입별 결재값을 따른다.
 const aprvUseYn = ref("N");
 
 // PC-08(D3·D9-①): 짜투리 잔여 보전 옵션 (TB_LEAVE_USAGE_POLICY.ALLOW_REMNANT_ROUND_UP)

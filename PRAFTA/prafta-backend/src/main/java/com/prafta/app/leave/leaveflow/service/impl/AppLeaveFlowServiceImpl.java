@@ -124,21 +124,32 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
     private static final String LEAVE_CD_MONTHLY = "SYS_MONTHLY";
     /** 근속가산 연차 시스템 코드(엔진 LEAVE_CD_TENURE 와 동일 값). */
     private static final String LEAVE_CD_TENURE_BONUS = "SYS_TENURE_BONUS";
+    /** 일괄선부여 연차 시스템 코드. */
+    private static final String LEAVE_CD_PREGRANT = "SYS_PREGRANT";
+    /** 사용촉진 연차 시스템 코드. */
+    private static final String LEAVE_CD_PROMOTION = "SYS_PROMOTION";
 
     /**
-     * Baim_07 "연차·월차·근속가산 신청 결재" 스위치({@code tb_leave_policy.APRV_USE_YN})가 지배하는 법정 3종.
+     * Baim_07 "법정휴가 신청 결재" 스위치({@code tb_leave_policy.APRV_USE_YN})가 지배하는 법정 5종.
      *
-     * <p>2026-09-04 사용자 확정: 종전에는 {@code SYSTEM_YN='Y'} 인 시스템 시드 전체(7종)가 이 스위치를
-     * 탔으나, 스위치 문구가 가리키는 실제 신청 대상은 연차·월차·근속가산 3종이다. 나머지 시스템 시드
-     * (SYS_PREGRANT / SYS_PROMOTION / SYS_BIRTHDAY / SYS_CAREER)는 비법정 타입과 동일하게
-     * 타입별 {@code tb_leave_type_mgmt.APRV_USE_YN} 을 따른다.
+     * <p>2026-09-04 사용자 확정: 종전에는 {@code SYSTEM_YN='Y'} 인 시스템 시드 전체가 이 스위치를 탔다.
+     * 실제 기준은 <b>{@code SYSTEM_YN='Y' AND LEAVE_NATURE_TYPE='01'}(법정)</b> 이며, 그 집합이 곧
+     * 아래 5종이다. 약정 시드(SYS_BIRTHDAY 생일 안식휴가 / SYS_CAREER 경력 인정 휴가 — 둘 다
+     * {@code LEAVE_NATURE_TYPE='02'})는 비법정 타입과 동일하게 타입별
+     * {@code tb_leave_type_mgmt.APRV_USE_YN} 을 따른다.
+     *
+     * <p>짜투리 보전 대상({@code LeaveRemnantCoverServiceImpl.TARGET_LEAVE_CDS})과 동일 집합이다 —
+     * 두 곳 모두 "법정 5종"이라는 같은 축을 쓰므로 한쪽만 바꾸지 않는다.
+     * {@code LEAVE_NATURE_TYPE} 을 직접 읽지 않고 코드 목록으로 두는 이유: 조회 record 가 위치매핑이라
+     * 컬럼 추가 비용이 크고, 시스템 시드는 프로비저닝이 고정 목록으로 넣는 값이라 열거가 안전하다.
      *
      * <p>★{@code statutory}(=SYSTEM_YN) 자체의 의미는 바꾸지 않는다 — 사용단위 계층·가불 대상 판정 등
      * 다른 분기는 종전 그대로여야 하므로, 결재 판정에만 이 화이트리스트를 겹쳐 쓴다.
      * 웹 {@code LeaveFlowServiceImpl.POLICY_APRV_LEAVE_CDS} 와 동일 집합(미러).
      */
-    private static final Set<String> POLICY_APRV_LEAVE_CDS =
-            Set.of(LEAVE_CD_ANNUAL, LEAVE_CD_MONTHLY, LEAVE_CD_TENURE_BONUS);
+    private static final Set<String> POLICY_APRV_LEAVE_CDS = Set.of(
+            LEAVE_CD_ANNUAL, LEAVE_CD_MONTHLY, LEAVE_CD_TENURE_BONUS,
+            LEAVE_CD_PREGRANT, LEAVE_CD_PROMOTION);
 
     /** 연차개편: 사용자 신청 타입 [SYS021] '01'. 한도=MAX_APLY_DAYS, 잔여=회계연도 사용분 차감. */
     private static final String LEAVE_TYPE_USER_APPLY = "01";
@@ -234,9 +245,9 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
                     : LeaveUnitGranularity.allowedUnitsByCode(
                             (row.useUnitType() == null) ? FALLBACK_UNIT_CODE : row.useUnitType());
 
-            // aprvRequired: 법정 3종(연차·월차·근속가산)=정책 APRV_USE_YN / 그 외=타입 APRV_USE_YN.
-            //   2026-09-04: 종전에는 SYSTEM_YN='Y' 전체가 정책 스위치를 탔다(SYS_PREGRANT/SYS_PROMOTION/
-            //   SYS_BIRTHDAY/SYS_CAREER 포함). 스위치 문구와 실제 적용범위를 일치시키기 위해 3종으로 좁힌다.
+            // aprvRequired: 법정 5종(NATURE='01')=정책 APRV_USE_YN / 그 외=타입 APRV_USE_YN.
+            //   2026-09-04: 종전에는 SYSTEM_YN='Y' 전체가 정책 스위치를 탔다(약정 시드 SYS_BIRTHDAY/
+            //   SYS_CAREER 포함). 스위치 문구와 실제 적용범위를 법정 5종으로 일치시킨다.
             boolean policyAprvTarget = isStatutory && POLICY_APRV_LEAVE_CDS.contains(row.leaveCd());
             boolean aprvRequired = policyAprvTarget
                     ? statutoryAprvRequired
@@ -409,7 +420,7 @@ public class AppLeaveFlowServiceImpl implements AppLeaveFlowService {
         }
 
         boolean statutory = isYes(type.systemYn());
-        // 결재 판정은 법정 3종(연차·월차·근속가산)만 정책 스위치를 탄다(2026-09-04, apply-meta 와 동일 규칙).
+        // 결재 판정은 법정 5종(NATURE='01')만 정책 스위치를 탄다(2026-09-04, apply-meta 와 동일 규칙).
         //   statutory 자체는 아래 가불/단위 분기에서 종전 의미 그대로 쓰이므로 건드리지 않는다.
         boolean policyAprvTarget = statutory && POLICY_APRV_LEAVE_CDS.contains(leaveCd);
         boolean aprvRequired;

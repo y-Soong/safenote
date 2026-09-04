@@ -85,10 +85,18 @@ public interface CompanyProvisionMapper {
     // ===== 신규 고객사 필수 시드 (없으면 연차 기능 자체가 불가) =====
 
     /**
-     * 시스템 연차 6종(SYS_ANNUAL/MONTHLY/TENURE_BONUS/PREGRANT/PROMOTION/BIRTHDAY) 시드. 멱등(NOT EXISTS).
+     * 시스템 휴가 7종 시드. 멱등(NOT EXISTS).
      *
-     * <p>★이 6종은 화면(Attd_03)에서 만들 수 없다(SYSTEM_YN='Y' = 편집 차단, 신규 생성은 항상 'N'+자동채번).
+     * <ul>
+     *   <li>법정 5종({@code LEAVE_NATURE_TYPE='01'}): SYS_ANNUAL / SYS_MONTHLY / SYS_TENURE_BONUS /
+     *       SYS_PREGRANT / SYS_PROMOTION — Baim_07 "법정휴가 신청 결재" 스위치가 지배하는 집합.</li>
+     *   <li>약정 2종({@code '02'}): SYS_BIRTHDAY(생일 안식휴가) / SYS_CAREER(경력 인정 휴가).</li>
+     * </ul>
+     *
+     * <p>★이 7종은 화면(Attd_03)에서 만들 수 없다(SYSTEM_YN='Y' = 편집 차단, 신규 생성은 항상 'N'+자동채번).
      *   프로비저닝이 넣지 않으면 그 고객사는 연차 부여·신청이 영구 불가하다(ATTD_400_059 / ATTD_404_030).
+     *   SYS_CAREER 는 예외적으로 부여 경로가 예외 대신 skip+warn 이라 <b>조용히</b> 실패한다
+     *   (경력인정 일수 모드 부여만 누락 — 반영 모드는 근속월수 산식이라 무관).
      */
     int seedSystemLeaveTypes(@Param("newCmpnyCd") String newCmpnyCd, @Param("gvUserCd") String gvUserCd);
 

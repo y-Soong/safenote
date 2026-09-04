@@ -26,8 +26,9 @@ package com.prafta.common.cmm.leave.command;
  * @param axis7UsePromotion      7번 axis: Y/N
  * @param statutoryAutoGrantYn   법정 연차 자동 부여 사용 여부 (Y/N — 소정-05, 5인 미만 사업장 토글).
  *                               NULL/공백/비정상 값은 'Y'(기존 동작)로 정규화한다.
- * @param aprvUseYn              법정 3종(연차·월차·근속가산 연차) 신청 결재 여부 (Y/N).
- *                               그 외 휴가 종류는 tb_leave_type_mgmt.APRV_USE_YN 을 따른다.
+ * @param aprvUseYn              법정휴가(LEAVE_NATURE_TYPE='01' 시스템 시드 5종 — 연차/월차/근속가산/
+ *                               일괄선부여/사용촉진 연차) 신청 결재 여부 (Y/N).
+ *                               약정·회사정의 휴가는 tb_leave_type_mgmt.APRV_USE_YN 을 따른다.
  * @param applyFromDate          정책 적용 시작일 (YYYYMMDD, 오늘 이상)
  * @param usageUnit              회사 허용 사용 단위 (단일): FULL_DAY/HALF_DAY/QUARTER_DAY/HOUR_2/HOUR_1/MIN_30
  *                               (prafta-024, LC-10에서 QUARTER_DAY 편입 — 구 allowQuarter 독립 토글 폐기)
