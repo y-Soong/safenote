@@ -1,5 +1,9 @@
 package com.prafta.common.config;
 
+import java.util.Locale;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -63,6 +67,17 @@ public class AiProperties {
 
     /** 검색 topK 기본값/상한. */
     public static class Search {
+        /** 설정값 검증 경고용(prafta-064 D3 — setter 에서 범위/허용값 검증, 기동 시 1회 warn). */
+        private static final Logger log = LoggerFactory.getLogger(AiProperties.class);
+
+        /** 검색·선택용 질의 모드 허용값(prafta-064 S2): 라벨 없는 관리자 확정문(기본). */
+        public static final String SEARCH_QUERY_MODE_COMPACT = "compact";
+        /** 검색·선택용 질의 모드 허용값(prafta-064 S2): 종전 buildDeriveQuery 결과(즉시 원복 수단). */
+        public static final String SEARCH_QUERY_MODE_FULL = "full";
+
+        /** verbatim 트랙 최소 유사도 기본값(prafta-064 S1 — deriveMinScore 와 동일 출발). */
+        private static final double DEFAULT_VERBATIM_MIN_SCORE = 0.40d;
+
         /** topK 미지정 시 기본값. */
         private int defaultTopK = 5;
         /** topK 상한(초과 시 이 값으로 클램프). */
@@ -94,6 +109,26 @@ public class AiProperties {
          *   (prafta-062 이전 형태). 코퍼스 법령 청크는 다른 트랙에서 배제 필터로 격리돼 있어 그대로 둔다.
          */
         private boolean lawRefsEnabled = false;
+
+        /**
+         * verbatim(참고 원문·SIF 재해개요) 트랙 최소 유사도(prafta-064 S1, riskai01 selectVerbatimRefs).
+         * cosine score(=1-distance)가 이 값 미만인 후보는 선택 전용 호출에 넘기지 않는다(오매칭 원문 차단 —
+         * "틀린 원문을 안 내보내는 것"이 "더 많이 찾는 것"보다 우선). 통과 후보가 0건이면 선택 호출 자체를 생략한다.
+         * ★초기값은 deriveMinScore 와 동일한 0.40 으로 출발 — SIF 재해개요(1문장, 사망사고 서술체)는 사례 코퍼스와
+         *   점수 분포가 다를 수 있어 독립 튜닝: 관측 로그("verbatim 트랙 판정")의 최상위점수 분포를 보고 조정한다.
+         * 0 으로 두면 사실상 임계 해제(롤백 수단 — 단 선택 실패 시 폴백 제거는 코드라 그대로 유지).
+         * 허용 범위 [0,1] 밖이면 setter 가 기동 시 warn 후 기본값(0.40)을 유지한다.
+         */
+        private double verbatimMinScore = DEFAULT_VERBATIM_MIN_SCORE;
+
+        /**
+         * 검색·선택용 질의 모드(prafta-064 S2, riskai01 derive). 허용값 compact|full, 기본 compact.
+         * compact = 라벨([공정명] 등) 없는 관리자 확정문(buildSearchQuery)을 recompose 검색·verbatim 전용 검색·
+         *   선택 프롬프트의 [위험성평가 요청] 에 사용(동음이의어·라벨 잡음으로 벡터가 끌리는 오매칭 완화).
+         * full = 종전 buildDeriveQuery 결과를 검색에 사용(즉시 원복 수단).
+         * ★생성 호출(그라운딩/자유생성) 입력은 모드와 무관하게 항상 full. 허용값 외면 setter 가 기동 시 warn 후 compact.
+         */
+        private String searchQueryMode = SEARCH_QUERY_MODE_COMPACT;
 
         public int getDefaultTopK() {
             return defaultTopK;
@@ -133,6 +168,37 @@ public class AiProperties {
 
         public void setLawRefsEnabled(boolean lawRefsEnabled) {
             this.lawRefsEnabled = lawRefsEnabled;
+        }
+
+        public double getVerbatimMinScore() {
+            return verbatimMinScore;
+        }
+
+        /** prafta-064 D3: [0,1] 밖(NaN 포함)이면 warn 후 기본값 유지 — 서비스는 값을 신뢰하고 읽기만 한다. */
+        public void setVerbatimMinScore(double verbatimMinScore) {
+            if (Double.isNaN(verbatimMinScore) || verbatimMinScore < 0d || verbatimMinScore > 1d) {
+                log.warn("prafta.ai.search.verbatim-min-score 설정값이 허용 범위 [0,1] 밖 - 기본값 {} 적용",
+                    DEFAULT_VERBATIM_MIN_SCORE);
+                this.verbatimMinScore = DEFAULT_VERBATIM_MIN_SCORE;
+                return;
+            }
+            this.verbatimMinScore = verbatimMinScore;
+        }
+
+        public String getSearchQueryMode() {
+            return searchQueryMode;
+        }
+
+        /** prafta-064 D3: trim + 소문자 정규화 후 compact|full 외면 warn 후 compact — fail-safe 방향 = 기본값. */
+        public void setSearchQueryMode(String searchQueryMode) {
+            String v = (searchQueryMode == null) ? "" : searchQueryMode.trim().toLowerCase(Locale.ROOT);
+            if (!SEARCH_QUERY_MODE_COMPACT.equals(v) && !SEARCH_QUERY_MODE_FULL.equals(v)) {
+                log.warn("prafta.ai.search.search-query-mode 설정값이 허용값(compact|full) 밖 - 기본값 {} 적용",
+                    SEARCH_QUERY_MODE_COMPACT);
+                this.searchQueryMode = SEARCH_QUERY_MODE_COMPACT;
+                return;
+            }
+            this.searchQueryMode = v;
         }
     }
 

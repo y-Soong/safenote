@@ -435,6 +435,11 @@
                     <span class="ai-vb-badge">원문</span>
                     {{ vb.text }}
                   </span>
+                  <!-- prafta-064 S4: 재해개요 1줄(시각 클램프만 — DOM 텍스트는 원문 전체 유지, 가공 금지).
+                       구 저장분(content 없음)은 v-if 로 미표시. 저장 텍스트(fnSaveSelection)에는 포함되지 않는다. -->
+                  <span v-if="vb.content" class="ai-result__vb-content"
+                    >재해개요 · {{ vb.content }}</span
+                  >
                   <span class="ai-result__vb-source">{{ vb.sourceName }}</span>
                 </span>
                 <span class="ai-acc__arrow">{{
@@ -445,6 +450,15 @@
                 <p class="ai-result__vb-note">
                   원문 항목은 출처와 함께 원문 그대로 표시됩니다.
                 </p>
+                <!-- prafta-064 S4: 재해개요 전문(참고 원문 섹션의 ai-verbatim__field 마크업·스타일 재사용).
+                     ★원문 무변경 — {{ }} 보간만, pre-wrap 전체 표시. -->
+                <div
+                  v-if="vb.content"
+                  class="ai-verbatim__field ai-result__vb-content-full"
+                >
+                  <span class="ai-verbatim__field-label">재해개요</span>
+                  <span class="ai-verbatim__field-value">{{ vb.content }}</span>
+                </div>
                 <ul class="ai-acc__measures">
                   <li
                     v-for="(ms, j) in vb.measures"
@@ -675,7 +689,9 @@ const suppDesc = ref("");
 const hazards = ref([]); // [{ text, markers[], measures:[{text, markers[]}] }]
 const citations = ref([]); // [{ marker, sourceName, dataReliability }]
 // verbatim 참고 원문(LLM 미경유 서버 패스스루 — 원문 무변경 표시, 그라운딩 개선 C)
-const verbatimRefs = ref([]); // [{ sourceName, dataReliability, content, hazardText, measureText }]
+// (v3.8/062 10필드: sourceName, dataReliability, content, hazardText, measureText,
+//  sourceOrg, sourceUrl, licenseType, evidenceTier, evidenceTierLabel — 구 저장분은 뒤쪽 필드 없음)
+const verbatimRefs = ref([]);
 const abstained = ref(false);
 const disclaimer = ref("");
 
@@ -718,6 +734,10 @@ const verbatimHazardItems = computed(() =>
     .filter((vr) => vr && vr.hazardText)
     .map((vr) => ({
       text: vr.hazardText,
+      // prafta-064 S4: 재해개요(매칭 근거) — 행 1줄 클램프·패널 전문 표시 전용.
+      //   fnSaveSelection 은 text/sourceOrg/sourceName 만 읽으므로 저장 텍스트에 섞이지 않는다.
+      //   트림만(원문 무변경 원칙 허용 범위) — 공백뿐인 값이 truthy 로 빈 "재해개요 ·" 를 그리는 것 방지(qa D-3).
+      content: (vr.content || "").trim(),
       sourceName: vr.sourceName,
       sourceOrg: vr.sourceOrg,
       dataReliability: vr.dataReliability,
@@ -1732,6 +1752,22 @@ onMounted(() => {
   margin: 0;
   color: var(--color-text-muted, #6b7280);
   font-size: 0.78rem;
+}
+/* prafta-064 S4: 원문 행의 재해개요 1줄 클램프 — 관리자가 행을 열지 않고도
+   "무엇에 매칭됐는지"를 즉시 판별하게 한다. 부모 .ai-acc__body 가 min-width:0 이라
+   nowrap+ellipsis 로 넘침 없이 잘린다(시각 클램프일 뿐 DOM 텍스트는 원문 전체). */
+.ai-result__vb-content {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #6b7280);
+}
+/* 패널 전문: .ai-verbatim__field 를 그대로 쓰되 개선안 목록과의 간격만 보정 */
+.ai-result__vb-content-full {
+  margin-bottom: 0.15rem;
 }
 .ai-cite {
   color: var(--color-primary, #16a34a);

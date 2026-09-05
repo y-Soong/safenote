@@ -147,7 +147,19 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     private static final String AI_APPENDIX_MARKER = "[AI분석 유해요인]";
 
     /** verbatim 선택 응답의 번호 추출 정규식(v3.9 — 숫자 외 텍스트는 전부 폐기). */
-    private static final Pattern NUMBER_PATTERN = Pattern.compile("\\d+");
+    /**
+     * verbatim 선택 응답("V: n, m")의 후보 번호 추출 패턴 — prafta-064 후속 보강(qa D-1 · sec 7-a).
+     * <ul>
+     *   <li>1~3자리 정수만: 후보 상한(VERBATIM_CANDIDATE_TOP_K=20)을 넉넉히 덮고, 10자리 이상 숫자열에서
+     *       {@code Integer.parseInt} 가 던지는 예외(→ catch 이탈로 감사 행 누락)를 원천 차단한다.</li>
+     *   <li>소수의 일부는 제외: 프롬프트에 유사도(0.52)를 병기한 뒤 LLM 이 "V: 0.15" 처럼 소수를 에코하면
+     *       종전 {@code \d+} 는 0·15 로 쪼개 후보 15번을 오선정했다. "숫자.숫자" 꼴은 통째로 무시된다.
+     *       단 문장 끝 마침표("V: 3, 12.")의 12 는 살린다(점 뒤에 숫자가 없으면 소수가 아님).</li>
+     * </ul>
+     * 정상 응답("V: 3, 12")·"V: 없음"(숫자 0개) 판정은 종전과 동일하다.
+     */
+    private static final Pattern NUMBER_PATTERN =
+        Pattern.compile("(?<!\\d)(?<!\\d\\.)\\d{1,3}(?!\\d)(?!\\.\\d)");
 
     /* prafta-062 배포 D(D9 확정): 법령 조문 첨부 도입에 따른 면책 보강 — 긴 버전. */
     private static final String DISCLAIMER =
@@ -247,12 +259,20 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
      *    단 이 "선택 전용 호출"에는 입력 가능 — 출력이 번호로 제한되고 서버가 숫자 외 출력을
      *    전부 폐기하며 화면은 서버가 DB 원문을 그대로 렌더하므로, LLM 출력물에 3유형 텍스트가
      *    한 글자도 포함되지 않아 원문 변형 배포가 구조적으로 불가능하다.
+     * <p>v3.12(prafta-064 S3): 후보 헤더에 유사도 병기 + "사고 유형 동일성" 채택 기준(규칙 4~6) 추가.
+     *    출력 형식·파서(parseVerbatimSelection)는 그대로 — 형식 강제 문장은 끝에 둔다(HCX 가 끝에서 읽는 편이 안정).
      */
     private static final String VERBATIM_SELECT_SYSTEM_PROMPT =
           "당신은 산업안전 위험성평가 보조자다. 아래 [후보 원문] 중 [위험성평가 요청]과 관련 있는 항목을 고른다.\n"
         + "1. 출력은 \"V: n, m\" 형식 한 줄만 반환한다(번호는 관련성 높은 순, 최대 5개).\n"
         + "2. 관련 있는 항목이 없으면 \"V: 없음\" 만 반환한다.\n"
-        + "3. 후보의 문장을 출력에 옮겨 쓰지 않는다. 번호 외 다른 텍스트를 출력하지 않는다.";
+        + "3. 후보의 문장을 출력에 옮겨 쓰지 않는다. 번호 외 다른 텍스트를 출력하지 않는다.\n"
+        + "4. 재해개요의 사고 상황(무엇에 어떻게 다쳤는가)이 요청의 사고 상황과 같은 유형일 때만 고른다.\n"
+        + "   단어가 겹쳐도 사고 유형이 다르면 고르지 않는다(예: 같은 '선반'이라도 선반장 위 공구 베임과\n"
+        + "   공작기계 말림은 다른 사고).\n"
+        + "5. 확신이 없으면 \"V: 없음\" 을 반환한다. 억지로 고르지 않는다.\n"
+        + "6. 유사도는 참고값이다. 유사도가 높아도 사고 유형이 다르면 고르지 않고, 낮아도 유형이 같으면 고를 수 있다.\n"
+        + "출력은 \"V: n, m\" 또는 \"V: 없음\" 한 줄만 반환한다. 번호 외 다른 텍스트를 출력하지 않는다.";
 
     // ==================================================================
     // 1) 기존 결과/대화 로드
@@ -494,6 +514,32 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             query = query.substring(0, MAX_DERIVE_QUERY_LEN);
         }
 
+        // ★prafta-064 S2: 검색·선택용 질의(searchQuery)와 생성 입력(query)의 분리.
+        //   - query(full = buildDeriveQuery): 그라운딩/자유생성 프롬프트 user 입력 + ENDPOINT_DERIVE 감사 길이(종전 그대로).
+        //   - searchQuery: ① recompose 검색 임베딩 / ② verbatim 전용 검색 임베딩 / ③ 선택 프롬프트의 [위험성평가 요청]
+        //     에만 투입. search-query-mode=compact(기본) 면 라벨 없는 관리자 확정문(buildSearchQuery), full 이면 query
+        //     그대로(즉시 원복 수단). compact 가 공백이면 query 로 폴백(AI_400_001 판정 조건 불변).
+        //   - full 모드에서도 compact 를 계산해 길이만 로그에 남긴다(관측 비교용 — 검색엔 미사용).
+        //   - 로그의 "경로" = compact 조립 경로(대화/무대화/폴백(full)). mode=full 이면 검색엔 query 가 쓰였다는 뜻.
+        //   - 질의 원문은 어느 로그에도 남기지 않는다(길이만).
+        String searchQueryMode = aiProperties.getSearch().getSearchQueryMode();
+        List<ChatTurn> visibleTurns = visibleTurns(before == null ? null : before.imgChatJson());
+        int userTurnCnt = countRole(visibleTurns, ROLE_USER);
+        int assistantTurnCnt = countRole(visibleTurns, ROLE_ASSISTANT);
+        String compactQuery = buildSearchQuery(source, before, suppDesc);
+        if (compactQuery != null && compactQuery.length() > MAX_DERIVE_QUERY_LEN) {
+            compactQuery = compactQuery.substring(0, MAX_DERIVE_QUERY_LEN);
+        }
+        // 경로 라벨은 buildSearchQuery 의 판정과 같은 규칙(관리자 실발화 ≥1 AND AI 발화 ≥1)으로 계산한다.
+        int managerSayCnt = countManagerTurns(visibleTurns);
+        String searchRoute = (compactQuery == null) ? "폴백(full)"
+            : ((assistantTurnCnt > 0 && managerSayCnt > 0) ? "대화" : "무대화");
+        String searchQuery;
+        if (AiProperties.Search.SEARCH_QUERY_MODE_FULL.equals(searchQueryMode) || compactQuery == null) {
+            searchQuery = query;
+        } else {
+            searchQuery = compactQuery;
+        }
         // 사전거부 게이트 OFF → 503.
         if (!llmAnswerClient.isEnabled()) {
             throw new ApiException(AiErrorCode.AI_503_001);
@@ -502,11 +548,18 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         //   derive 체인 최대 3회 + verbatim 선택 호출(selectVerbatimRefs)도 이 체크로 커버(소프트 리밋 명세 §5).
         aiQuotaService.checkOrThrow(param.gvCmpnyCd());
 
+        // ★관측 로그는 사전거부 게이트(503/429) 뒤에 남긴다 — 거부된 요청이 검색 질의 집계에 섞이지 않게
+        //   (qa D-2). 검색·선택 실행 건과 1:1 로 짝지어 읽는 로그다.
+        log.info("검색 질의 - mode={}, 경로={}, compact길이={}, full길이={}, 대화턴(관리자/AI)={}/{}",
+            searchQueryMode, searchRoute, (compactQuery == null) ? 0 : compactQuery.length(), query.length(),
+            userTurnCnt, assistantTurnCnt);
+
         // RAG 검색(코퍼스 필수). ★그라운딩 개선 D: topK 5→10 확대(회수율 개선).
         //   LLM 컨텍스트에는 아래 잘라내기에서 recompose 상위 5건만 투입한다(프롬프트 길이 방어).
         // prafta-062: reliabilityNotIn=null(부정 필터 미적용) — 사례 트랙 결과는 종전과 완전 동일(무회귀).
+        // prafta-064 S2 적용 지점 ①: 검색 임베딩에는 searchQuery(compact|full) 투입.
         RagSearchParam searchParam = new RagSearchParam(
-            query, DERIVE_SEARCH_TOP_K, null, null, null, null, param.gvUserCd(), param.gvCmpnyCd());
+            searchQuery, DERIVE_SEARCH_TOP_K, null, null, null, null, param.gvUserCd(), param.gvCmpnyCd());
         RagSearchResponse searchResp = ai01Service.search(searchParam);
         List<RagHit> hits = (searchResp.getHits() == null) ? List.of() : searchResp.getHits();
 
@@ -533,16 +586,19 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         }
         // ★관측 로그(임계값 튜닝 근거): 실 코퍼스의 최상위 점수와 임계값 통과 건수를 남긴다.
         //   실환경에서 이 로그의 topScore 분포를 보고 deriveMinScore 를 조정한다.
+        //   질의길이 = 검색에 실제 투입한 searchQuery 길이(prafta-064 D4 — full 모드로 원복하면 종전 값과 동일).
         log.info("RAG 그라운딩 판정 - 질의길이={}, recompose후보={}, 최상위점수={}, 임계값={}, 채택={}건{}",
-                query.length(), recomposeTrackCnt,
+                searchQuery.length(), recomposeTrackCnt,
                 Double.isNaN(topScore) ? "N/A" : String.format("%.4f", topScore),
                 String.format("%.2f", minScore), recompose.size(),
                 recompose.isEmpty() ? " → 근거부재(자유생성 ABSTAINED)" : "");
 
         // ★v3.9 verbatim 참고 원문 선정: 전용 검색(track=verbatim) 후 "선택 전용 LLM" 재랭킹.
-        //   그라운딩 호출 전에 수행하되, 어떤 실패도 derive 본류에 영향 없게 내부에서 격리·폴백한다.
+        //   그라운딩 호출 전에 수행하되, 어떤 실패도 derive 본류에 영향 없게 내부에서 격리한다
+        //   (prafta-064 S1: 임계 미달·선택 실패는 빈 목록, 폴백 없음).
         //   화면 표시는 서버가 DB 원문 그대로(원문 무변경 패스스루) — 하드가드 #4 개정 주석 참조.
-        List<VerbatimRefItem> verbatimRefs = selectVerbatimRefs(param, query);
+        // prafta-064 S2 적용 지점 ②③: 전용 검색 임베딩 + 선택 프롬프트의 [위험성평가 요청] 에 searchQuery 투입.
+        List<VerbatimRefItem> verbatimRefs = selectVerbatimRefs(param, searchQuery);
 
         // 도출 행 보장(★캡 증가 없음) + 보완 설명(있으면) 동반저장.
         riskAi01Mapper.insertDerivationIfAbsent(
@@ -899,6 +955,121 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     }
 
     /**
+     * 검색·선택용 질의(prafta-064 S2, search-query-mode=compact) — 라벨([공정명] 등)을 한 글자도 넣지 않는 자연문.
+     * ★생성 호출 입력이 아니다(그건 {@link #buildDeriveQuery} 가 종전 그대로 담당). 순수 함수(입력 → 문자열, 부수효과 없음).
+     * 각 조각은 trim 후 공백이면 생략하고 '\n' 으로 결합, 최종 trim.
+     *
+     * <ul>
+     *   <li>경로 1(관리자가 직접 쓴 발화가 있는 대화 — ★D2 개정, 2026-09-05 pgvector 실측 근거):
+     *       확정 상투구가 아닌 visible user 턴 ≥1 <b>그리고</b> visible assistant 턴 ≥1 일 때만.
+     *       구성 = 관리자 발화 전부(시간순) → 마지막 visible assistant 턴 1건 전체 그대로("맞습니까?" 등 잘라내지 않음)
+     *       → 관리자 보완 설명(suppDesc) → 유해요인명 → 유해요인 설명(stripAiAppendix) (근로자 원문은 꼬리 맥락).
+     *       중간 assistant 발화(첫 VLM 오독 문장 등)는 전부 제외 — 원인 ②.
+     *       D1=(a): {@code CONFIRM_YES_MESSAGE}("예, 맞습니다.")와 완전 일치하는 user 턴은 텍스트에서 제외하고
+     *       경로 판정에서도 "관리자 발화"로 세지 않는다(포함 검사 금지: "예, 맞습니다. 그리고 …" 실발화는 남긴다).
+     *       "(이미지 N장 첨부) " 접두는 그대로 둔다.</li>
+     *   <li>경로 2(그 외 전부 — 이력 없음 / 자동 첫 질문(kickoff)에 AI 만 답한 상태 / 관리자가 확정 버튼만 누른 상태):
+     *       suppDesc → 유해요인명 → 유해요인 설명(stripAiAppendix).</li>
+     *   <li>공정명·위험성 분류는 어느 경로에도 넣지 않는다(원인 ④ 잡음 — 생성 입력(full)에는 그대로 남아 정보 손실 없음).</li>
+     * </ul>
+     *
+     * <p>★경로 판정을 "assistant ≥1"(plan D2=(a) 원안)에서 "관리자 발화 ≥1"로 바꾼 이유(개발 pgvector·TEI 재현, 6건×3변형):
+     *    관리자가 답하지 않은 자동 첫 질문만 있는 이력이 실데이터의 다수인데, 그때 AI 의 일반적 사진 묘사
+     *    ("공장 내부 모습으로 보입니다…")만으로 검색하면 근로자 유해요인이 통째로 빠져 결과가 크게 나빠졌다
+     *    (예: 컨베이어 끼임 건이 "식품공장 건조기·승합차"로). 확정 버튼만 누른 경우도 같았다. 관리자 정정 발화가
+     *    실제로 있는 실사례에서는 원안대로 lathe 오매칭이 사라졌고, 근로자 원문을 꼬리로 붙이면 더 나아졌다
+     *    ("통로의 자재·공구 정리정돈 미흡" 최상위). 정책서 §4.2 "관리자 확정 우선"의 "확정"은 관리자가 실제로
+     *    말한 것을 뜻하며, AI 혼자 말한 상태는 확정이 아니다.</p>
+     *
+     * @return 조립 결과. 전부 공백이면 {@code null}(호출부가 full 질의로 폴백 — AI_400_001 판정 조건 불변).
+     */
+    private String buildSearchQuery(RiskAssessmentAiSource source, RiskAiDerivationRow before, String suppDesc) {
+        List<ChatTurn> turns = visibleTurns(before == null ? null : before.imgChatJson());
+        String lastAssistant = null;
+        for (ChatTurn t : turns) {
+            if (ROLE_ASSISTANT.equals(t.role())) {
+                lastAssistant = t.text().trim();
+            }
+        }
+
+        // 관리자가 직접 쓴 발화(확정 상투구 제외)만 모은다 — 경로 판정과 질의 본문에 같이 쓴다.
+        List<String> managerSays = new ArrayList<>();
+        for (ChatTurn t : turns) {
+            if (!ROLE_USER.equals(t.role())) {
+                continue;
+            }
+            String text = t.text().trim();
+            if (CONFIRM_YES_MESSAGE.equals(text)) {
+                continue;   // D1: 상수 완전 일치만 제외(경로 판정에서도 관리자 발화로 세지 않음)
+            }
+            appendPart(managerSays, text);
+        }
+
+        List<String> parts = new ArrayList<>();
+        if (lastAssistant != null && !managerSays.isEmpty()) {
+            // 경로 1: 관리자 발화 전부(시간순) → 마지막 AI 발화 1건 → 보완 설명 → 근로자 원문(꼬리 맥락).
+            parts.addAll(managerSays);
+            appendPart(parts, lastAssistant);
+            appendPart(parts, suppDesc);
+            appendPart(parts, source.hazardNm());
+            appendPart(parts, stripAiAppendix(source.initDesc()));
+        } else {
+            // 경로 2: 보완 설명 → 유해요인명 → 유해요인 설명(AI 반영 블록 스트립).
+            //   자동 첫 질문에 AI 만 답했거나 확정 버튼만 누른 이력은 여기로 — AI 의 사진 묘사만으로 검색하면
+            //   근로자 유해요인이 빠져 결과가 나빠지는 것을 실측으로 확인(javadoc 참조).
+            appendPart(parts, suppDesc);
+            appendPart(parts, source.hazardNm());
+            appendPart(parts, stripAiAppendix(source.initDesc()));
+        }
+        String joined = String.join("\n", parts).trim();
+        return joined.isEmpty() ? null : joined;
+    }
+
+    /** 조각을 trim 해 공백이 아닐 때만 추가(buildSearchQuery 전용). */
+    private void appendPart(List<String> parts, String value) {
+        if (StringUtils.hasText(value)) {
+            parts.add(value.trim());
+        }
+    }
+
+    /** IMG_CHAT_JSON 의 visible 턴(null·hidden=TRUE·텍스트 공백 제외)을 등장 순서대로 반환. */
+    private List<ChatTurn> visibleTurns(String imgChatJson) {
+        List<ChatTurn> out = new ArrayList<>();
+        for (ChatTurn t : parseChatTurns(imgChatJson)) {
+            if (t == null || Boolean.TRUE.equals(t.hidden()) || !StringUtils.hasText(t.text())) {
+                continue;
+            }
+            out.add(t);
+        }
+        return out;
+    }
+
+    /** 역할별 턴 수(검색 질의 관측 로그 전용). */
+    private int countRole(List<ChatTurn> turns, String role) {
+        int cnt = 0;
+        for (ChatTurn t : turns) {
+            if (role.equals(t.role())) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
+    /**
+     * 관리자가 직접 쓴 visible 발화 수(확정 상투구 {@code CONFIRM_YES_MESSAGE} 완전 일치는 제외).
+     * {@link #buildSearchQuery} 의 경로 1 판정과 derive 의 "검색 질의" 로그 경로 라벨이 같은 규칙을 쓰도록 공유한다.
+     */
+    private int countManagerTurns(List<ChatTurn> turns) {
+        int cnt = 0;
+        for (ChatTurn t : turns) {
+            if (ROLE_USER.equals(t.role()) && !CONFIRM_YES_MESSAGE.equals(t.text().trim())) {
+                cnt++;
+            }
+        }
+        return cnt;
+    }
+
+    /**
      * 이미지 분석(VLM) 시스템 프롬프트 뒤에 근로자 입력(공정명/위험성분류/유해요인명/유해요인설명)과
      * 관리자 보완 설명을 참고 맥락으로 append. ★요청빌드 시점에만 주입하고 IMG_CHAT_JSON 엔 저장하지 않는다.
      */
@@ -1029,17 +1200,22 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
     // ==================================================================
 
     /**
-     * verbatim(3유형) 참고 원문 선정: 전용 검색(track=verbatim, topK=10) → 선택 전용 LLM 재랭킹.
+     * verbatim(3유형) 참고 원문 선정: 전용 검색(track=verbatim, topK={@code VERBATIM_CANDIDATE_TOP_K}=20)
+     * → 유사도 임계(verbatimMinScore) 필터 → 중복 제거 → 선택 전용 LLM 재랭킹.
      *
      * <p>★하드가드 #4 개정(v3.9): 후보 원문을 선택 전용 호출의 입력으로는 보여주되 출력은 번호만
      *    허용(서버가 숫자 외 전부 폐기)하고, 화면 표시는 서버가 DB 원문을 그대로 렌더한다 —
      *    LLM 출력물에 3유형 텍스트가 포함되지 않으므로 원문 변형 배포가 구조적으로 불가.
-     * <p>폴백: 선택 호출 실패(HTTP 오류/refusal/V: 줄 미발견)면 벡터 유사도 상위
-     *    {@code MAX_VERBATIM_REFS}건 폴백(기능 후퇴 없음). "V: 없음"(명시적 무관련 판정)은
-     *    빈 목록 채택(판정 존중 — 폴백 아님).
+     * <p>prafta-064 S1: 임계 미달·선택 실패(refusal/V: 줄 미발견/예외) 시 빈 목록(폴백 없음 — 원칙 1
+     *    "틀린 원문을 안 내보내는 것이 더 많이 찾는 것보다 우선", 원문 0건은 정상 상태). 임계 통과 후보가
+     *    0건이면 선택 호출 자체를 생략한다(쿼터·지연 절약, derive-select 감사 행도 남기지 않음 = 실호출 1:1).
+     *    "V: 없음"(명시적 무관련 판정)은 빈 목록 채택(판정 존중).
      * <p>어떤 예외도 derive 본류로 전파하지 않는다(try/catch 격리).
+     *
+     * @param searchQuery 검색·선택용 질의(prafta-064 S2 — search-query-mode 에 따라 compact 또는 full).
+     *                    전용 검색 임베딩과 선택 프롬프트의 [위험성평가 요청] 에 같은 문자열을 투입한다.
      */
-    private List<VerbatimRefItem> selectVerbatimRefs(RiskAiParam param, String query) {
+    private List<VerbatimRefItem> selectVerbatimRefs(RiskAiParam param, String searchQuery) {
         // 후보 전용 검색: track 필터로 verbatim 만 조회(SEARCH_SQL 의 track ANY 필터 사용).
         //   ★중복 제거로 후보가 줄어들 것을 감안해 넓게 조회(Ai01Service maxTopK 클램프 내).
         List<RagHit> candidates;
@@ -1047,7 +1223,7 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             // prafta-062 D5: 법령 조문(data_reliability='법령')은 참고 원문(SIF 사례) 후보에서 배제 —
             //   법령은 전용 트랙(searchLawTrack)에서만 다룬다(도출 "참고 원문" 오염 방지 = 무회귀).
             RagSearchParam searchParam = new RagSearchParam(
-                query, VERBATIM_CANDIDATE_TOP_K, null, null, List.of(VERBATIM_TRACK),
+                searchQuery, VERBATIM_CANDIDATE_TOP_K, null, null, List.of(VERBATIM_TRACK),
                 List.of(LAW_RELIABILITY), param.gvUserCd(), param.gvCmpnyCd());
             RagSearchResponse resp = ai01Service.search(searchParam);
             candidates = (resp.getHits() == null) ? List.of() : resp.getHits();
@@ -1055,50 +1231,75 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
             log.warn("verbatim 전용 검색 실패 - 참고 원문 없이 진행. 원인={}", e.getMessage());
             return List.of();
         }
+
+        // ★prafta-064 S1 유사도 임계 필터(dedup 전): verbatim 경로만 임계가 없어 "가장 덜 먼" 무관 원문이
+        //   후보로 넘어가던 결함 차단. 최상위점수는 필터 전 원본 후보 기준(임계 조정의 관측 근거).
+        double minScore = aiProperties.getSearch().getVerbatimMinScore();
+        double topScore = candidates.isEmpty() ? Double.NaN : candidates.get(0).getScore();
+        int candidateCnt = candidates.size();
+        List<RagHit> passed = new ArrayList<>();
+        for (RagHit h : candidates) {
+            if (h.getScore() >= minScore) {
+                passed.add(h);
+            }
+        }
+        if (passed.isEmpty()) {
+            // 통과 0건 → 선택 호출 생략(쿼터·지연 절약, derive-select 감사 행 없음 = 실호출 1:1 원칙).
+            logVerbatimJudgement(candidateCnt, topScore, minScore, 0, 0, 0, " → 후보부재(선택호출 생략)");
+            return List.of();
+        }
         // ★후보 중복 제거: SIF 는 같은 유해요인·감소대책이 사례 행마다 반복되는 구조 —
         //   유해요인+감소대책이 같은 행은 유사도 상위 1건만 남겨 선택 LLM 에 다양한 후보를 준다.
-        candidates = dedupVerbatimCandidates(candidates);
-        if (candidates.isEmpty()) {
+        List<RagHit> deduped = dedupVerbatimCandidates(passed);
+        if (deduped.isEmpty()) {
+            logVerbatimJudgement(candidateCnt, topScore, minScore, passed.size(), 0, 0, " → 후보부재(선택호출 생략)");
             return List.of();
         }
 
         List<RagHit> chosen;
+        String outcome = "";
         try {
-            String context = buildVerbatimSelectContext(query, candidates);
+            String context = buildVerbatimSelectContext(searchQuery, deduped);
             LlmRawResponse raw = llmAnswerClient.answer(VERBATIM_SELECT_SYSTEM_PROMPT, context);
             // ★쿼터 사용량 누적 — 선택 전용 호출도 실호출(과금)이므로 raw 수신 즉시 기록.
             aiQuotaService.record(param.gvCmpnyCd(), raw.inputTokens(), raw.outputTokens());
-            List<Integer> picked = raw.refusal() ? null : parseVerbatimSelection(raw.combinedText(), candidates.size());
+            List<Integer> picked = raw.refusal() ? null : parseVerbatimSelection(raw.combinedText(), deduped.size());
 
             // 감사: 선택 호출도 실호출 1:1 기록(선정 청크 ID 누적, 선정 0건이면 abstained=true 성격).
+            //   질의 길이 = 실제 투입한 검색·선택용 질의 길이(prafta-064 S2 — 원문 미저장, 길이만).
             List<String> usedIds = new ArrayList<>();
             if (picked != null) {
                 for (Integer n : picked) {
-                    usedIds.add(candidates.get(n - 1).getChunkId());
+                    usedIds.add(deduped.get(n - 1).getChunkId());
                 }
             }
-            recordCall(param, ENDPOINT_DERIVE_SELECT, raw, query.length(), usedIds,
+            recordCall(param, ENDPOINT_DERIVE_SELECT, raw, searchQuery.length(), usedIds,
                 picked == null || picked.isEmpty());
 
             if (picked == null) {
-                // 오류성(refusal / V: 줄 미발견) → 벡터 상위 건 폴백.
-                log.warn("verbatim 선택 호출 실패(refusal/파싱 불가) - 벡터 상위 {}건 폴백", MAX_VERBATIM_REFS);
-                chosen = candidates.subList(0, Math.min(MAX_VERBATIM_REFS, candidates.size()));
+                // 오류성(refusal / V: 줄 미발견) → ★prafta-064 S1: 폴백 없이 빈 목록(임계를 통과했더라도
+                //   LLM 이 판단하지 못한 후보를 그냥 붙이는 것은 원칙 1 위반).
+                log.warn("verbatim 선택 실패(refusal/V: 줄 미발견) - 빈 목록");
+                chosen = List.of();
+                outcome = " → 선택 실패(빈 목록)";
             } else if (picked.isEmpty()) {
                 // 명시적 무관련 판정("V: 없음") — 판정 존중(폴백 아님).
-                log.info("verbatim 선택: 후보 {}건 중 관련 항목 없음 판정 - 빈 목록 채택", candidates.size());
+                log.info("verbatim 선택: 후보 {}건 중 관련 항목 없음 판정 - 빈 목록 채택", deduped.size());
                 chosen = List.of();
+                outcome = " → 선택 없음(V: 없음)";
             } else {
                 chosen = new ArrayList<>();
                 for (Integer n : picked) {
-                    chosen.add(candidates.get(n - 1));
+                    chosen.add(deduped.get(n - 1));
                 }
             }
         } catch (Exception e) {
-            // 선택 호출 예외가 derive 전체를 죽이면 안 됨 — 벡터 상위 건 폴백으로 격리.
-            log.warn("verbatim 선택 호출 예외 - 벡터 상위 {}건 폴백. 원인={}", MAX_VERBATIM_REFS, e.getMessage());
-            chosen = candidates.subList(0, Math.min(MAX_VERBATIM_REFS, candidates.size()));
+            // 선택 호출 예외가 derive 전체를 죽이면 안 됨 — ★prafta-064 S1: 빈 목록으로 격리(폴백 없음).
+            log.warn("verbatim 선택 호출 예외 - 빈 목록. 원인={}", e.getMessage());
+            chosen = List.of();
+            outcome = " → 선택 실패(빈 목록)";
         }
+        logVerbatimJudgement(candidateCnt, topScore, minScore, passed.size(), deduped.size(), chosen.size(), outcome);
 
         // 원문 무변경 패스스루 수집(LLM 미경유 — 서버가 검색 결과에서 직접 전달, chunkId 는 내부 로깅만).
         // ★동일 유해요인명 병합: 같은 유해요인명(공백 정규화 비교)의 선정 행은 1개 항목으로 묶고,
@@ -1331,13 +1532,30 @@ public class RiskAi01ServiceImpl implements RiskAi01Service {
         return (s == null) ? "" : s.replaceAll("\\s+", " ").trim();
     }
 
-    /** 선택 전용 컨텍스트: 후보 원문을 [1]..[N] 번호와 함께 나열(있는 필드만) + 요청. */
+    /**
+     * prafta-064 S1 관측 로그(INFO, 형식 고정 — 재적재(권장안 4) 판단·임계 튜닝의 근거 데이터라 3개 종료 경로
+     * 모두 같은 필드 순서로 1줄 남긴다). 최상위점수는 필터 전 원본 후보의 1위(NaN 이면 "N/A").
+     */
+    private void logVerbatimJudgement(int candidateCnt, double topScore, double minScore,
+                                      int passedCnt, int dedupedCnt, int chosenCnt, String outcome) {
+        log.info("verbatim 트랙 판정 - 후보={}건, 최상위점수={}, 임계값={}, 통과={}건, dedup후={}건, 선정={}건{}",
+            candidateCnt,
+            Double.isNaN(topScore) ? "N/A" : String.format("%.4f", topScore),
+            String.format("%.2f", minScore),
+            passedCnt, dedupedCnt, chosenCnt, outcome);
+    }
+
+    /**
+     * 선택 전용 컨텍스트: 후보 원문을 [1]..[N] 번호와 함께 나열(있는 필드만) + 요청.
+     * prafta-064 S3: 번호 옆에 서버 계산 유사도(RagHit.score=1-distance) 2자리 병기 — 후보가 유사도순이라
+     * LLM 이 "그나마 가까운 것"을 고르는 편향을 점수 문맥으로 상쇄한다(서버 String.format 값이라 인젝션 표면 없음).
+     */
     private String buildVerbatimSelectContext(String query, List<RagHit> candidates) {
         StringBuilder sb = new StringBuilder();
         sb.append("[후보 원문]\n");
         int n = 1;
         for (RagHit h : candidates) {
-            sb.append('[').append(n).append("]\n");
+            sb.append('[').append(n).append("] (유사도 ").append(String.format("%.2f", h.getScore())).append(")\n");
             if (StringUtils.hasText(h.getHazardText())) {
                 sb.append("유해요인: ").append(h.getHazardText().trim()).append('\n');
             }
