@@ -26,6 +26,11 @@ body.prafta-modal-open .month-day-picker-popover {
   pointer-events: auto !important;
   z-index: 10001 !important;
 }
+/* 사용자정보 팝업 '연차 반영' 도움말 팝오버도 Teleport로 body에 있으므로 동일 처리 */
+body.prafta-modal-open .credit-help-popover {
+  pointer-events: auto !important;
+  z-index: 10001 !important;
+}
 /* 본문 모달 밖(Teleport 등)에 뜨는 2중 오버레이 — body pointer-events: none 상속 우회 */
 body.prafta-modal-open .prafta-nested-modal-overlay {
   pointer-events: auto !important;

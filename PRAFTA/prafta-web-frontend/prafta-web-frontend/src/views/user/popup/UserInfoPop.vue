@@ -304,8 +304,8 @@
 
             <p class="default-sch-hint" v-if="isStdWorkDirect">
               ⓘ 육아기·임신기·가족돌봄 단축은 적용 기간이 필요해 계정 생성
-              단계에서는 등록할 수 없습니다. 계정 생성 후 소정근로시간
-              관리에서 기간과 함께 등록해 주세요.
+              단계에서는 등록할 수 없습니다. 계정 생성 후 소정근로시간 관리에서
+              기간과 함께 등록해 주세요.
             </p>
           </template>
 
@@ -366,8 +366,8 @@
               </button>
             </div>
             <p class="default-sch-hint" v-if="canTransfer">
-              ⓘ 사업장/부서 변경은 '소속이동'으로 처리됩니다(지정한
-              이동일에 발효).
+              ⓘ 사업장/부서 변경은 '소속이동'으로 처리됩니다(지정한 이동일에
+              발효).
             </p>
           </template>
 
@@ -427,18 +427,19 @@
             <!-- 경력 인정이 연차에 미치는 영향 안내 (prafta-030, 경력인정 이원화 2026-08-21)
                  §7-보충 B-4(2026-08-22) 재구성: 통짜 장문 안내(참고1.png 과밀)를 구조화 —
                  상시 노출은 공통 1줄 + 처리 경로 축약 1줄만 남기고, 모드별 상세·회계연도 경고는
-                 각 인정 항목의 라디오 선택과 연동한 인라인 조건부 블록(credit-mode-detail)으로 이동.
-                 문구 자체는 보존(정보 소실 금지) — 노출 조건만 구조화. -->
+                 각 인정 항목의 라디오 선택과 연동한 인라인 조건부 블록으로 이동.
+                 2026-09-05: 그 인라인 블록마저 팝업을 과밀하게 만들어, 모드별 상세는 항목의
+                 '?' 도움말 팝오버(credit-help-popover)로 다시 이동했다. 문구 자체는 보존. -->
             <div class="credit-notice">
               <p>
                 경력 인정은 <strong>반영 모드</strong> 또는
-                <strong>일수 모드</strong> 중 하나로 동작합니다(항목별 배타
-                선택 — 동시 적용 불가).
+                <strong>일수 모드</strong> 중 하나로 동작합니다(항목별 배타 선택
+                — 동시 적용 불가).
               </p>
               <p>
                 실제 연차 반영(소급·부여)은
-                <strong>사용자 연차관리(Attd_09)의 '정책 기준 부여'</strong>에서,
-                입사일 변경은 입사일 수정 기능에서 처리합니다.
+                <strong>사용자 연차관리(Attd_09)의 '정책 기준 부여'</strong
+                >에서, 입사일 변경은 입사일 수정 기능에서 처리합니다.
               </p>
             </div>
 
@@ -477,7 +478,9 @@
                     @change="fnApplyModeRecommend(item)"
                   >
                     <option value="">선택</option>
-                    <option value="CONTRACT_TO_REGULAR">계약직→정규 전환</option>
+                    <option value="CONTRACT_TO_REGULAR">
+                      계약직→정규 전환
+                    </option>
                     <option value="GROUP_MOVE">그룹사 이동</option>
                     <option value="MA_TRANSFER">인수합병 승계</option>
                     <option value="EXPERIENCE_SAME">동종 경력 우대</option>
@@ -485,83 +488,57 @@
                     <option value="OTHER">기타</option>
                   </select>
                 </div>
-                <!-- §7-보충 B-5(2026-08-22, 참고1.png 실증): 라디오○+라벨·힌트가 뒤섞여 세로로
-                     흩어지던 구조를 스택형으로 재편 — 라디오○+라벨은 한 줄 고정(radio-line),
-                     힌트는 라벨 아랫줄 작은 글씨. 두 라디오는 가로 배치, 좁은 폭 세로 폴백(wrap). -->
+                <!-- 2026-09-04 재편: 종전 카드형 라디오는 .form-row-max label(flex 0 0 120px)을
+                     그대로 상속받아 카드 폭이 120px 로 고정되는 바람에 힌트가 두 줄로 접히고
+                     라디오·라벨·힌트가 뒤엉켜 보였다. 다른 팝업(LeaveChangeRequestPop 등)과 동일한
+                     인라인 라디오 한 줄로 통일하고, 모드별 한 줄 요약(구 credit-mode-hint 문구)은
+                     아래 상세 패널 머리줄로 이동한다(문구 보존 — 정보 소실 없음). -->
                 <div class="form-row-max">
                   <label>연차 반영</label>
                   <div class="credit-mode-group">
                     <label class="credit-mode-radio">
-                      <span class="credit-mode-radio-line">
-                        <input
-                          type="radio"
-                          value="Y"
-                          v-model="item.leaveCalcYn"
-                        />
-                        반영 모드
-                      </span>
-                      <span class="credit-mode-hint"
-                        >개월수를 연차 산식에 반영</span
-                      >
+                      <input
+                        type="radio"
+                        value="Y"
+                        v-model="item.leaveCalcYn"
+                      />
+                      반영 모드
                     </label>
                     <label class="credit-mode-radio">
-                      <span class="credit-mode-radio-line">
-                        <input
-                          type="radio"
-                          value="N"
-                          v-model="item.leaveCalcYn"
-                        />
-                        일수 모드
-                      </span>
-                      <span class="credit-mode-hint"
-                        >기록용 + 매년 N일 추가 부여</span
-                      >
+                      <input
+                        type="radio"
+                        value="N"
+                        v-model="item.leaveCalcYn"
+                      />
+                      일수 모드
                     </label>
+                    <!-- 2026-09-05: 모드별 장문 설명은 이 버튼의 팝오버로 이동(항목 아래 상시 노출 폐지). -->
+                    <button
+                      type="button"
+                      class="credit-help-btn"
+                      :class="{ 'is-open': creditHelpIdx === idx }"
+                      :aria-expanded="creditHelpIdx === idx ? 'true' : 'false'"
+                      aria-label="연차 반영 모드 설명 보기"
+                      @click.stop="fnToggleCreditHelp(idx, $event)"
+                    >
+                      ?
+                    </button>
                   </div>
                 </div>
 
-                <!-- §7-보충 B-4(2026-08-22): 선택된 모드의 상세 설명만 항목 인라인으로 표시
-                     (라디오 선택과 연동 — 항목별 인라인 방식 채택, 판단 기록은 dev-notes 참조).
-                     문구는 종전 상단 통짜 안내에서 이동·보존. -->
-                <div
-                  v-if="item.leaveCalcYn !== 'N'"
-                  class="credit-mode-detail"
-                >
-                  <p>
-                    <strong>반영 모드</strong>: 인정 개월수가
-                    <strong>본연차·근속가산</strong> 산정에 그대로 반영됩니다.
-                    <span class="credit-notice-mono"
-                      >산정 근속 = 실제 입사일 + 인정 경력</span
-                    >
-                    인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
-                    시점부터는 실제 근무가 1년 미만이라도
-                    <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong
-                    >(고용승계 등 — 재직자와 동일 대우). 예를 들어 경력 6개월을
-                    인정하면 입사 6개월째부터 월차가 멈춥니다.
-                  </p>
-                  <!-- 회계연도 경고는 반영 모드 관련 내용이므로 반영 모드 표시 시에만 노출(B-4). -->
-                  <p class="credit-notice-warn">
-                    ※ <strong>회계연도 기준으로 연차를 부여하는 회사</strong>는
-                    반영 모드 사용 시 본연차 부여일이 회계 기준일 하루뿐이라,
-                    월차가 멈춘 시점과 첫 본연차 부여일 사이에
-                    <strong>연차가 발생하지 않는 기간</strong>이 생길 수
-                    있습니다. 해당 기간분은 노무 검토 후 별도 보전 예정이며,
-                    필요하면 사용자 연차관리(Attd_09)에서 수동 부여로
-                    처리하세요.
-                  </p>
-                </div>
-                <div v-else class="credit-mode-detail">
-                  <p>
-                    <strong>일수 모드</strong>: 인정 개월수는
-                    <strong>기록·퇴직정산 참고용</strong>일 뿐 연차 산정에
-                    반영되지 않아
-                    <strong
-                      >1년 미만 월차가 실근속 기준으로 정상 발생</strong
-                    >합니다. 대신 매년 정기부여 시점에 입력한
-                    <strong>연간 추가 일수만큼 약정 휴가가 자동 부여</strong
-                    >됩니다(사용촉진 비대상).
-                  </p>
-                </div>
+                <!-- 반영 모드 리스크 고지는 한 줄만 인라인 유지(완전 숨김 시 노무 리스크 고지
+                     누락 우려). 상세 설명·조치 절차는 '자세히' 팝오버가 전담한다. -->
+                <p v-if="item.leaveCalcYn !== 'N'" class="credit-inline-warn">
+                  ※ 회계연도 기준으로 연차를 부여하는 회사는
+                  <strong>연차 부족분 보전</strong>이 필요할 수 있습니다.
+                  <button
+                    type="button"
+                    class="credit-inline-link"
+                    @click.stop="fnToggleCreditHelp(idx, $event)"
+                  >
+                    자세히
+                  </button>
+                </p>
                 <div class="form-row-max" v-if="item.leaveCalcYn === 'N'">
                   <label>연간 추가 일수</label>
                   <input
@@ -573,7 +550,7 @@
                     v-model.number="item.extraLeaveDays"
                     placeholder="0.0"
                   />
-                  <span class="credit-suffix">일/년</span>
+                  <span class="credit-suffix">일</span>
                 </div>
                 <div class="form-row-max">
                   <label>상세 설명</label>
@@ -679,6 +656,94 @@
           </div>
         </div>
       </div>
+
+      <!-- 연차 반영 모드 도움말 팝오버 (2026-09-05)
+           팝업 내부에 두면 form-container 스크롤 영역에 잘리므로 Teleport 로 body 에 띄운다
+           (MonthDayPickerInput 선례 — pointer-events/z-index 는 modal-popup-guide.css 에서 부여). -->
+      <Teleport to="body">
+        <div
+          v-if="creditHelpIdx >= 0"
+          ref="creditHelpRef"
+          class="credit-help-popover"
+          :style="creditHelpStyle"
+          role="dialog"
+          aria-label="연차 반영 모드 설명"
+        >
+          <div class="credit-help-head">
+            <span class="credit-mode-badge">{{
+              creditHelpMode === "N" ? "일수 모드" : "반영 모드"
+            }}</span>
+            <span class="credit-help-summary">{{
+              creditHelpMode === "N"
+                ? "기록용 + 매년 N일 추가 부여"
+                : "개월수를 연차 산식에 반영"
+            }}</span>
+            <button
+              type="button"
+              class="credit-help-close"
+              aria-label="닫기"
+              @click="fnCloseCreditHelp"
+            >
+              ×
+            </button>
+          </div>
+
+          <template v-if="creditHelpMode !== 'N'">
+            <p class="credit-help-formula">
+              산정 근속 = 실제 입사일 + 인정 경력
+            </p>
+            <ul class="credit-help-list">
+              <li>
+                인정 개월수가 <strong>본연차·근속가산</strong> 산정에 그대로
+                반영됩니다.
+              </li>
+              <li>
+                인정 경력으로 <strong>산정 근속이 1년 이상</strong>이 되는
+                시점부터는 실제 근무가 1년 미만이라도
+                <strong>1년 미만 월차가 더 이상 발생하지 않습니다</strong
+                >(고용승계 등 — 재직자와 동일 대우).
+              </li>
+              <li>
+                예를 들어 경력 6개월을 인정하면 입사 6개월째부터 월차가
+                멈춥니다.
+              </li>
+            </ul>
+            <!-- 2026-09-05 재작성: 종전 "별도 보전 예정" 문구는 차액보전 기능(Attd_09 '입사일 기준
+                 차액 조회' 탭 + 보전 부여)이 이미 운영 반영된 뒤라 사실과도 달랐다.
+                 무엇이 부족해지는지 → 어떻게 처리하는지 순으로 다시 씀. -->
+            <div class="credit-help-warn">
+              <p class="credit-help-warn-title">
+                회계연도 기준으로 연차를 부여하는 회사라면
+              </p>
+              <p>
+                반영 모드로 <strong>월차는 일찍 멈추는데</strong>, 본연차는 다음
+                <strong>회계 기준일에야 부여</strong>됩니다. 그 사이에는 연차가
+                새로 생기지 않아, 입사일 기준으로 계산했을 때보다
+                <strong>연차가 모자란 구간</strong>이 생깁니다.
+              </p>
+              <p>
+                <strong>모자란 만큼은 보전해 주어야 합니다.</strong>
+                사용자 연차관리(Attd_09) →
+                <strong>'입사일 기준 차액 조회'</strong> 탭에서 부족분을
+                확인하고 <strong>[보전]</strong> 버튼으로 부여하세요.
+              </p>
+            </div>
+          </template>
+
+          <ul v-else class="credit-help-list">
+            <li>
+              인정 개월수는 <strong>기록·퇴직정산 참고용</strong>일 뿐 연차
+              산정에 반영되지 않아
+              <strong>1년 미만 월차가 실근속 기준으로 정상 발생</strong>합니다.
+            </li>
+            <li>
+              대신 매년 정기부여 시점에 입력한
+              <strong>연간 추가 일수만큼 약정 휴가가 자동 부여</strong
+              >됩니다(사용촉진 비대상).
+            </li>
+          </ul>
+        </div>
+      </Teleport>
     </div>
   </Transition>
 </template>
@@ -689,6 +754,7 @@ import {
   ref,
   computed,
   watch,
+  nextTick,
   defineProps,
   defineEmits,
   onMounted,
@@ -1036,6 +1102,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (timerInterval) clearInterval(timerInterval);
+  // 도움말 팝오버가 열린 채 팝업이 닫혀도 document 리스너가 남지 않도록 해제.
+  unbindCreditHelpEvents();
 });
 
 // =========================== Methods ===========================
@@ -1396,7 +1464,111 @@ const fnAddCredit = () => {
 // 경력 인정 항목 삭제
 const fnRemoveCredit = (idx) => {
   creditList.value.splice(idx, 1);
+  // 삭제로 index 가 밀리면 팝오버가 엉뚱한 항목을 가리키므로 무조건 닫는다.
+  fnCloseCreditHelp();
 };
+
+// =========================== 연차 반영 모드 도움말 팝오버 (2026-09-05) ===========================
+// 종전에는 선택한 모드의 장문 설명을 항목 아래에 상시 노출했는데, 좁은 팝업(최대 500px)에서
+// 11px 글씨 블록이 항목마다 쌓여 화면이 과밀해졌다. '?' 버튼 클릭 시에만 열리는 팝오버로 옮기고
+// 본문 글자 크기를 키운다. 팝오버는 Teleport 로 body 에 띄워 스크롤 영역 클리핑을 피한다.
+const creditHelpIdx = ref(-1); // 열린 인정 항목 index (-1 = 닫힘)
+const creditHelpRef = ref(null);
+const creditHelpStyle = ref({});
+let creditHelpAnchor = null; // 트리거 버튼 엘리먼트(바깥 클릭 판정·위치 계산용)
+
+// 팝오버 내용은 항상 "현재 선택된 모드"를 따라간다(열어 둔 채 라디오를 바꿔도 즉시 반영).
+const creditHelpMode = computed(() => {
+  const it =
+    creditHelpIdx.value >= 0 ? creditList.value[creditHelpIdx.value] : null;
+  return it && it.leaveCalcYn === "N" ? "N" : "Y";
+});
+
+const fnCloseCreditHelp = () => {
+  creditHelpIdx.value = -1;
+  creditHelpAnchor = null;
+};
+
+// 트리거 기준 아래쪽 배치. 화면 밖으로 나가면 좌우 클램프 + 위쪽으로 뒤집는다.
+const fnPositionCreditHelp = async () => {
+  await nextTick();
+  const anchor = creditHelpAnchor;
+  const el = creditHelpRef.value;
+  if (!anchor || !el) return;
+  const rect = anchor.getBoundingClientRect();
+  const margin = 8;
+  const width = el.offsetWidth;
+  const height = el.offsetHeight;
+
+  let left = rect.left;
+  if (left + width + margin > window.innerWidth) {
+    left = window.innerWidth - width - margin;
+  }
+  if (left < margin) left = margin;
+
+  let top = rect.bottom + 6;
+  if (top + height + margin > window.innerHeight) {
+    // 아래 공간이 부족하면 트리거 위쪽으로 (그래도 넘치면 상단에 붙임)
+    top = Math.max(margin, rect.top - height - 6);
+  }
+
+  creditHelpStyle.value = {
+    position: "fixed",
+    top: `${top}px`,
+    left: `${left}px`,
+    zIndex: 10001,
+  };
+};
+
+const fnToggleCreditHelp = async (idx, evt) => {
+  if (creditHelpIdx.value === idx) {
+    fnCloseCreditHelp();
+    return;
+  }
+  // 위치 계산 전 첫 프레임이 화면 좌하단에 스치듯 보이는 것을 막는다(측정용 오프스크린 배치).
+  creditHelpStyle.value = {
+    position: "fixed",
+    top: "-9999px",
+    left: "-9999px",
+    zIndex: 10001,
+  };
+  creditHelpIdx.value = idx;
+  creditHelpAnchor = evt.currentTarget;
+  await fnPositionCreditHelp();
+};
+
+const onCreditHelpDocClick = (e) => {
+  if (creditHelpIdx.value < 0) return;
+  if (creditHelpAnchor && creditHelpAnchor.contains(e.target)) return;
+  if (creditHelpRef.value && creditHelpRef.value.contains(e.target)) return;
+  fnCloseCreditHelp();
+};
+
+const onCreditHelpKeydown = (e) => {
+  if (e.key === "Escape") fnCloseCreditHelp();
+};
+
+// 스크롤·리사이즈 시에는 위치를 다시 잡는 대신 닫는다(MonthDayPickerInput 과 동일한 처리).
+const onCreditHelpReflow = () => fnCloseCreditHelp();
+
+const bindCreditHelpEvents = () => {
+  document.addEventListener("click", onCreditHelpDocClick, true);
+  document.addEventListener("keydown", onCreditHelpKeydown, true);
+  window.addEventListener("scroll", onCreditHelpReflow, true);
+  window.addEventListener("resize", onCreditHelpReflow, true);
+};
+
+const unbindCreditHelpEvents = () => {
+  document.removeEventListener("click", onCreditHelpDocClick, true);
+  document.removeEventListener("keydown", onCreditHelpKeydown, true);
+  window.removeEventListener("scroll", onCreditHelpReflow, true);
+  window.removeEventListener("resize", onCreditHelpReflow, true);
+};
+
+watch(creditHelpIdx, (v) => {
+  if (v >= 0) bindCreditHelpEvents();
+  else unbindCreditHelpEvents();
+});
 
 // T-6(08-20 설계 논의): 사유 유형별 기본 모드 추천 — 어디까지나 UI 기본값이며 최종 선택은 관리자.
 // 승계형(계약→정규/그룹사 이동/M&A 승계) → 반영 모드, 우대형(동종/이종 경력) → 일수 모드, 기타 → 추천 없음.
@@ -1974,72 +2146,212 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
 }
 
 /* 경력인정 이원화(2026-08-21) — 반영/일수 모드 선택.
-   §7-보충 B-5(2026-08-22) 재편: 참고1.png 실증(라디오 원·라벨·힌트가 뒤섞여 세로로 흩어짐)에 따라
-   구조 자체를 스택형으로 변경 — 라디오당 [라디오○+라벨 한 줄(radio-line, nowrap = 구 D-3 취지 유지)]
-   + [힌트 아랫줄(정상 줄바꿈 = 구 N-2 취지 유지)] 세로 스택, 두 라디오는 가로 배치·좁은 폭 세로 폴백. */
+   2026-09-04 재편: 카드형 라디오(120px 고정 폭 상속 → 힌트 두 줄 접힘)를 폐기하고
+   다른 팝업과 동일한 인라인 라디오 한 줄로 통일. 모드 설명은 아래 상세 패널이 전담한다. */
 .credit-mode-group {
   display: flex;
-  flex-wrap: wrap; /* 좁은 폭에서 라디오 단위로 세로 폴백 */
-  gap: 0.5rem 1.25rem;
-  align-items: flex-start;
+  flex-wrap: wrap; /* 좁은 폭에서만 세로 폴백 */
+  gap: 0.375rem 1.25rem;
+  align-items: center;
 }
 
-.credit-mode-radio {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-  max-width: 100%;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, #d1d5db);
-  border-radius: var(--input-radius, 10px);
-  font-size: 0.8125rem;
-  color: var(--color-text, #374151);
-  cursor: pointer;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-
-.credit-mode-radio:has(input:checked) {
-  border-color: var(--color-primary, #30796a);
-  background: var(--color-primary-bg, #eef6f3);
-}
-
-.credit-mode-radio-line {
+/* .form-row-max label(flex 0 0 120px / font-weight 500) 상속 해제 — 라디오 라벨은 내용 폭만 차지 */
+.form-row-max .credit-mode-radio {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: 0.375rem;
   white-space: nowrap; /* 라디오○+라벨 한 줄 고정 */
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: var(--color-text, #374151);
+  cursor: pointer;
 }
 
-.credit-mode-radio-line input[type="radio"] {
-  accent-color: var(--color-primary, #30796a);
+.credit-mode-radio input[type="radio"] {
+  accent-color: var(--color-primary, #16a34a);
+  cursor: pointer;
 }
 
-.credit-mode-hint {
-  white-space: normal; /* 힌트는 정상 줄바꿈 (N-2 취지 유지) */
-  font-size: 0.6875rem;
+.credit-mode-radio:has(input:checked) {
+  font-weight: 600;
+  color: var(--color-text-strong, #111827);
+}
+
+/* 도움말 '?' 버튼 — 라디오 옆 작은 원형 트리거 */
+.credit-help-btn {
+  flex: 0 0 auto;
+  width: 1.125rem;
+  height: 1.125rem;
+  border: 1px solid var(--color-border-strong, #d1d5db);
+  border-radius: 50%;
+  background: var(--color-surface, #ffffff);
   color: var(--color-text-muted, #4b5563);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  font-family: "Pretendard", sans-serif;
 }
 
-/* §7-보충 B-4(2026-08-22): 선택된 모드의 상세 설명 인라인 박스 —
-   상단 credit-notice 와 동일 info 톤, 항목 카드 안이므로 한 단계 작게. */
-.credit-mode-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  padding: 0.5rem 0.625rem;
-  background: var(--color-info-bg, #eff6ff);
-  border-radius: var(--input-radius, 10px);
+.credit-help-btn:hover,
+.credit-help-btn.is-open {
+  border-color: var(--color-primary, #16a34a);
+  background: var(--color-primary, #16a34a);
+  color: var(--color-surface, #ffffff);
+}
+
+.credit-help-btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 var(--focus-ring-width, 3px) var(--color-focus-ring);
+}
+
+/* 반영 모드 선택 시 인라인으로 남기는 한 줄 고지(상세는 팝오버) */
+.credit-inline-warn {
+  padding: 0.3125rem 0.5rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
   font-size: 0.6875rem;
   line-height: 1.5;
-  color: var(--color-info-text, #1d4ed8);
 }
 
-.credit-mode-detail p {
+.credit-inline-warn strong {
+  font-weight: 700;
+}
+
+.credit-inline-link {
+  margin-left: 0.25rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  font-weight: 700;
+  font-family: "Pretendard", sans-serif;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* 연차 반영 모드 도움말 팝오버 (2026-09-05) — Teleport 로 body 에 뜬다.
+   종전 항목 아래 상시 노출(11px 블록)을 대체하며, 본문은 12px 로 키운다. */
+.credit-help-popover {
+  width: 20rem;
+  max-width: calc(100vw - 1rem);
+  max-height: 70vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4375rem;
+  padding: 0.75rem;
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  box-shadow: 0 10px 25px rgba(16, 24, 40, 0.12),
+    0 4px 10px rgba(16, 24, 40, 0.08);
+  font-family: "Pretendard", sans-serif;
+  font-size: 0.75rem;
+  line-height: 1.65;
+  color: var(--color-text, #374151);
+}
+
+.credit-help-popover p {
   margin: 0;
 }
 
-.credit-mode-detail strong {
+.credit-help-popover strong {
   font-weight: 600;
+  color: var(--color-text-strong, #111827);
+}
+
+.credit-help-head {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding-bottom: 0.4375rem;
+  border-bottom: 1px solid var(--color-border, #e5e7eb);
+}
+
+.credit-mode-badge {
+  flex: 0 0 auto;
+  padding: 0.0625rem 0.375rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-primary, #16a34a);
+  color: var(--color-surface, #ffffff);
+  font-size: 0.6875rem;
+  font-weight: 600;
+}
+
+.credit-help-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: var(--color-text-strong, #111827);
+  font-weight: 600;
+}
+
+.credit-help-close {
+  flex: 0 0 auto;
+  width: 1.25rem;
+  height: 1.25rem;
+  border: 0;
+  border-radius: var(--btn-radius, 8px);
+  background: none;
+  color: var(--color-text-muted, #4b5563);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.credit-help-close:hover {
+  background: var(--color-bg, #f9fafb);
+  color: var(--color-text-strong, #111827);
+}
+
+/* 산정 근속 산식 — 본문과 분리해 한 줄 코드 톤으로 */
+.credit-help-formula {
+  align-self: flex-start;
+  padding: 0.125rem 0.4375rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-bg, #f9fafb);
+  font-size: 0.6875rem;
+  color: var(--color-text, #374151);
+}
+
+/* 불릿 목록 — ul 에 display:flex 를 주면 마커가 사라지므로 기본 list 레이아웃 유지 */
+.credit-help-list {
+  margin: 0;
+  padding-left: 1rem;
+  list-style: disc;
+}
+
+.credit-help-list li {
+  margin-bottom: 0.25rem;
+}
+
+.credit-help-list li:last-child {
+  margin-bottom: 0;
+}
+
+/* 회계연도 부여 회사 주의 — 부족분 보전 안내 */
+.credit-help-warn {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.125rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--btn-radius, 8px);
+  background: var(--color-warning-bg, #fef3c7);
+  color: var(--color-warning-text, #b45309);
+}
+
+.credit-help-warn strong {
+  color: inherit;
+  font-weight: 700;
+}
+
+.credit-help-warn-title {
+  font-weight: 700;
 }
 
 .add-credit-btn {
@@ -2090,21 +2402,6 @@ const fnConfirmMsg = async (message, afterConfirmCallback) => {
   font-weight: 600;
 }
 
-.credit-notice-mono {
-  display: inline-block;
-  margin-left: 0.25rem;
-  padding: 0 0.375rem;
-  border-radius: var(--btn-radius, 8px);
-  background: var(--color-surface, #ffffff);
-  color: var(--color-text-muted, #4b5563);
-  font-size: 0.625rem;
-}
-
-/* 회계연도 기준 부여 시 발생 공백 안내 — 본문과 구분되도록 경고 톤 */
-.credit-notice-warn {
-  margin-top: 0.25rem;
-  padding-top: 0.375rem;
-  border-top: 1px solid var(--color-border, #e5e7eb);
-  color: var(--color-warning-text, #b45309);
-}
+/* (2026-09-05) 회계연도 경고 스타일은 인라인 한 줄 .credit-inline-warn +
+   팝오버 .credit-help-warn 으로 이관 — 구 .credit-notice-warn/.credit-warn-label 제거. */
 </style>
