@@ -52,4 +52,15 @@ public class LeaveDeductionPreviewRequest {
     @Size(max = 1)
     @Pattern(regexp = "[YN]")
     private String brkWaiveYn;
+
+    /** v2(BW2-04, 앱 미러): 넘길 휴게 분량 W(분). 미전송=0, 15분 배수, 반차 전용. */
+    @FieldLabel("휴게넘김분")
+    @jakarta.validation.constraints.Min(0)
+    @jakarta.validation.constraints.Max(720)
+    private Integer brkWaiveMin;
+
+    /** v2(BW2-04, §7 Q3, 앱 미러): 반차 preview 파트(START/END, 선택). 미전송이면 종전(END 미체크 + 양 파트 요약). */
+    @FieldLabel("반차구분")
+    @Size(max = 5)
+    private String halfPart;
 }

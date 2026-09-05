@@ -231,16 +231,89 @@
     </select>
 
     <!--
-      BW-12(§7-1, 2026-09-04): 휴게 미이용 상시 요청 현행값. 단시간(소정 240·휴게 0) 근무일 배지의 판정 입력.
-      앱 홈 today / 웹 근태 일자상세 공용(판정 입력을 두 곳에서 다르게 읽지 않게 하는 단일 조회).
-      ★ prafta-brk-waive-3-standing-ddl.sql 선적용 필수.
+      BW2-02(2026-09-05): 사용자/일자 적용 근무 스케줄의 고정연장 시각 조회(소정 4 + 전방·후방 4).
+      selectDailySchedule 의 WORK_PLAN 조인 + effective-dating 서브쿼리를 그대로 복제하고 SELECT/UNION 컬럼만
+      소정 4컬럼 + 고정연장 4컬럼으로 바꿨다(AppAttd01Mapper.selectScheduleByRange 가 같은 패턴으로 고정연장을 싣는다).
+      법정 휴게 하한 산식 R = D - X + F 의 F 입력 전용. DailyScheduleVO 에는 고정연장 필드를 두지 않는다(FIXEDOT-2 가드).
+      selectDailySchedule 자체는 무수정.
     -->
-    <select id="selectBrkWaiveStandingYn" resultType="string">
-    /* LeaveDeductionMapper.selectBrkWaiveStandingYn */
-    SELECT IFNULL(U.BRK_WAIVE_STANDING_YN, 'N')
-      FROM TB_USER U
-     WHERE U.CMPNY_CD = #{cmpnyCd}
-       AND U.USER_CD  = #{userCd}
+    <select id="selectDailyFixedOt" resultType="com.prafta.common.cmm.leave.vo.DailyFixedOtVO">
+    /* LeaveDeductionMapper.selectDailyFixedOt */
+    SELECT
+          S.FST_SCH_STR_TIME       AS fstSchStrTime
+        , S.FST_SCH_END_TIME       AS fstSchEndTime
+        , S.SEC_SCH_STR_TIME       AS secSchStrTime
+        , S.SEC_SCH_END_TIME       AS secSchEndTime
+        , S.PRE_FIXED_OT_STR_TIME  AS preFixedOtStrTime
+        , S.PRE_FIXED_OT_END_TIME  AS preFixedOtEndTime
+        , S.FIXED_OT_STR_TIME      AS fixedOtStrTime
+        , S.FIXED_OT_END_TIME      AS fixedOtEndTime
+      FROM TB_USER_WORK_PLAN WP
+      JOIN (
+            SELECT
+                  E.CMPNY_CD, E.SITE_CD, E.SCH_CD, E.APPLY_DATE
+                , E.FST_SCH_STR_TIME, E.FST_SCH_END_TIME
+                , E.SEC_SCH_STR_TIME, E.SEC_SCH_END_TIME
+                , E.PRE_FIXED_OT_STR_TIME, E.PRE_FIXED_OT_END_TIME
+                , E.FIXED_OT_STR_TIME, E.FIXED_OT_END_TIME
+            FROM (
+                SELECT
+                      M.CMPNY_CD, M.SITE_CD, M.SCH_CD, M.APPLY_DATE
+                    , M.FST_SCH_STR_TIME, M.FST_SCH_END_TIME
+                    , M.SEC_SCH_STR_TIME, M.SEC_SCH_END_TIME
+                    , M.PRE_FIXED_OT_STR_TIME, M.PRE_FIXED_OT_END_TIME
+                    , M.FIXED_OT_STR_TIME, M.FIXED_OT_END_TIME
+                    , 2147483647 AS HIST_IDX
+                FROM TB_SCH_MGMT M
+                UNION ALL
+                SELECT
+                      H.CMPNY_CD, H.SITE_CD, H.SCH_CD, H.APPLY_DATE
+                    , H.FST_SCH_STR_TIME, H.FST_SCH_END_TIME
+                    , H.SEC_SCH_STR_TIME, H.SEC_SCH_END_TIME
+                    , H.PRE_FIXED_OT_STR_TIME, H.PRE_FIXED_OT_END_TIME
+                    , H.FIXED_OT_STR_TIME, H.FIXED_OT_END_TIME
+                    , H.HIST_IDX
+                FROM TB_SCH_MGMT_HIST H
+            ) E
+            WHERE E.HIST_IDX = (
+                SELECT MAX(E2.HIST_IDX)
+                FROM (
+                    SELECT M2.CMPNY_CD, M2.SITE_CD, M2.SCH_CD, M2.APPLY_DATE, 2147483647 AS HIST_IDX
+                    FROM TB_SCH_MGMT M2
+                    UNION ALL
+                    SELECT H2.CMPNY_CD, H2.SITE_CD, H2.SCH_CD, H2.APPLY_DATE, H2.HIST_IDX
+                    FROM TB_SCH_MGMT_HIST H2
+                ) E2
+                WHERE E2.CMPNY_CD   = E.CMPNY_CD
+                  AND E2.SITE_CD    = E.SITE_CD
+                  AND E2.SCH_CD     = E.SCH_CD
+                  AND E2.APPLY_DATE = E.APPLY_DATE
+            )
+        ) S
+        ON S.CMPNY_CD = WP.CMPNY_CD
+       AND S.SITE_CD  = WP.SITE_CD
+       AND S.SCH_CD   = WP.WORK_PLAN_CD
+       AND S.APPLY_DATE = (
+                <!-- 근무일 기준 유효버전이 없으면 최이른 적용버전으로 폴백(COALESCE) - selectDailySchedule 동일 -->
+                SELECT COALESCE(
+                         MAX(CASE WHEN SE.APPLY_DATE <![CDATA[ <= ]]> WP.WORK_YMD THEN SE.APPLY_DATE END)
+                       , MIN(SE.APPLY_DATE)
+                       )
+                FROM (
+                    SELECT M3.CMPNY_CD, M3.SITE_CD, M3.SCH_CD, M3.APPLY_DATE
+                    FROM TB_SCH_MGMT M3
+                    UNION ALL
+                    SELECT H3.CMPNY_CD, H3.SITE_CD, H3.SCH_CD, H3.APPLY_DATE
+                    FROM TB_SCH_MGMT_HIST H3
+                ) SE
+                WHERE SE.CMPNY_CD    = WP.CMPNY_CD
+                  AND SE.SITE_CD     = WP.SITE_CD
+                  AND SE.SCH_CD      = WP.WORK_PLAN_CD
+       )
+     WHERE WP.CMPNY_CD = #{cmpnyCd}
+       AND WP.SITE_CD  = #{siteCd}
+       AND WP.USER_CD  = #{userCd}
+       AND WP.WORK_YMD = #{workYmd}
      LIMIT 1
     </select>
 

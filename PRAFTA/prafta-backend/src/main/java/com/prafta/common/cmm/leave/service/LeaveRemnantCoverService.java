@@ -62,11 +62,14 @@ public interface LeaveRemnantCoverService {
      *
      * @param brkWaiveYn     휴게 무시 요청 'Y'/'N'(null 은 'N')
      * @param evidenceFileId 증빙 파일 ID(nullable)
+     * @param brkWaiveMin    v2(BW2-04): 넘긴 휴게 분량(반차 W_eff / 시간차 편입분 / 기록 전용 0). 'Y' 일 때만 저장
+     *                       (null 은 0 — 매퍼 IFNULL), 'N' 이면 NULL. 전 행 동일 값
      * @return 마지막 INSERT 한 사용기록 ID(무결재 즉시확정 PUSH 통보용)
      */
     String applyTrigger(String cmpnyCd, String siteCd, String userCd, String workYmd, String useUnitType,
                         String startTime, String endTime, Integer leaveMinutes, String reason, String reqId,
-                        RemnantTriggerPlanVO plan, String actorUserCd, String brkWaiveYn, String evidenceFileId);
+                        RemnantTriggerPlanVO plan, String actorUserCd, String brkWaiveYn, String evidenceFileId,
+                        Integer brkWaiveMin);
 
     /**
      * D7 회수: 잔여 복원 시(반려/수정 승인/삭제 동의) 근무일 미도래(WORK_YMD &gt; 오늘) ACTIVE COVER 를

@@ -69,17 +69,4 @@ public class DailyAttdDetailsResponse {
      * 단일 출처는 여전히 서버 게이트이며 이 플래그는 표시 조건 전용이다(구 FE 는 무시 — additive).
      */
     String reducedWorkYn;
-
-    /**
-     * BW-12(§7-1, 2026-09-04): <b>일자 단위</b> 법정 휴게 하한 경고 — 그날 배정 스케줄의 소정근로가
-     * 정확히 240분이고 스케줄 휴게가 0 인데, 근로자가 "휴게 미이용 상시 요청"(앱 마이페이지)을
-     * 켜지 않았고 그날 연차 사용도 없으면 'Y'(문구는 {@code brkLegalWarnText}).
-     *
-     * <p>연차 카드별 배지({@code monthlyAttdReqResultList[].brkLegalWarnYn} /
-     * {@code confirmedLeaveResultList[].brkLegalWarnYn})와 필드명 계열은 같으나 <b>축이 다르다</b> —
-     * 이쪽은 "부분휴가가 없는 통상 근무일" 전용이며 두 축이 동시에 'Y' 가 되지 않는다.
-     * 표시 전용(차단 없음), 구 FE 는 무시(additive). 정책서 attd/08-leave.md §8.5.10(e).
-     */
-    String brkLegalWarnYn;
-    String brkLegalWarnText;
 }

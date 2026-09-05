@@ -33,8 +33,9 @@ import java.math.BigDecimal;
  * @param brkWaiveExemptRange BW-04: 시간차 체크 시 합친 쉬는 구간 "HHMM~HHMM"(반차는 day-schedule 값 사용). 그 외 {@code null}
  * @param brkWaivedMinutes    BW-04: 쉬는 구간에 편입된 휴게 분(시간차 체크 시). 그 외 {@code null}
  * @param brkChargeMinutes    BW-04: 시간차 차감 분 = 신청 − 휴게 겹침(체크 시). 미체크 시간차는 신청 분. 그 외 {@code null}
- * @param brkLegalWarnYn      BW-06: 법정 휴게 하한 경고('Y'/'N', §1-3 — 차단 없음)
- * @param brkLegalWarnMsg     BW-06: 경고 문구(서버 생성 — 클라 재계산 금지). 경고 없으면 {@code null}
+ * @param brkWaiveMin        v2(BW2-04): 반차 = 적용 W_eff / 시간차 체크 = 편입 휴게분(저장 예정값) / 그 외·미요청 {@code null}
+ * @param brkWaiveCapMin      v2(BW2-04): 반차+파트 = 실효 cap(min(법정 cap, 파트 movable)) / 반차 파트 없음·시간차 = 법정 cap
+ *                            / 종일 {@code null}
  */
 public record LeaveDeductionPreviewResponse(
       BigDecimal chargeDays
@@ -56,7 +57,7 @@ public record LeaveDeductionPreviewResponse(
     , String brkWaiveExemptRange
     , Integer brkWaivedMinutes
     , Integer brkChargeMinutes
-    , String brkLegalWarnYn
-    , String brkLegalWarnMsg
+    , Integer brkWaiveMin
+    , Integer brkWaiveCapMin
 ) {
 }

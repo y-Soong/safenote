@@ -54,9 +54,13 @@
             </div>
             <!-- BW-12 잔여 B-1: 원 연차의 휴게 미이용 요청은 이동해도 소멸하지 않고 새 행에 승계된다
                  (정책서 attd/08-leave.md §8.5.10(b)). 서버 brkWaiveYn='Y' 일 때만 1줄 표시. -->
+            <!-- v2(BW2-11): 승계 분량 표기 P6 — formatBrkWaiveText(null=전부(v1) / 0=기록 / N분) + " 승계" -->
             <div v-if="detail.brkWaiveYn === 'Y'">
               <dt>휴게</dt>
-              <dd>휴게 미이용 요청 승계</dd>
+              <dd>
+                {{ formatBrkWaiveText(detail.brkWaiveYn, detail.brkWaiveMin) }}
+                승계
+              </dd>
             </div>
             <div>
               <dt>요청유형</dt>
@@ -149,7 +153,11 @@ import axios from "@/api/axios";
 import { getMessage, MSG } from "@/messages";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
-import { formatLeaveMinutes, trimLeaveDays } from "@/utils/leaveFormat";
+import {
+  formatLeaveMinutes,
+  trimLeaveDays,
+  formatBrkWaiveText,
+} from "@/utils/leaveFormat";
 
 const props = defineProps({
   changeReqId: { type: String, default: "" },
@@ -310,7 +318,9 @@ const fnLoadDetail = async () => {
             d.leaveMinutes
           ),
           // BW-12 잔여 B-1: 휴게 미이용 요청 승계 표시(구서버 응답은 undefined → 미노출).
+          //   v2(BW2-11): brkWaiveMin(null=전부/0=기록/N분) 동반 — Attd_13 3쿼리(BW2-06) additive 필드.
           brkWaiveYn: d.brkWaiveYn ?? null,
+          brkWaiveMin: d.brkWaiveMin ?? null,
           reqTypeNm: REQ_TYPE_NM[d.reqType] || d.reqType,
           initiatorTypeNm:
             INITIATOR_TYPE_NM[d.initiatorType] || d.initiatorType,

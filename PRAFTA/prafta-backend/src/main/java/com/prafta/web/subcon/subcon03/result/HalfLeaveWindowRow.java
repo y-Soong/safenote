@@ -16,5 +16,6 @@ public record HalfLeaveWindowRow(
         , String endTime        // HHmm
         , String useUnitType    // BW-05: 01 반차 / 02~04 시간차 (★record 끝 - 위치매핑)
         , String brkWaiveYn     // BW-05: 휴게 무시 요청 Y/N (반차 01 + Y = 그날 휴게 공제 0)
+        , Integer brkWaiveMin   // v2(BW2-13): 넘긴 휴게 분량(NULL + Y = v1 전부) — 공제 = max(0, 쉰 휴게 − W) (★record 끝)
 ) {
 }

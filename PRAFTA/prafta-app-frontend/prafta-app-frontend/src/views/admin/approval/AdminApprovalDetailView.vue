@@ -149,18 +149,11 @@
               </dd>
               <!-- BW-08: 휴게 미이용 요청(근기법 제54조① 단서) — 서버 body.brkWaiveYn / brkWaiveReqDtime.
                    필드 부재(구서버)면 미노출. 승인/반려 게이트 무변경(차단 없음). -->
-              <dt v-if="detail.body.brkWaiveYn === 'Y'">휴게 미이용</dt>
+              <!-- v2(BW2-10): 넘긴 분량 표기 P6 — formatBrkWaiveText(null=전부(v1) / 0=기록 / N분) -->
+              <dt v-if="detail.body.brkWaiveYn === 'Y'">휴게</dt>
               <dd v-if="detail.body.brkWaiveYn === 'Y'" class="ap-meta__dd--brk-waive">
-                근로자 요청 · {{ detail.body.brkWaiveReqDtime || '-' }}
-              </dd>
-              <!-- 법정 휴게 하한 경고(차단 없음) — 문구 서버 제공 -->
-              <dt v-if="detail.body.brkLegalWarnYn === 'Y'">법정 휴게</dt>
-              <dd
-                v-if="detail.body.brkLegalWarnYn === 'Y'"
-                class="ap-meta__dd--legal-warn"
-                role="status"
-              >
-                {{ detail.body.brkLegalWarnMsg }}
+                {{ formatBrkWaiveText(detail.body.brkWaiveYn, detail.body.brkWaiveMin) }} ·
+                {{ detail.body.brkWaiveReqDtime || '-' }}
               </dd>
               <dt>잔여 현황</dt>
               <dd>
@@ -323,7 +316,7 @@ import {
   formatHhmmDisplay,
 } from '@/utils/approvalFormat'
 // 가불표시-04: 일 단위 수량 표기 단일 출처(2026-08-09 규약)
-import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
+import { formatLeaveDaysOnly, formatBrkWaiveText } from '@/utils/leaveFormat'
 
 import AdminApprovalRejectSheet from './components/AdminApprovalRejectSheet.vue'
 import AdminApprovalAdjustSheet from './components/AdminApprovalAdjustSheet.vue'
@@ -878,12 +871,6 @@ onMounted(loadDetail)
 .ap-meta__dd--brk-waive {
   color: var(--color-primary);
   font-weight: 600;
-}
-/* BW-08: 법정 휴게 하한 경고 — warning 텍스트 토큰(차단 없음, 표시 전용) */
-.ap-meta__dd--legal-warn {
-  color: var(--color-warning-text);
-  font-weight: 600;
-  word-break: keep-all;
 }
 
 /* 배너 */

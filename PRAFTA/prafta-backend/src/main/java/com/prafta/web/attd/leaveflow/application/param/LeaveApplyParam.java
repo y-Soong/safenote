@@ -33,6 +33,8 @@ public record LeaveApplyParam(
     , String evidenceFileId
     /** 휴게시간 무시 요청(BW-04, 앱 미러). 'Y'/'N' — 미전송(null)은 'N'. */
     , String brkWaiveYn
+    /** v2(BW2-04, 앱 미러): 넘길 휴게 분량 W(분). 미전송(null)은 0. */
+    , int brkWaiveMin
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -65,6 +67,7 @@ public record LeaveApplyParam(
             , tokenInfo.gv_userCd()
             , request.getEvidenceFileId()
             , "Y".equals(request.getBrkWaiveYn()) ? "Y" : "N" // 미전송/null/'N' → 'N'
+            , request.getBrkWaiveMin() == null ? 0 : request.getBrkWaiveMin() // v2: 미전송 → 0
         );
     }
 }

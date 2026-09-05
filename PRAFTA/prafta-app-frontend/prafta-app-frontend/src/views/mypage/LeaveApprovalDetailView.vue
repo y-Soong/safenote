@@ -69,12 +69,10 @@
           </p>
           <!-- BW-08: 휴게 미이용 요청 표기(근기법 제54조① 단서) — 서버 body.brkWaiveYn / brkWaiveReqDtime(표시 포맷 서버 제공).
                필드 부재(구서버)면 미노출. 승인/반려 게이트 무변경(차단 없음). -->
+          <!-- v2(BW2-10): 넘긴 분량 표기 P6 — formatBrkWaiveText(null=전부(v1) / 0=기록 / N분) -->
           <p v-if="body.brkWaiveYn === 'Y'" class="lad-row lad-row--brk-waive">
-            휴게 미이용 요청 · {{ body.brkWaiveReqDtime || '-' }}
-          </p>
-          <!-- 법정 휴게 하한 경고(차단 없음) — 문구 서버 제공 -->
-          <p v-if="body.brkLegalWarnYn === 'Y'" class="lad-row lad-row--legal-warn" role="status">
-            {{ body.brkLegalWarnMsg }}
+            {{ formatBrkWaiveText(body.brkWaiveYn, body.brkWaiveMin) }} ·
+            {{ body.brkWaiveReqDtime || '-' }}
           </p>
           <div class="lad-balance">
             <span>부여 {{ body.balance?.granted ?? '-' }}</span>
@@ -185,7 +183,7 @@ import api from '@/api/axios'
 import { resolveApiErrorMessage } from '@/utils/apiError'
 import { formatYmdDisplay, formatDateTimeDisplay } from '@/utils/approvalFormat'
 // 가불표시-05: 일 단위 수량 표기 단일 출처(2026-08-09 규약)
-import { formatLeaveDaysOnly } from '@/utils/leaveFormat'
+import { formatLeaveDaysOnly, formatBrkWaiveText } from '@/utils/leaveFormat'
 import { usePullToRefresh } from '@/composables/usePullToRefresh'
 import PullRefreshIndicator from '@/components/common/PullRefreshIndicator.vue'
 
@@ -523,15 +521,6 @@ function fmtDt(v) {
 .lad-row--brk-waive {
   color: var(--color-primary);
   font-weight: 600;
-}
-/* BW-08: 법정 휴게 하한 경고 행 — warning 토큰(차단 없음, 표시 전용) */
-.lad-row--legal-warn {
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--color-warning-tint);
-  color: var(--color-warning-text);
-  border-radius: var(--radius-sm);
-  font-weight: 600;
-  word-break: keep-all;
 }
 
 /* ① 메타 */

@@ -9,10 +9,13 @@ import org.springframework.stereotype.Service;
 import com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper;
 import com.prafta.common.cmm.leave.service.LeaveConversionPolicyService;
 import com.prafta.common.cmm.leave.service.LeaveDeductionService;
+import com.prafta.common.cmm.leave.util.BreakWaiveCapUtils;
 import com.prafta.common.cmm.leave.util.HourlyLeaveChargeUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils;
+import com.prafta.common.cmm.leave.vo.DailyFixedOtVO;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
+import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.leave.vo.HourlyChargeVO;
 import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
 import com.prafta.common.cmm.leave.vo.LeaveTimeWindowVO;
@@ -104,6 +107,75 @@ public class LeaveDeductionServiceImpl implements LeaveDeductionService {
                     boundary.breakTimeRegistered());
         }
         return boundary;
+    }
+
+    @Override
+    public ScheduleWorkMinutesUtils.HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd,
+                                                                      String userCd, String workYmd,
+                                                                      ScheduleWorkMinutesUtils.HalfPart part,
+                                                                      int waiveMin) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return null;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 근무 계획/스케줄 없음 → 반차 경계 산출 불가(호출부가 ATTD_400_110 으로 거부).
+            return null;
+        }
+        ScheduleWorkMinutesUtils.HalfDayBoundary boundary = ScheduleWorkMinutesUtils.halfDayBoundary(sch, part, waiveMin);
+        if (boundary == null) {
+            log.warn("반차 경계 계산 실패(part={}, waiveMin={}) - 스케줄 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
+                    part, waiveMin, cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
+        } else if (waiveMin > 0) {
+            log.debug("[leave-deduct] 반차 경계(휴게 넘김 W): userCd={}, workYmd={}, part={}, W={}, 적용={}, movable={}, boundary={}, "
+                            + "recordOnly={}, brkTime={}",
+                    userCd, workYmd, boundary.part(), boundary.waiveMin(), boundary.appliedWaiveMin(),
+                    boundary.movableBreakMin(), boundary.boundaryMin(), boundary.recordOnly(),
+                    boundary.breakTimeRegistered());
+        }
+        return boundary;
+    }
+
+    @Override
+    public int getDailyFixedOtMinutes(String cmpnyCd, String siteCd, String userCd, String workYmd) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return 0;
+        }
+        DailyFixedOtVO v = leaveDeductionMapper.selectDailyFixedOt(cmpnyCd, siteCd, userCd, workYmd);
+        if (v == null) {
+            // 근무 계획/스케줄 없음 → 고정연장 없음.
+            return 0;
+        }
+        // 전방·후방 쌍이 NULL 이면 유틸이 조용히 0 — 고정연장 없는 기존 근무타입은 항상 0.
+        return FixedOtScheduleUtils.totalFixedOtMinutes(
+                v.getFstSchStrTime(), v.getFstSchEndTime(),
+                v.getSecSchStrTime(), v.getSecSchEndTime(),
+                v.getPreFixedOtStrTime(), v.getPreFixedOtEndTime(),
+                v.getFixedOtStrTime(), v.getFixedOtEndTime());
+    }
+
+    @Override
+    public BreakWaiveCapUtils.CapResult getBreakWaiveCap(String cmpnyCd, String siteCd, String userCd,
+                                                         String workYmd, int exemptMin) {
+        if (cmpnyCd == null || siteCd == null || userCd == null || workYmd == null) {
+            return null;
+        }
+        DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(cmpnyCd, siteCd, userCd, workYmd);
+        if (sch == null) {
+            // 근무 계획/스케줄 없음 → cap 산출 불가(호출부: day-schedule 은 null 응답, 신청은 ATTD_400_110 거부).
+            return null;
+        }
+        int fixedOtMin = getDailyFixedOtMinutes(cmpnyCd, siteCd, userCd, workYmd);
+        BreakWaiveCapUtils.CapResult cap = BreakWaiveCapUtils.compute(sch, fixedOtMin, exemptMin);
+        if (cap == null) {
+            log.warn("휴게 넘김 cap 계산 실패 - 스케줄 시각 비정상: cmpnyCd={}, siteCd={}, userCd={}, workYmd={}, schCd={}",
+                    cmpnyCd, siteCd, userCd, workYmd, sch.getSchCd());
+        } else {
+            log.debug("[leave-deduct] 휴게 넘김 cap: userCd={}, workYmd={}, D={}, X={}, F={}, R={}, B={}, req={}, cap={}, brkTime={}",
+                    userCd, workYmd, cap.dailyStdMin(), cap.exemptMin(), cap.fixedOtMin(), cap.remainWorkMin(),
+                    cap.companyBreakMin(), cap.requiredMin(), cap.capMin(), cap.breakTimeRegistered());
+        }
+        return cap;
     }
 
     @Override

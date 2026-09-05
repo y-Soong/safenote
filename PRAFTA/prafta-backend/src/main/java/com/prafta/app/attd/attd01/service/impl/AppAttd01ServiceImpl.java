@@ -57,7 +57,6 @@ import com.prafta.app.attd.attd01.service.AppAttd01Service;
 import com.prafta.app.tbm.tbm01.service.AppTbm01Service;
 import com.prafta.common.cmm.leave.service.LeaveRefusalConst;
 import com.prafta.common.cmm.leave.service.LeaveRefusalDetectService;
-import com.prafta.common.cmm.leave.util.BreakLegalCheckUtils;
 import com.prafta.common.cmm.leave.util.PartialLeaveWindowUtils;
 import com.prafta.common.cmm.schedule.util.FixedOtScheduleUtils;
 import com.prafta.common.cmm.location.service.LocationConsentService;
@@ -152,12 +151,6 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
 
     /** 위치정보 동의 판정 단일 출처(위치정보 동의철회·중지 S3) — 미동의 시 좌표를 저장하지 않는다. */
     private final LocationConsentService locationConsentService;
-
-    /**
-     * BW-12(§7-1): 휴게 미이용 "상시" 요청 현행값 조회(공용 1본). 단시간(소정 240·휴게 0) 근무일 배지 판정 입력.
-     * 스케줄이 대상 조건을 만족하는 날에만 호출한다(평소 추가 조회 0건).
-     */
-    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
 
     // ====================================================================
     // 1) 오늘 / 일자 상세 (동일 응답 구조)
@@ -336,11 +329,6 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
             recordSiteName = sched.siteNm();
         }
 
-        // BW-12(§7-1): 단시간(소정 240·휴게 0) 근무일 법정 휴게 하한 배지 — 표시 전용(상태/액션 무영향).
-        //   그날 연차 사용이 있으면 비대상(건별 배지가 담당), 스케줄이 조건을 만족할 때만 상시 요청값을 조회한다.
-        BreakLegalCheckUtils.Result dayLegal = evaluateStandingDayWarn(
-                cmpnyCd, userCd, sched, !dayLeaves.isEmpty());
-
         return MyAttendanceDayResponse.builder()
                 .workDate(targetYmd)
                 .siteName(siteName)
@@ -381,55 +369,7 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 // 작업지시서_소속이동-이력가시성-보정 T3: "당시 소속" 배지 데이터 소스.
                 .recordSiteCd(recordSiteCd)
                 .recordSiteName(recordSiteName)
-                // BW-12(§7-1): 단시간 근무일 법정 휴게 하한 배지(표시 전용).
-                .brkLegalWarnYn(dayLegal.warnYn())
-                .brkLegalWarnMsg(dayLegal.message())
                 .build();
-    }
-
-    /**
-     * BW-12(§7-1): 그날 배정 스케줄이 "소정 240분·휴게 0" 이고 부분휴가가 없을 때, 휴게 미이용 상시 요청
-     * 여부로 법정 휴게 하한 배지를 산출한다(정책서 attd/08-leave.md §8.5.10(e)).
-     *
-     * <p>판정·문구는 공용 유틸({@link BreakLegalCheckUtils#evaluateDay}) 단일 출처. 스케줄이 대상 조건을
-     * 만족하지 않으면 상시 요청값 조회 자체를 하지 않는다(통상 근무타입은 추가 쿼리 0건).
-     * 조회 실패는 배지 미노출로 흡수한다(표시 부가 정보가 카드 본체를 막지 않는다).
-     */
-    private BreakLegalCheckUtils.Result evaluateStandingDayWarn(
-            String cmpnyCd, String userCd, ScheduleResult sched, boolean hasLeaveOnDay) {
-
-        if (sched == null || hasLeaveOnDay) {
-            return BreakLegalCheckUtils.Result.notEligible();
-        }
-        com.prafta.common.cmm.leave.vo.DailyScheduleVO vo = toDailyScheduleVO(sched);
-        // 대상 타입인지 먼저 확인(상시 요청값 = 'Y' 로 두면 eligible 여부만 판정된다).
-        if (!BreakLegalCheckUtils.evaluateDay(vo, true, false).eligible()) {
-            return BreakLegalCheckUtils.Result.notEligible();
-        }
-        String standingYn;
-        try {
-            standingYn = leaveDeductionMapper.selectBrkWaiveStandingYn(cmpnyCd, userCd);
-        } catch (Exception e) {
-            log.warn("[BW-12] 휴게 미이용 상시 요청 조회 실패(배지 생략) - userCd={}", userCd, e);
-            return BreakLegalCheckUtils.Result.notEligible();
-        }
-        return BreakLegalCheckUtils.evaluateDay(vo, "Y".equals(standingYn), false);
-    }
-
-    /**
-     * BW-12: 근무계획 조인 결과 → 공용 스케줄 VO(휴게 시각은 조회 대상이 아니므로 비운다).
-     * 판정에 필요한 값은 소정근로분(시각 + 휴게 분)뿐이며, 휴게 시각이 없으면 유틸이 휴게 분 합으로 본다.
-     */
-    private static com.prafta.common.cmm.leave.vo.DailyScheduleVO toDailyScheduleVO(ScheduleResult sched) {
-        com.prafta.common.cmm.leave.vo.DailyScheduleVO vo = new com.prafta.common.cmm.leave.vo.DailyScheduleVO();
-        vo.setSchCd(sched.schCd());
-        vo.setFstSchStrTime(sched.fstSchStrTime());
-        vo.setFstSchEndTime(sched.fstSchEndTime());
-        vo.setFstSchBrkMin(sched.fstSchBrkMin());
-        vo.setSecSchStrTime(sched.secSchStrTime());
-        vo.setSecSchEndTime(sched.secSchEndTime());
-        vo.setSecSchBrkMin(sched.secSchBrkMin());
-        return vo;
     }
 
     /**
@@ -1753,9 +1693,6 @@ public class AppAttd01ServiceImpl implements AppAttd01Service {
                 .leaveExemptWindows(src.getLeaveExemptWindows())
                 // PRAFTA-FIXEDOT-2: 재조립 시 고정연장 점유 구간도 보존.
                 .fixedOtWindows(src.getFixedOtWindows())
-                // BW-12(§7-1): 재조립 시 단시간 근무일 법정 휴게 배지도 보존(출퇴근 응답에서 배지가 사라지지 않게).
-                .brkLegalWarnYn(src.getBrkLegalWarnYn())
-                .brkLegalWarnMsg(src.getBrkLegalWarnMsg())
                 .isOffsite(isOffsite)
                 .build();
     }

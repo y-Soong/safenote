@@ -967,6 +967,8 @@
         <!-- BW-05: 사용단위 + 휴게 무시 요청(반차 01 + Y 면 그날 스케줄 휴게 공제 0). record 끝 append. -->
         , L.USE_UNIT_TYPE AS useUnitType
         , L.BRK_WAIVE_YN  AS brkWaiveYn
+        <!-- v2(BW2-13): 넘긴 휴게 분량(NULL + Y = v1 전부). record 끝 append. -->
+        , L.BRK_WAIVE_MIN AS brkWaiveMin
       FROM TB_USER_LEAVE_USE L
      WHERE L.CMPNY_CD      = #{prvCmpnyCd}
        AND L.SITE_CD       = #{targetSiteCd}

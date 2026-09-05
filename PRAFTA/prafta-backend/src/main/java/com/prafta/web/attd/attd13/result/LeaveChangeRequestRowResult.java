@@ -76,5 +76,12 @@ public record LeaveChangeRequestRowResult(
      * 구 행(컬럼 DEFAULT 'N')·종일 연차는 'N'.
      */
     , String brkWaiveYn
+
+    /**
+     * v2(BW2-06): 원 행 넘긴 휴게 분량(TB_USER_LEAVE_USE.BRK_WAIVE_MIN). 표시 규칙(plan §3-5 P6):
+     * {@code Y & null} = "휴게 넘김 요청(전부)" / {@code Y & 0} = "휴게 없이 근무 요청(기록)" / {@code Y & N} = "휴게 N분 넘김 요청".
+     * 3쿼리 동시(위치매핑 맨 끝).
+     */
+    , Integer brkWaiveMin
 ) {
 }

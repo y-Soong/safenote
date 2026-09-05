@@ -21,11 +21,93 @@ class RecognizedMinutesUtilsBreakWaiveTest {
 
     private static final String YMD = "20260901";
 
-    /** {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN} 창 1건. */
+    /** {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN} 창 1건(v1 4-원소 — MIN 없음 = 전부). */
     private static List<String[]> win(String s, String e, String unit, String waive) {
         List<String[]> out = new ArrayList<>();
         out.add(new String[] { s, e, unit, waive });
         return out;
+    }
+
+    /** v2: {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN, BRK_WAIVE_MIN} 창 1건(min null = v1 행). */
+    private static List<String[]> win(String s, String e, String unit, String waive, String min) {
+        List<String[]> out = new ArrayList<>();
+        out.add(new String[] { s, e, unit, waive, min });
+        return out;
+    }
+
+    // ===== v2(BW2-13, §7 Q1): 반차 휴게 넘김 분량 W 반영 — 공제 = max(0, 쉰 휴게 − W) =====
+
+    @Test
+    @DisplayName("v2 W=30: 종료기준 반차 09~18(휴게 12~13) W=30 → 경계 13:30, 09:00~13:30 근무 → 270 − (60−30) = 240 = H")
+    void halfDayWaiveMin30() {
+        // 면제 창 13:30~18:00(교집합 밖 → 겹침 0). 휴게 12~13 ∩ [09:00,13:30] = 60, 창 겹침 0 → 60 − W30 = 30 공제.
+        List<String[]> wins = win("1330", "1800", "01", "Y", "30");
+        assertEquals(30, RecognizedMinutesUtils.halfDayWaiveMinutes(wins));
+        assertEquals(240, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1330", "0900", "1800", 60, "1200", "1300", wins, 30));
+    }
+
+    @Test
+    @DisplayName("v2 W=60(전부 = v1 체크와 동일): 09:00~14:00 근무 → 300 − 0 = 300")
+    void halfDayWaiveMin60EqualsV1() {
+        List<String[]> wins = win("1400", "1800", "01", "Y", "60");
+        assertEquals(60, RecognizedMinutesUtils.halfDayWaiveMinutes(wins));
+        assertEquals(300, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1400", "0900", "1800", 60, "1200", "1300", wins, 60));
+        // v1 NULL 행(전부) 과 같은 답
+        assertEquals(RecognizedMinutesUtils.WAIVE_ALL,
+                RecognizedMinutesUtils.halfDayWaiveMinutes(win("1400", "1800", "01", "Y", null)));
+        assertEquals(300, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1400", "0900", "1800", 60, "1200", "1300", wins,
+                RecognizedMinutesUtils.WAIVE_ALL));
+    }
+
+    @Test
+    @DisplayName("v2 W=0(기록 전용 Y): 09:00~13:00 근무(휴게 12~13) → 240 − 60 = 180 (미체크와 동일)")
+    void halfDayWaiveMin0RecordOnly() {
+        List<String[]> wins = win("1300", "1800", "01", "Y", "0");
+        assertEquals(0, RecognizedMinutesUtils.halfDayWaiveMinutes(wins));
+        assertEquals(180, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1300", "0900", "1800", 60, "1200", "1300", wins, 0));
+    }
+
+    @Test
+    @DisplayName("v2 boolean 오버로드 위임: true = WAIVE_ALL, false = 0 (기존 12-인자 호출 무회귀)")
+    void booleanOverloadDelegates() {
+        List<String[]> wins = win("0900", "1400", "01", "Y", "30");
+        assertEquals(RecognizedMinutesUtils.recognizedMinutes(
+                        YMD, null, "1400", null, "1800", "0900", "1800", 60, "1200", "1300", wins, true),
+                RecognizedMinutesUtils.recognizedMinutes(
+                        YMD, null, "1400", null, "1800", "0900", "1800", 60, "1200", "1300", wins,
+                        RecognizedMinutesUtils.WAIVE_ALL));
+        assertEquals(RecognizedMinutesUtils.recognizedMinutes(
+                        YMD, null, "0900", null, "1800", "0900", "1800", 60, "1200", "1300", List.of(), false),
+                RecognizedMinutesUtils.recognizedMinutes(
+                        YMD, null, "0900", null, "1800", "0900", "1800", 60, "1200", "1300", List.of(), 0));
+    }
+
+    @Test
+    @DisplayName("v2 분만 등록 타입 ③ 폴백도 W 반영: brk 60(시각 없음) W=WAIVE_ALL → 공제 0 / W=0 → 60")
+    void minutesOnlyFallbackAppliesW() {
+        assertEquals(540, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1800", "0900", "1800", 60, null, null, List.of(),
+                RecognizedMinutesUtils.WAIVE_ALL));
+        assertEquals(480, RecognizedMinutesUtils.recognizedMinutes(
+                YMD, null, "0900", null, "1800", "0900", "1800", 60, null, null, List.of(), 0));
+    }
+
+    @Test
+    @DisplayName("halfDayWaiveMinutes: 시간차 Y·반차 N 은 0, 반차 Y 두 행(START 15 + END 30)은 합 45, 파싱 불가는 전부")
+    void halfDayWaiveMinutesPredicate() {
+        assertEquals(0, RecognizedMinutesUtils.halfDayWaiveMinutes(win("1400", "1800", "02", "Y", "60")));
+        assertEquals(0, RecognizedMinutesUtils.halfDayWaiveMinutes(win("0900", "1345", "01", "N", null)));
+        List<String[]> two = new ArrayList<>();
+        two.add(new String[] { "0900", "1215", "01", "Y", "15" });
+        two.add(new String[] { "1330", "1800", "01", "Y", "30" });
+        assertEquals(45, RecognizedMinutesUtils.halfDayWaiveMinutes(two));
+        assertEquals(RecognizedMinutesUtils.WAIVE_ALL,
+                RecognizedMinutesUtils.halfDayWaiveMinutes(win("0900", "1400", "01", "Y", "abc")));
+        assertEquals(0, RecognizedMinutesUtils.halfDayWaiveMinutes(null));
     }
 
     @Test

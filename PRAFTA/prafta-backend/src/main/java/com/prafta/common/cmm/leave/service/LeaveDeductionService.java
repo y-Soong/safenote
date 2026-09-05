@@ -2,6 +2,7 @@ package com.prafta.common.cmm.leave.service;
 
 import java.math.BigDecimal;
 
+import com.prafta.common.cmm.leave.util.BreakWaiveCapUtils;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.BreakMergeResult;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfDayBoundary;
 import com.prafta.common.cmm.leave.util.ScheduleWorkMinutesUtils.HalfPart;
@@ -61,6 +62,44 @@ public interface LeaveDeductionService {
      */
     HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd, String userCd, String workYmd,
                                        HalfPart part, boolean waive);
+
+    /**
+     * 반차 경계 산출 — 파트·넘길 휴게 분량 W 지정 (부분휴가 휴게 넘김 v2 BW2-03, 2026-09-05 — 요청서 §1-2·R2).
+     *
+     * <p>그날 배정 스케줄을 조회해 {@code ScheduleWorkMinutesUtils.halfDayBoundary(sch, part, waiveMin)} 로 위임한다.
+     * END 는 근로 쪽 휴게의 뒤쪽 W 분을, START 는 앞쪽 W 분을 근로로 세어 경계가 그만큼 당겨/늦춰진다.
+     * W 는 파트별 "넘길 수 있는 휴게분"(movable)으로 클램프되며({@code appliedWaiveMin}), 0 이면 종전 미체크 경계.
+     * cap(법정 상한) 검증은 본 메서드가 하지 않는다 — 호출부가 {@link #getBreakWaiveCap} 로 먼저 거른다.
+     *
+     * @param part     반차 파트(START/END). {@code null} 이면 END.
+     * @param waiveMin 넘길 휴게 분량 W(0 이상). 0 = 미체크와 동일.
+     * @return 경계 산출 결과. 근무 계획/스케줄이 없거나 계산 불가 시 {@code null}(호출부가 ATTD_400_110 거부).
+     */
+    HalfDayBoundary getHalfDayBoundary(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                       HalfPart part, int waiveMin);
+
+    /**
+     * 그날 고정연장분 F(전방+후방, 분) — 부분휴가 휴게 넘김 v2 BW2-02(요청서 §1-1·R5).
+     *
+     * <p>{@code LeaveDeductionMapper.selectDailyFixedOt}(별도 조회 VO — DailyScheduleVO 에 고정연장 필드 금지,
+     * PRAFTA-FIXEDOT-2 가드) 후 {@code FixedOtScheduleUtils.totalFixedOtMinutes} 로 환산한다.
+     * 연차 분모(D/E1)에는 절대 쓰지 않는다 — 법정 휴게 하한 산식의 잔여 근로 R 입력 전용.
+     *
+     * @return 고정연장분(분). 근무 계획/스케줄 없음·미설정이면 0.
+     */
+    int getDailyFixedOtMinutes(String cmpnyCd, String siteCd, String userCd, String workYmd);
+
+    /**
+     * 그날 넘길 수 있는 휴게 상한 cap 산출 — 부분휴가 휴게 넘김 v2 BW2-02(요청서 §1-1).
+     *
+     * <p>스케줄 1회 + 고정연장 1회 조회 후 {@code BreakWaiveCapUtils.compute(sch, F, exemptMin)} 로 위임한다.
+     * {@code R = D − X + F}, {@code req = 법정 하한(R)}, {@code cap = max(0, B − req)}.
+     *
+     * @param exemptMin X — 면제 근로분(반차 = D/2, 시간차 = 차감 분)
+     * @return cap 산출 결과. 근무 계획/스케줄이 없거나 D 산출 불가 시 {@code null}.
+     */
+    BreakWaiveCapUtils.CapResult getBreakWaiveCap(String cmpnyCd, String siteCd, String userCd, String workYmd,
+                                                  int exemptMin);
 
     /**
      * 시간차 휴게 무시 체크 시 "붙은 휴게 편입" 산출 (부분휴가 휴게 무시 도입 BW-03, 2026-09-04 — 요청서 §1-2).

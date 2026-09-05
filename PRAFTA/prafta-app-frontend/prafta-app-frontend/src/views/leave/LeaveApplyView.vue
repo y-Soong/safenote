@@ -46,6 +46,7 @@
         :submitting="isSubmitting"
         :preview="preview"
         :preview-loading="isPreviewLoading"
+        :preview-error-text="previewErrorText"
         :day-schedule="daySchedule"
         @submit="onSubmit"
         @cancel="onCancel"
@@ -140,6 +141,9 @@ const loadMeta = async () => {
 //   remnantTriggered, remnantDays, companyCoverMinutes(PC-05 짜투리 보전 — 발동 시 insufficientBalance=false) } | null
 const preview = ref(null)
 const isPreviewLoading = ref(false)
+// v2(BW2-09): preview 4xx 의 서버 message(ATTD_400_222 시간차 법정 하한 미달 등) — 폼이 인라인 안내로 표시.
+//   성공/해제 시 null. 제출은 서버가 최종 거부(그때는 onSubmit 의 alert).
+const previewErrorText = ref(null)
 // 응답 역전 방지 시퀀스 — 마지막 요청의 응답만 채택(빠른 입력 변경 시 stale 응답 무시).
 let previewSeq = 0
 
@@ -148,6 +152,7 @@ const onPreviewRequest = async (payload) => {
   if (!payload) {
     previewSeq += 1
     preview.value = null
+    previewErrorText.value = null
     isPreviewLoading.value = false
     return
   }
@@ -157,10 +162,15 @@ const onPreviewRequest = async (payload) => {
     const res = await api.post('/appApi/leaveflow/preview-deduction', payload)
     if (seq !== previewSeq) return // stale 응답 폐기
     preview.value = res?.data ?? null
+    previewErrorText.value = null
   } catch (err) {
-    // preview 실패는 표시 생략(에러 알림 없음 — 신청 자체는 서버가 최종 판정).
+    // preview 실패는 카드 표시 생략(신청 자체는 서버가 최종 판정). 4xx 서버 문구만 폼에 인라인 전달(v2).
     console.warn('[LeaveApply] 예상 차감 preview 실패(표시 생략):', err?.message)
-    if (seq === previewSeq) preview.value = null
+    if (seq === previewSeq) {
+      preview.value = null
+      const msg = err?.response?.data?.message
+      previewErrorText.value = typeof msg === 'string' && msg.trim() !== '' ? msg : null
+    }
   } finally {
     if (seq === previewSeq) isPreviewLoading.value = false
   }

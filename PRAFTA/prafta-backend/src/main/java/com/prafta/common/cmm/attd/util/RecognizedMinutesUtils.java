@@ -31,6 +31,12 @@ public final class RecognizedMinutesUtils {
     }
 
     /**
+     * v2(BW2-13, plan §7 Q1): "그날 반차 휴게 넘김 분량" 이 <b>전부</b>(v1 행 — {@code BRK_WAIVE_MIN NULL} = B 해석)임을 나타내는 센티널.
+     * {@link #breakDeduction} 이 {@code max(0, 공제 − W)} 를 취하므로 어떤 공제도 0 이 된다.
+     */
+    public static final int WAIVE_ALL = Integer.MAX_VALUE;
+
+    /**
      * 정상근무 인정시간(분) = (실제 출퇴근 ∩ 스케줄) − 스케줄 휴게 − (확정 시각연차 겹침, 교집합 구간 내로 한정).
      * 웹 Attd_08 recognizedMin 산식의 백엔드 미러(완전 동일 답 — 파리티 계약).
      *
@@ -78,7 +84,9 @@ public final class RecognizedMinutesUtils {
      * @param planBrkEndTime       해당 차수 스케줄 휴게 종료 'HHmm' 또는 '2400'(null/blank = 시각 없음)
      * @param leaveWindows         그날 확정 시각연차 창. 요소 = {START, END[, USE_UNIT_TYPE, BRK_WAIVE_YN]}
      *                             (3·4번째는 선택 — {@link #halfDayBreakWaived(List)} 가 읽는다)
-     * @param halfDayBreakWaived   그날 반차(01) 휴게 무시 체크 행 존재 여부(①). 호출부가 {@link #halfDayBreakWaived(List)} 로 산출
+     * @param halfDayBreakWaived   그날 반차(01) 휴게 무시 체크 행 존재 여부(①). v1 호환 — {@code true} = 전부 넘김
+     *                             ({@link #WAIVE_ALL}) 로 위임한다. v2 호출부는 {@link #halfDayWaiveMinutes(List)} 결과를
+     *                             int 오버로드로 넘긴다.
      * @return 인정시간(분, 0 이상 클램프). 산출 불가(입력 결손·파싱 실패) 시 null — 0 아님.
      */
     public static Integer recognizedMinutes(
@@ -90,6 +98,34 @@ public final class RecognizedMinutesUtils {
             String planBrkStrTime, String planBrkEndTime,
             List<String[]> leaveWindows,
             boolean halfDayBreakWaived) {
+        return recognizedMinutes(workYmd, checkInDate, checkInTime, checkOutDate, checkOutTime,
+                planStrTime, planEndTime, planBrkMin, planBrkStrTime, planBrkEndTime, leaveWindows,
+                halfDayBreakWaived ? WAIVE_ALL : 0);
+    }
+
+    /**
+     * v2(BW2-13, plan §7 Q1): 반차 휴게 넘김 <b>분량 W</b> 반영 산식.
+     *
+     * <pre>
+     * 휴게 공제 = max(0, (휴게 시각 ∩ 실근태∩스케줄 − 연차창) − W)     ← W = 그날 반차(01)+Y 행의 BRK_WAIVE_MIN 합
+     *   · W = B(전부, v1 NULL 행 = {@link #WAIVE_ALL}) 이면 종전 ① 과 동일(공제 0)
+     *   · W &lt; B 면 안 넘긴 휴게만 공제 (W = 0 기록 전용 = 미체크와 동일)
+     *   · 휴게 시각 없음(분만 등록) ③ 폴백도 max(0, planBrkMin − W)
+     * </pre>
+     * 웹 {@code Attd_08.vue schedBreakDeduct} · Subcon03 스냅샷과 3중 파리티(산식 변경 시 동시 수정).
+     *
+     * @param halfDayWaiveMin 그날 반차(01)+'Y' 행의 넘긴 휴게 분 합(0 = 없음/기록 전용, {@link #WAIVE_ALL} = 전부).
+     *                        호출부가 {@link #halfDayWaiveMinutes(List)} 로 산출
+     */
+    public static Integer recognizedMinutes(
+            String workYmd,
+            String checkInDate, String checkInTime,
+            String checkOutDate, String checkOutTime,
+            String planStrTime, String planEndTime,
+            Integer planBrkMin,
+            String planBrkStrTime, String planBrkEndTime,
+            List<String[]> leaveWindows,
+            int halfDayWaiveMin) {
 
         // 1. 실근태 절대분(일 anchor) — 어느 한쪽이라도 결손이면 산출 불가(null).
         Integer inBoxed = FixedOtMinutesUtils.dayAnchorMinutes(workYmd, checkInDate, blankToNull(checkInTime));
@@ -150,8 +186,39 @@ public final class RecognizedMinutesUtils {
 
         // 7. 휴게 공제(BW-05 ①②③) 후 연차 차감 → 0 클램프(음수 금지).
         int brkDeduct = breakDeduction(planBrkMin, planBrkStrTime, planBrkEndTime,
-                schStartM, schEndM, sM, eM, absWins, halfDayBreakWaived);
+                schStartM, schEndM, sM, eM, absWins, halfDayWaiveMin);
         return Math.max(0, overlap - brkDeduct - overlapLeave);
+    }
+
+    /**
+     * v2(BW2-13): 그날 확정 시각연차 창 중 <b>반차(01) + 'Y'</b> 행의 넘긴 휴게 분량 W 합.
+     * 요소 = {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN, BRK_WAIVE_MIN}(5번째는 nullable 문자열 — 없거나 null 이면 v1 행 = 전부).
+     *
+     * @return 0 = 해당 행 없음(또는 전부 기록 전용) / {@link #WAIVE_ALL} = 어느 한 행이라도 v1(NULL) / 그 외 합(음수·파싱 실패는 전부로 본다)
+     */
+    public static int halfDayWaiveMinutes(List<String[]> leaveWindows) {
+        if (leaveWindows == null) {
+            return 0;
+        }
+        int sum = 0;
+        for (String[] win : leaveWindows) {
+            if (win == null || win.length < 4 || !"01".equals(win[2]) || !"Y".equals(win[3])) {
+                continue;
+            }
+            if (win.length < 5 || win[4] == null || win[4].isBlank()) {
+                return WAIVE_ALL; // v1 행(NULL) = 전부
+            }
+            try {
+                int w = Integer.parseInt(win[4].trim());
+                if (w < 0) {
+                    return WAIVE_ALL;
+                }
+                sum += w;
+            } catch (NumberFormatException e) {
+                return WAIVE_ALL;
+            }
+        }
+        return sum;
     }
 
     /**
@@ -171,21 +238,19 @@ public final class RecognizedMinutesUtils {
     }
 
     /**
-     * 휴게 공제 분(BW-05 §1-4).
-     * ① 반차 휴게 무시 체크일 → 0. ② 휴게 시각 있음 → Σ(휴게 ∩ [sM,eM] − 연차창). ③ 시각 없음/0폭/파싱 실패 → planBrkMin.
-     * 스케줄 구간 프레임 = 근무일 00:00 기준 분(dayAnchorMinutes 와 동일 축).
+     * 휴게 공제 분(BW-05 §1-4 → v2 BW2-13 W 반영).
+     * ② 휴게 시각 있음 → max(0, Σ(휴게 ∩ [sM,eM] − 연차창) − W). ③ 시각 없음/0폭/파싱 실패 → max(0, planBrkMin − W).
+     * W = {@link #WAIVE_ALL}(v1 전부) 이면 종전 ①(공제 0)과 동일. 스케줄 구간 프레임 = 근무일 00:00 기준 분.
      */
     private static int breakDeduction(Integer planBrkMin, String brkStrTime, String brkEndTime,
                                       int schStartM, int schEndM, int sM, int eM,
-                                      List<int[]> absWins, boolean halfDayBreakWaived) {
-        if (halfDayBreakWaived) {
-            return 0; // ① 그날 반차 휴게 무시 — 스케줄 휴게 전부 근로 전환(공제 0)
-        }
+                                      List<int[]> absWins, int halfDayWaiveMin) {
+        int w = Math.max(0, halfDayWaiveMin);
         int brkMin = (planBrkMin == null) ? 0 : planBrkMin;
         Integer rbs = com.prafta.common.util.DateTimeUtils.hhmmToMinutes(blankToNull(brkStrTime));
         Integer rbe = com.prafta.common.util.DateTimeUtils.brkEndToMinutes(blankToNull(brkEndTime));
         if (rbs == null || rbe == null) {
-            return brkMin; // ③ 분만 등록(시각 없음/파싱 실패) — 종전 공제
+            return Math.max(0, brkMin - w); // ③ 분만 등록(시각 없음/파싱 실패) — 종전 공제 − W
         }
         int bs = rbs;
         int be = rbe;
@@ -193,7 +258,7 @@ public final class RecognizedMinutesUtils {
             be += 1440; // 자정 넘김 휴게(G-1 wrap)
         }
         if (be == bs) {
-            return brkMin; // 0폭 = 시각 없음 취급 — 종전 공제
+            return Math.max(0, brkMin - w); // 0폭 = 시각 없음 취급 — 종전 공제 − W
         }
         // 스케줄 구간 프레임으로 이동(야간 스케줄: 휴게 01:00~02:00 이 22:00 시작 구간보다 앞이면 +1일).
         while (bs < schStartM) {
@@ -209,11 +274,12 @@ public final class RecognizedMinutesUtils {
         int deduct = ce - cs;
         // ② 연차창(쉬는 구간) 안에 든 휴게는 이미 연차 겹침으로 빠지므로 이중 공제하지 않는다(유효 소정 밖 = 편입 휴게 자동 제외).
         if (absWins != null) {
-            for (int[] w : absWins) {
-                deduct -= Math.max(0, Math.min(ce, w[1]) - Math.max(cs, w[0]));
+            for (int[] win : absWins) {
+                deduct -= Math.max(0, Math.min(ce, win[1]) - Math.max(cs, win[0]));
             }
         }
-        return Math.max(0, deduct);
+        // v2(BW2-13): 넘긴 분량 W 만큼은 근로로 전환됐으므로 공제에서 뺀다(W=전부 → 0).
+        return Math.max(0, Math.max(0, deduct) - w);
     }
 
     /** 빈 문자열('') 방어 — 스케줄/근태 시각의 '' 는 null 과 동일하게 산출 불가로 취급한다(개발 DB 실측 존재). */

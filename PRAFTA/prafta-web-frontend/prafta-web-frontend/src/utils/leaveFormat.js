@@ -102,3 +102,19 @@ export function trimLeaveDays(days) {
   if (!Number.isFinite(n)) return "0";
   return String(parseFloat(n.toFixed(5)));
 }
+
+/**
+ * v2(BW2-11) 휴게 넘김 요청 표기 3분기(P6, 앱 formatBrkWaiveText 와 동일 규칙).
+ *   yn !== 'Y' → '' / min null(v1 전부 넘김) → "휴게 넘김 요청(전부)" / 0 → "휴게 없이 근무 요청(기록)" / N → "휴게 N분 넘김 요청".
+ * @param {string|null} yn BRK_WAIVE_YN
+ * @param {number|string|null} min BRK_WAIVE_MIN
+ * @returns {string}
+ */
+export function formatBrkWaiveText(yn, min) {
+  if (yn !== "Y") return "";
+  if (min === null || min === undefined || min === "")
+    return "휴게 넘김 요청(전부)";
+  const n = Number(min);
+  if (Number.isNaN(n)) return "휴게 넘김 요청(전부)";
+  return n === 0 ? "휴게 없이 근무 요청(기록)" : `휴게 ${n}분 넘김 요청`;
+}

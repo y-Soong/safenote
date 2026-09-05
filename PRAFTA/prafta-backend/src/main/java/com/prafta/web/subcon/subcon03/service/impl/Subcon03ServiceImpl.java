@@ -1696,9 +1696,11 @@ public class Subcon03ServiceImpl implements Subcon03Service {
             if (r.userCd() == null || r.workYmd() == null) {
                 continue;
             }
-            // BW-05: {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN} — 3·4번째는 RecognizedMinutesUtils.halfDayBreakWaived 입력.
+            // BW-05: {START, END, USE_UNIT_TYPE, BRK_WAIVE_YN, BRK_WAIVE_MIN} — 3~5번째는 RecognizedMinutesUtils.halfDayWaiveMinutes 입력
+            //   (v2 BW2-13: 5번째 null = v1 전부).
             map.computeIfAbsent(r.userCd() + "|" + r.workYmd(), k -> new ArrayList<>())
-                    .add(new String[] { r.startTime(), r.endTime(), r.useUnitType(), r.brkWaiveYn() });
+                    .add(new String[] { r.startTime(), r.endTime(), r.useUnitType(), r.brkWaiveYn(),
+                            r.brkWaiveMin() == null ? null : String.valueOf(r.brkWaiveMin()) });
         }
         return map;
     }
@@ -1718,7 +1720,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
         if (row.workSeq() == null || (row.workSeq() != 1 && row.workSeq() != 2)) {
             return null;
         }
-        // BW-05: 휴게 시각 + 그날 반차 휴게 무시 체크 여부 입력(파리티 3중: 웹 Attd_08 recognizedMin · 본 스냅샷 · 유틸).
+        // BW-05 → v2(BW2-13): 휴게 시각 + 그날 반차 휴게 넘김 분량 W 입력(파리티 3중: 웹 Attd_08 recognizedMin · 본 스냅샷 · 유틸).
         List<String[]> wins = halfLeaveWinByKey.getOrDefault(row.userCd() + "|" + row.workYmd(), List.of());
         return RecognizedMinutesUtils.recognizedMinutes(
                 row.workYmd(),
@@ -1728,7 +1730,7 @@ public class Subcon03ServiceImpl implements Subcon03Service {
                 row.planBrkMin(),
                 blankToNull(row.planBrkStrTime()), blankToNull(row.planBrkEndTime()),
                 wins,
-                RecognizedMinutesUtils.halfDayBreakWaived(wins));
+                RecognizedMinutesUtils.halfDayWaiveMinutes(wins));
     }
 
     // =========================== private — 검증/공통 ===========================

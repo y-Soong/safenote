@@ -29,11 +29,6 @@
     <!-- 휴일(웹 휴일관리 TB_HOLIDAY) 1줄 표시 — 휴일명 있을 때만. -->
     <p v-if="holidayName" class="hol-marker">휴일 · {{ holidayName }}</p>
 
-    <!-- BW-12(§7-1): 법정 휴게 하한 경고 1줄(근기법 제54조① 단서). 소정 4시간·휴게 0 인 날에
-         휴게 미이용 상시 요청(마이페이지)이 없으면 서버가 'Y' + 문구를 내린다.
-         표시 전용 — 차단 없음. 문구는 서버값 그대로(클라 재계산 금지). 구서버 응답은 미노출. -->
-    <p v-if="brkLegalWarnText" class="brk-warn-marker" role="status">{{ brkLegalWarnText }}</p>
-
     <!-- prafta-app-018-E: 연차 사용 마커(부분연차 상세). 근무 행은 그대로 유지.
          같은 날 시간차/반차 다건이면 각 건을 1줄씩 표시.
          PRAFTA_COM_002-B-1: 승인 대기(요청중) 연차는 마커 옆에 "요청중" 배지 부가(표시/색은 유지). -->
@@ -447,14 +442,6 @@ const leaveMarkers = computed(() => formatLeaveMarkers(props.detail || {}))
 // 휴일명(웹 휴일관리 등록). 휴일 아니면 빈 문자열 → 미렌더.
 const holidayName = computed(() => (props.detail && props.detail.holidayName) || '')
 
-// BW-12(§7-1): 법정 휴게 하한 경고 문구 — 서버 산출값 표시 전용(brkLegalWarnYn='Y' 일 때만 문구 존재).
-//   구서버 응답에는 필드가 없어 빈 문자열 → 마커 미노출(무회귀).
-const brkLegalWarnText = computed(() => {
-  const d = props.detail
-  if (!d || d.brkLegalWarnYn !== 'Y') return ''
-  return d.brkLegalWarnMsg || ''
-})
-
 // prafta-app-014: 슬롯 개수 판정 단일 출처를 서버 slotCount 로 이관.
 //   서버 미제공(구버전 응답) 폴백: slots.length, 그래도 없으면 isTwoSlot.
 const slotCount = computed(() => {
@@ -780,15 +767,6 @@ const onSlotCheckIn = (workSeq) => {
 .lv-pending-bd {
   margin-left: var(--space-xs);
   vertical-align: middle;
-}
-
-/* BW-12(§7-1): 법정 휴게 하한 경고 라인(warning 톤 — 연차 마커와 동일 톤). */
-.brk-warn-marker {
-  margin: 2px 0 6px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-warning-text);
-  word-break: keep-all;
 }
 
 /* 휴일 마커 라인(danger 톤 — 월 캘린더 휴일 빨간 날짜와 톤 일관). */

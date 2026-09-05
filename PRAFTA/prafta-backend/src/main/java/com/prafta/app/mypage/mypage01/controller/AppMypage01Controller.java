@@ -14,7 +14,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.prafta.app.mypage.mypage01.application.param.ApprovalCandidateParam;
-import com.prafta.app.mypage.mypage01.application.param.BrkWaiveStandingUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileSendParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileVerifyParam;
 import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
@@ -23,7 +22,6 @@ import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.request.ApprovalCandidateRequest;
-import com.prafta.app.mypage.mypage01.dto.request.BrkWaiveStandingRequest;
 import com.prafta.app.mypage.mypage01.dto.request.MobileSendRequest;
 import com.prafta.app.mypage.mypage01.dto.request.MobileVerifyRequest;
 import com.prafta.app.mypage.mypage01.dto.request.PasswordChangeRequest;
@@ -216,31 +214,5 @@ public class AppMypage01Controller {
                 UpdateDefaultSchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
     }
 
-    // ===== BW-12(§7-1): 휴게 미이용 상시 요청(근기법 제54조① 단서) — 근로자 본인 전용 =====
-
-    /**
-     * 현행값 조회 — {@code { standingYn, standingDtime, eligibleYn }}.
-     * 대상 회사/사용자는 세션 토큰에서만 도출한다(관리자 대리 조회 경로 없음).
-     */
-    @GetMapping("/brk-waive-standing")
-    public ResponseEntity<?> getBrkWaiveStanding(
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-
-        TokenInfo tokenInfo = jwtUtil.getAllClaimsAsMap(authorization);
-        return ResponseEntity.status(HttpStatus.OK)
-                .body(appMypage01Service.getBrkWaiveStanding(tokenInfo));
-    }
-
-    /**
-     * 상시 요청 저장 — 본문 {@code { standingYn: 'Y'|'N' }}. 현행값 UPDATE + 이력 INSERT 가 한 트랜잭션.
-     * 값이 'Y'/'N' 이 아니거나 일용직(DAILY)이면 ATTD_400_220.
-     */
-    @PutMapping("/brk-waive-standing")
-    public ResponseEntity<?> updateBrkWaiveStanding(
-            @RequestBody BrkWaiveStandingRequest request,
-            @RequestHeader(value = "Authorization", required = false) String authorization) {
-
-        return ResponseEntity.status(HttpStatus.OK).body(appMypage01Service.updateBrkWaiveStanding(
-                BrkWaiveStandingUpdateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
-    }
+    // (v2 2026-09-05 BW2-08: 휴게 미이용 상시 요청 GET/PUT 엔드포인트 2본은 §7-1 폐지로 제거됨 — 호출 시 404)
 }

@@ -83,9 +83,11 @@
           )                                                              AS borrowDays
         <!-- 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID. record LeaveDetailBodyRow 맨 끝 필드와 순서 일치. -->
         , U.EVIDENCE_FILE_ID                                             AS evidenceFileId
-        <!-- BW-06: 휴게 미이용 요청 배지(요청 여부 + 시각 'yyyy-MM-dd HH:mm' 서버 포맷). record 끝 2필드. -->
+        <!-- BW-06: 휴게 미이용 요청 배지(요청 여부 + 시각 'yyyy-MM-dd HH:mm' 서버 포맷).
+             v2(BW2-07): 넘긴 휴게 분량(BRK_WAIVE_MIN) 추가. record(LeaveDetailBodyRow) 끝 3필드와 동일 순서. -->
         , U.BRK_WAIVE_YN                                                 AS brkWaiveYn
         , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%d %H:%i')           AS brkWaiveReqDtime
+        , U.BRK_WAIVE_MIN                                                AS brkWaiveMin
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
         ON LT.CMPNY_CD = U.CMPNY_CD

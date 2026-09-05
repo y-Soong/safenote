@@ -169,48 +169,6 @@
           </button>
         </nav>
 
-        <!-- BW-12(§7-1): 단시간(4시간·휴게 0) 근로자의 휴게 미이용 상시 요청(근기법 제54조① 단서).
-             본인만 켜고 끈다(관리자 대리 불가). 노출 조건은 서버 판정값 eligibleYn 단독 —
-             일용직 제외/정규직/기본 근무타입 240·0 판정을 화면이 다시 계산하지 않는다.
-             조회 실패(loaded=false)면 행 자체를 노출하지 않는다(비치명적). -->
-        <template
-          v-if="!isDailyWorker && brkWaiveStanding.loaded && brkWaiveStanding.eligibleYn === 'Y'"
-        >
-          <p class="mp-group-label">근무 설정</p>
-          <nav class="mp-menu">
-            <div class="mp-terms-row mp-terms-row--stack">
-              <div class="mp-terms-row__head">
-                <button
-                  type="button"
-                  role="checkbox"
-                  class="mp-terms-check"
-                  :class="{ 'mp-terms-check--on': brkWaiveStanding.standingYn === 'Y' }"
-                  :aria-checked="brkWaiveStanding.standingYn === 'Y' ? 'true' : 'false'"
-                  aria-label="4시간 근무일 휴게 미이용 상시 요청"
-                  :disabled="isBrkWaiveSaving"
-                  @click="onToggleBrkWaiveStanding"
-                >
-                  <span class="mp-terms-check__box" aria-hidden="true">
-                    <svg class="mp-terms-check__mark" viewBox="0 0 24 24" aria-hidden="true">
-                      <path d="M5 13l4 4L19 7" />
-                    </svg>
-                  </span>
-                  <span class="mp-terms-check__label"
-                    >4시간 근무 시 휴게 없이 바로 퇴근(휴게 미이용 상시 요청)</span
-                  >
-                </button>
-                <span v-if="brkWaiveStanding.standingDtime" class="mp-menu__meta">{{
-                  brkWaiveStanding.standingDtime
-                }}</span>
-              </div>
-              <p class="mp-terms-row__desc">
-                근로시간이 4시간인 날, 휴게 30분 없이 근무하고 바로 퇴근하기를 요청합니다. 켜고 끈
-                시각이 기록돼요. (근로기준법 제54조① 단서)
-              </p>
-            </div>
-          </nav>
-        </template>
-
         <!-- 결재 그룹 — 일용직(DAILY)은 연차 결재선/결재 관리 모두 미노출(필요 없는 기능). -->
         <!--   소정-12(UI-E): 두 메뉴 모두 연차 전용이므로 연차 기능 미노출 회사에서도 함께 숨긴다. -->
         <template v-if="!isDailyWorker && leaveFeatureVisible">
@@ -561,12 +519,6 @@ const onViewLocationTerms = () => {
 }
 // 토글 저장 직렬화 가드(동시 PUT 경합 방지).
 const isTermsSaving = ref(false)
-
-// ── BW-12(§7-1) 휴게 미이용 상시 요청 ─────────────────────────────────────
-//   loaded/eligibleYn/standingYn/standingDtime 전부 서버(GET /appApi/mypage/brk-waive-standing) 값.
-//   화면은 노출 조건도 시각 포맷도 재계산하지 않는다(서버 산출 표시 전용).
-const brkWaiveStanding = ref({ loaded: false, standingYn: 'N', standingDtime: '', eligibleYn: 'N' })
-const isBrkWaiveSaving = ref(false)
 
 // 일용직(DAILY) 여부 — 연차 요약 섹션 노출 게이트(라운드트립 없이 세션값으로 판정).
 const isDailyWorker = computed(() => isDailyWorkerFn())
@@ -984,59 +936,6 @@ const onToggleOptionalTerms = async (terms) => {
 }
 
 // ───────────────────────────────────────────────────────────
-// BW-12(§7-1): 휴게 미이용 상시 요청 로드 (GET /appApi/mypage/brk-waive-standing).
-//   비치명적: 실패하면 loaded=false 유지 → 행 미노출(선택약관 조회와 동일 관례). showAlert 금지.
-//   일용직은 서버 대상 자체가 아니므로 호출을 생략한다(행도 isDailyWorker 게이트로 미노출).
-// ───────────────────────────────────────────────────────────
-const loadBrkWaiveStanding = async () => {
-  if (isDailyWorker.value) return
-  try {
-    const { data } = await api.get('/appApi/mypage/brk-waive-standing')
-    brkWaiveStanding.value = {
-      loaded: true,
-      standingYn: data?.standingYn === 'Y' ? 'Y' : 'N',
-      standingDtime: data?.standingDtime || '',
-      eligibleYn: data?.eligibleYn === 'Y' ? 'Y' : 'N',
-    }
-  } catch (e) {
-    // 비치명적: 행 미노출(구서버·DDL 미적용 환경 포함).
-    brkWaiveStanding.value = { loaded: false, standingYn: 'N', standingDtime: '', eligibleYn: 'N' }
-    console.warn('[MyPage] 휴게 미이용 상시 요청 조회 실패:', e?.message)
-  }
-}
-
-// 상시 요청 토글 — 확인 팝업 없음(되돌릴 수 있는 토글. 위치정보 '일시 중지'와 같은 급).
-//   낙관적 토글 후 PUT, 실패 시 원복 + 안내. 시각은 서버 응답값으로만 갱신(클라 시계 신뢰 금지).
-const onToggleBrkWaiveStanding = async () => {
-  if (isBrkWaiveSaving.value) return
-  const prev = brkWaiveStanding.value.standingYn
-  const prevDtime = brkWaiveStanding.value.standingDtime
-  const next = prev === 'Y' ? 'N' : 'Y'
-
-  brkWaiveStanding.value = { ...brkWaiveStanding.value, standingYn: next }
-  isBrkWaiveSaving.value = true
-  try {
-    const { data } = await api.put('/appApi/mypage/brk-waive-standing', { standingYn: next })
-    brkWaiveStanding.value = {
-      loaded: true,
-      standingYn: data?.standingYn === 'Y' ? 'Y' : 'N',
-      standingDtime: data?.standingDtime || '',
-      eligibleYn: data?.eligibleYn === 'Y' ? 'Y' : 'N',
-    }
-  } catch (e) {
-    brkWaiveStanding.value = {
-      ...brkWaiveStanding.value,
-      standingYn: prev,
-      standingDtime: prevDtime,
-    }
-    console.warn('[MyPage] 휴게 미이용 상시 요청 저장 실패:', e?.message)
-    showAlert(e?.response?.data?.message || '설정을 저장하지 못했어요. 잠시 후 다시 시도해 주세요.')
-  } finally {
-    isBrkWaiveSaving.value = false
-  }
-}
-
-// ───────────────────────────────────────────────────────────
 // prafta-app-028: 진입/새로고침 공통 조회 묶음.
 //   onMounted 와 pull-to-refresh(onPullEnd) 가 모두 호출한다.
 //   { showLoading } — true: 최초 진입(전체 로딩 표시). false: 당겨서 새로고침(카드 유지 + 자체 인디케이터).
@@ -1054,8 +953,6 @@ const loadAll = async ({ showLoading = true } = {}) => {
   const locConsentP = loadLocationConsent()
   // PRAFTA-005(기본근무타입-승인제): 근무 정보 메뉴 배지(비치명적).
   const defaultSchPendingP = loadPendingDefaultSchChangeReq()
-  // BW-12(§7-1): 휴게 미이용 상시 요청 행(비치명적).
-  const brkWaiveP = loadBrkWaiveStanding()
 
   // 프로필(주 데이터)은 try/catch 로 직접 처리.
   //   GET /appApi/mypage/profile (마스킹 응답 D1). 메인 화면은 마스킹 PII를 사용하지 않고
@@ -1084,7 +981,7 @@ const loadAll = async ({ showLoading = true } = {}) => {
   }
 
   // 비치명적 조회 완료 대기(내부에서 예외 흡수되어 reject 없음).
-  await Promise.all([adminP, pendingP, leaveP, termsP, locConsentP, defaultSchPendingP, brkWaiveP])
+  await Promise.all([adminP, pendingP, leaveP, termsP, locConsentP, defaultSchPendingP])
 }
 
 onMounted(() => {
@@ -1540,16 +1437,6 @@ const { onPullStart, onPullMove, onPullEnd, indicatorProps } = usePullToRefresh(
   cursor: pointer;
   font-family: inherit;
 }
-/* BW-12(§7-1): 상시 요청 행의 설명 문단 — 라벨 아래 보조 텍스트(체크박스 폭만큼 들여쓰기). */
-.mp-terms-row__desc {
-  margin: 0;
-  padding-left: calc(22px + var(--space-sm));
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  word-break: keep-all;
-}
-
 /* (구 .mp-switch 스위치 스타일은 2026-09-02 체크박스 전환으로 제거 — 사용처 0.) */
 
 .mp-sprite {

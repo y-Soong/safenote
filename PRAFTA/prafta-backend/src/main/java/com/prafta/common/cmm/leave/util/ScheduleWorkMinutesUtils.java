@@ -98,6 +98,11 @@ public final class ScheduleWorkMinutesUtils {
     //   휴게 분만 등록(시각 없음)이면 위치 미상 → 체크해도 시각 불변, 기록 전용(G-2).
     //   기대값 출처: .claude/refs/휴게무시_시뮬레이션/brk_sim.py (simulate / walk_from_start / walk_from_end /
     //   walk_skip_from_end) — 분만 타입 START 체크 열만 G-2 적용 전이라 제외.
+    //
+    // 부분휴가 휴게 넘김 v2(2026-09-05, 요청서 §1-2 / plan BW2-03) — 분량 W 오버로드:
+    //   halfDayBoundary(sch, part, int waiveMin) 이 단일 출처. 근로 쪽 휴게(movable) 중 경계에 가까운 쪽 끝부터
+    //   W 분을 근로로 전환(END = 휴게 꼬리, START = 휴게 머리)해 (parts ∪ 전환 조각) 을 걷는다.
+    //   boolean 오버로드 = waive ? W=B(회사 휴게 전부) : W=0 위임(v1 결과 바이트 동일 — 무회귀 축).
     // ================================================================
 
     /** 반차 파트. START = 늦게 출근(쉬는 구간 [시작, 경계)), END = 일찍 퇴근(쉬는 구간 [경계, 종료)). */
@@ -134,14 +139,27 @@ public final class ScheduleWorkMinutesUtils {
      * @param recordOnly           체크 요청했지만 경계가 미체크와 같아 시각 불변·요청 기록만 하는 경우 {@code true}
      *                             (휴게가 쉬는 구간 안 / 휴게 분만 등록 G-2). 미체크 요청이면 항상 {@code false}.
      * @param breakTimeRegistered  그날 스케줄에 휴게 <b>시각</b> 구간이 1개 이상 있으면 {@code true}(G-2 안내용)
+     * @param waiveMin             요청한 넘길 휴게 분량 W(입력 echo, 0 이상). boolean 오버로드 체크 = B(회사 휴게분)
+     * @param appliedWaiveMin      실제 적용된 분량 W_eff = min(W, movableBreakMin). 저장 {@code BRK_WAIVE_MIN} 후보
+     * @param movableBreakMin      이 파트에서 넘길 수 있는 휴게분 = 휴게 시각 구간 ∩ 근로 쪽(END [시작, plain) / START [plain, 종료)).
+     *                             휴게 시각 미등록이면 0. 0 이면 어느 W 에서도 경계 불변(R3 — 스테퍼 비활성 근거)
      */
     public record HalfDayBoundary(int boundaryMin, int workStartMin, int workEndMin, int exemptMinutes,
                                   HalfPart part, boolean waiveRequested, boolean recordOnly,
-                                  boolean breakTimeRegistered) {
+                                  boolean breakTimeRegistered,
+                                  int waiveMin, int appliedWaiveMin, int movableBreakMin) {
 
         /** 구 시그니처 호환 생성자 — END·미체크 의미(기존 호출부 무회귀). */
         public HalfDayBoundary(int boundaryMin, int workStartMin, int workEndMin, int exemptMinutes) {
             this(boundaryMin, workStartMin, workEndMin, exemptMinutes, HalfPart.END, false, false, false);
+        }
+
+        /** v1(체크 여부) 시그니처 호환 생성자 — 분량 3필드는 0(기존 테스트·호출부 무회귀). */
+        public HalfDayBoundary(int boundaryMin, int workStartMin, int workEndMin, int exemptMinutes,
+                               HalfPart part, boolean waiveRequested, boolean recordOnly,
+                               boolean breakTimeRegistered) {
+            this(boundaryMin, workStartMin, workEndMin, exemptMinutes, part, waiveRequested, recordOnly,
+                    breakTimeRegistered, 0, 0, 0);
         }
 
         /** 파트 기준 쉬는(면제) 구간 시작(분): END = 경계, START = 근무 시작. */
@@ -190,6 +208,47 @@ public final class ScheduleWorkMinutesUtils {
      * @return 경계 산출 결과. 스케줄 없음/시각 비정상/D&lt;2 면 {@code null}.
      */
     public static HalfDayBoundary halfDayBoundary(DailyScheduleVO sch, HalfPart part, boolean waive) {
+        if (!waive) {
+            return halfDayBoundary(sch, part, 0);
+        }
+        // 체크 = "회사 휴게 전부(B) 넘김". B 는 휴게 시각 폭 합, 시각 없으면 분 합(BreakWaiveCapUtils.companyBreakMinutes 와 동일 정의).
+        List<int[]> breakTimes = breakTimeIntervals(sch);
+        int b = breakTimes.isEmpty() ? totalBreakMinutes(sch) : totalLength(breakTimes);
+        if (b <= 0) {
+            // 휴게 자체가 없는 타입 — v1 G-2 의미 보존: 시각 불변·요청 기록만(waiveRequested=true, recordOnly=true).
+            HalfDayBoundary plain = halfDayBoundary(sch, part, 0);
+            if (plain == null) {
+                return null;
+            }
+            return new HalfDayBoundary(plain.boundaryMin(), plain.workStartMin(), plain.workEndMin(),
+                    plain.exemptMinutes(), plain.part(), true, true, plain.breakTimeRegistered(), 0, 0, 0);
+        }
+        return halfDayBoundary(sch, part, b);
+    }
+
+    /**
+     * 그날 스케줄의 반차 경계를 파트·넘길 휴게 분량 W 로 산출한다(순수 함수 — 부분휴가 휴게 넘김 v2 BW2-03,
+     * 요청서 §1-2·R2·R3 / plan BW2-03 산식).
+     *
+     * <p>산출 규칙:
+     * <ol>
+     *   <li>{@code plain} = 종전 미체크 경계(END 는 시작에서 근로 조각(parts) 걷기, START 는 종료에서 거꾸로 걷기).</li>
+     *   <li>파트별 "넘길 수 있는 휴게분" {@code movable} = 휴게 시각 구간 ∩ <b>근로 쪽</b>(END: {@code [workStart, plain)},
+     *       START: {@code [plain, workEnd)}) 의 분 합. 휴게 시각 미등록이면 0(G-2).</li>
+     *   <li>{@code W_eff = min(W, movable)}. 0 이면 경계 = plain(W &gt; 0 이면 recordOnly — R3).</li>
+     *   <li>전환 조각: END 는 근로 쪽 휴게 구간을 <b>뒤(경계에 가까운 쪽)부터</b> 거꾸로 훑으며 각 구간 꼬리에서 W_eff 를
+     *       채우고, START 는 <b>앞부터</b> 훑으며 각 구간 머리에서 채운다(R2 — 쉬는 구간에 가까운 쪽 끝부터).</li>
+     *   <li>경계 = (parts ∪ 전환 조각) 오름차순 정렬 후 END 는 시작 걷기, START 는 종료 거꾸로 걷기로 H 도달 시각.
+     *       ★닫힌 식 {@code plain ∓ W_eff} 금지 — 2구간 사이 공백을 건너뛰는 타입(G-4)에서 어긋난다.</li>
+     * </ol>
+     * W = 0 이면 v1 미체크와 바이트 동일, W = B(회사 휴게 전부)면 v1 체크와 동일(boolean 오버로드가 이 위임).
+     *
+     * @param sch      그날 스케줄(1구간 필수)
+     * @param part     반차 파트. {@code null} 이면 END 로 본다.
+     * @param waiveMin 넘길 휴게 분량 W(분, 0 이상 — 음수는 0). 15분 단위·cap 검증은 호출부(BreakWaiveCapUtils) 책임.
+     * @return 경계 산출 결과. 스케줄 없음/시각 비정상/D&lt;2 면 {@code null}.
+     */
+    public static HalfDayBoundary halfDayBoundary(DailyScheduleVO sch, HalfPart part, int waiveMin) {
         HalfPart p = (part == null) ? HalfPart.END : part;
         Integer d = dailyStdWorkMinutes(sch);
         if (d == null || d < 2) {
@@ -222,35 +281,75 @@ public final class ScheduleWorkMinutesUtils {
                 ? walkFromStart(workParts, target)
                 : walkFromEnd(workParts, target);
 
-        // 휴게 시각 구간(근무 구간 프레임·클램프) — 체크 시 이동 가능 여부(G-2)와 recordOnly 판정 근거.
+        // 휴게 시각 구간(근무 구간 프레임·클램프) — 넘길 수 있는 휴게분(movable)과 G-2 판정 근거.
         List<int[]> breakTimes = breakIntervals(sch, segments);
         boolean breakTimeRegistered = !breakTimes.isEmpty();
 
+        // 근로 쪽 휴게 = 휴게 시각 구간 ∩ (END: [workStart, plain) / START: [plain, workEnd)).
+        int workSideStart = (p == HalfPart.END) ? workStart : plain;
+        int workSideEnd = (p == HalfPart.END) ? plain : workEnd;
+        List<int[]> movableBreaks = new ArrayList<>(breakTimes.size());
+        for (int[] b : breakTimes) {
+            int s = Math.max(b[0], workSideStart);
+            int e = Math.min(b[1], workSideEnd);
+            addIfPositive(movableBreaks, s, e);
+        }
+        int movable = totalLength(movableBreaks);
+
+        int w = Math.max(0, waiveMin);
+        int wEff = Math.min(w, movable);
+
         int boundary = plain;
-        boolean recordOnly = false;
-        if (waive) {
-            if (!breakTimeRegistered) {
-                // G-2: 휴게 분만 등록(위치 미상) 또는 휴게 없음 — 시각 불변, 요청 기록만.
-                recordOnly = true;
+        if (wEff > 0) {
+            // 전환 조각: 경계에 가까운 쪽 끝부터 W_eff 를 채운다(R2).
+            List<int[]> pieces = new ArrayList<>(movableBreaks.size());
+            int remain = wEff;
+            if (p == HalfPart.END) {
+                // 뒤(경계 쪽)부터 — 각 휴게 구간의 꼬리.
+                for (int i = movableBreaks.size() - 1; i >= 0 && remain > 0; i--) {
+                    int[] b = movableBreaks.get(i);
+                    int take = Math.min(remain, b[1] - b[0]);
+                    pieces.add(new int[] { b[1] - take, b[1] });
+                    remain -= take;
+                }
             } else {
-                // 체크: 휴게를 건너뛰지 않고 근무 구간(segs) 자체를 걷는다. 구간 사이 공백은 건너뛴다(G-4).
-                int segTarget = Math.min(h, totalLength(segments));
-                int checked = (p == HalfPart.END)
-                        ? walkFromStart(segments, segTarget)
-                        : walkFromEnd(segments, segTarget);
-                if (checked == plain) {
-                    // 휴게가 쉬는 구간 안(근무 쪽에 휴게 없음) — 결과 동일 → 기록 전용.
-                    recordOnly = true;
-                } else {
-                    boundary = checked;
+                // 앞(경계 쪽)부터 — 각 휴게 구간의 머리.
+                for (int i = 0; i < movableBreaks.size() && remain > 0; i++) {
+                    int[] b = movableBreaks.get(i);
+                    int take = Math.min(remain, b[1] - b[0]);
+                    pieces.add(new int[] { b[0], b[0] + take });
+                    remain -= take;
                 }
             }
+            // parts ∪ 전환 조각(서로 겹치지 않음 — 조각은 휴게 안, parts 는 휴게 밖) 오름차순 정렬 후 걷기.
+            List<int[]> merged = new ArrayList<>(workParts.size() + pieces.size());
+            merged.addAll(workParts);
+            merged.addAll(pieces);
+            merged.sort((a, c) -> Integer.compare(a[0], c[0]));
+            int mergedTarget = Math.min(h, totalLength(merged));
+            boundary = (p == HalfPart.END)
+                    ? walkFromStart(merged, mergedTarget)
+                    : walkFromEnd(merged, mergedTarget);
         }
-        return new HalfDayBoundary(boundary, workStart, workEnd, h, p, waive, recordOnly, breakTimeRegistered);
+
+        boolean waiveRequested = w > 0;
+        // W>0 인데 경계 불변(휴게가 쉬는 구간 안 / 시각 미등록 G-2) → 시각 불변·요청 기록만(R3).
+        boolean recordOnly = waiveRequested && boundary == plain;
+        return new HalfDayBoundary(boundary, workStart, workEnd, h, p, waiveRequested, recordOnly,
+                breakTimeRegistered, w, wEff, movable);
+    }
+
+    /**
+     * 파트별 "넘길 수 있는 휴게분"(분) — 휴게 시각 구간 ∩ 근로 쪽. day-schedule 이 파트별 값
+     * ({@code halfWaiveMovableStartMin/EndMin})을 내릴 때 사용한다. 산출 불가(스케줄 없음 등)면 0.
+     */
+    public static int movableBreakMinutes(DailyScheduleVO sch, HalfPart part) {
+        HalfDayBoundary r = halfDayBoundary(sch, part, 0);
+        return r == null ? 0 : r.movableBreakMin();
     }
 
     // ================================================================
-    // BW-06(2026-09-04): 법정 휴게 하한 경고(BreakLegalCheckUtils)가 같은 프레임의 구간을 쓰도록 공개 접근자.
+    // BW2-02(2026-09-05): 법정 하한 cap 유틸(BreakWaiveCapUtils)이 같은 프레임의 구간을 쓰도록 공개 접근자.
     //   (산식 단일 출처 — 별도 파서 재구현 금지. 반환 목록은 새 리스트라 호출부가 변형해도 무해.)
     // ================================================================
 

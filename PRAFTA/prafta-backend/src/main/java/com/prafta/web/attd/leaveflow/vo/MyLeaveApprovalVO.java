@@ -61,5 +61,12 @@ public record MyLeaveApprovalVO(
      * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
      */
     , String brkWaiveReqDtime
+    /**
+     * v2(BW2-11, 2026-09-05): 넘긴 휴게 분량(TB_USER_LEAVE_USE.BRK_WAIVE_MIN).
+     * brkWaiveYn='Y' 이고 null 이면 v1 저장분("전부 넘김"), 0 이면 기록 전용, N 이면 N분.
+     * 미요청('N')이면 null. 표시 규칙 P6 은 화면(formatBrkWaiveText)이 담당.
+     * ★ MyBatis record 위치 기반 매핑 — 반드시 맨 끝 유지(SELECT 맨 끝 컬럼과 순서 일치).
+     */
+    , Integer brkWaiveMin
 ) {
 }

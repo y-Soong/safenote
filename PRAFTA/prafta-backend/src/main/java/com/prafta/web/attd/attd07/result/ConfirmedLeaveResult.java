@@ -39,15 +39,8 @@ public record ConfirmedLeaveResult(
 
     , String brkWaiveReqDtime
 
-    /* BW-06: 법정 휴게 하한 경고 — 서비스가 채움(매퍼는 NULL 자리). 'Y'/'N', 문구(서버 생성). */
-    , String brkLegalWarnYn
-
-    , String brkLegalWarnText
+    /* v2(BW2-07): 넘긴 휴게 분량(TB_USER_LEAVE_USE.BRK_WAIVE_MIN). v1 'Y' 행·미요청은 null(= 휴게 전부, FE 해석).
+       종전 법정 경고 2필드는 v2 에서 제거됨. ★record 끝(위치매핑). */
+    , Integer brkWaiveMin
 ) {
-
-    /** BW-06: 서비스가 산출한 법정 경고를 반영한 사본(record 불변). */
-    public ConfirmedLeaveResult withBrkLegalWarn(String warnYn, String warnText) {
-        return new ConfirmedLeaveResult(leaveCd, leaveNm, useUnitType, unitNm, startTime, endTime, leaveDays,
-                brkWaiveYn, brkWaiveReqDtime, warnYn, warnText);
-    }
 }

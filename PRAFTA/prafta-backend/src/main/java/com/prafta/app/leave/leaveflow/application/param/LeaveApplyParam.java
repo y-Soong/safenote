@@ -47,6 +47,11 @@ public record LeaveApplyParam(
      * 기간 신청({@link #deriveForDate})은 종일 전용이라 항상 'N' 고정 승계.
      */
     , String brkWaiveYn
+    /**
+     * v2(BW2-04): 넘길 휴게 분량 W(분). 미전송(null)은 0. 검증(15 배수·cap)은 서비스가 수행한다.
+     * 기간 신청({@link #deriveForDate})은 종일 전용이라 항상 0 고정.
+     */
+    , int brkWaiveMin
 ) {
     public static LeaveApplyParam from(LeaveApplyRequest request, TokenInfo tokenInfo) {
         if (request == null || tokenInfo == null) {
@@ -80,6 +85,7 @@ public record LeaveApplyParam(
             , null   // groupId — 단일일 신청은 묶음이 아니다(무회귀: 기존 동작 완전 동일)
             , request.getEvidenceFileId()
             , "Y".equals(request.getBrkWaiveYn()) ? "Y" : "N" // 미전송/null/'N' → 'N'
+            , request.getBrkWaiveMin() == null ? 0 : request.getBrkWaiveMin() // v2: 미전송 → 0
         );
     }
 
@@ -112,6 +118,7 @@ public record LeaveApplyParam(
             , groupId
             , evidenceFileId // 기간신청은 날짜별로 분해되지만 증빙 파일은 신청 1건 대표값 그대로 승계
             , "N"            // BW-04: 기간 신청은 종일 전용 — 휴게 무시 요청은 항상 'N' 고정(요청값 무시)
+            , 0              // v2(BW2-04): 기간 신청은 분량도 0 고정
         );
     }
 }

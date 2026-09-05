@@ -1,7 +1,6 @@
 package com.prafta.app.mypage.mypage01.service;
 
 import com.prafta.app.mypage.mypage01.application.param.ApprovalCandidateParam;
-import com.prafta.app.mypage.mypage01.application.param.BrkWaiveStandingUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileSendParam;
 import com.prafta.app.mypage.mypage01.application.param.MobileVerifyParam;
 import com.prafta.app.mypage.mypage01.application.param.PasswordChangeParam;
@@ -10,7 +9,6 @@ import com.prafta.app.mypage.mypage01.application.param.PresetSaveParam;
 import com.prafta.app.mypage.mypage01.application.param.ProfileUpdateParam;
 import com.prafta.app.mypage.mypage01.application.param.UpdateDefaultSchParam;
 import com.prafta.app.mypage.mypage01.dto.response.ApprovalCandidateListResponse;
-import com.prafta.app.mypage.mypage01.dto.response.BrkWaiveStandingResponse;
 import com.prafta.app.mypage.mypage01.dto.response.DefaultSchChangeRequestResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileSendResponse;
 import com.prafta.app.mypage.mypage01.dto.response.MobileVerifyResponse;
@@ -72,17 +70,4 @@ public interface AppMypage01Service {
      * 적용). 즉시 반영하지 않는다 — 실제 반영은 승인 시점(Attd07Service.approveDefaultSchChangeRequest).
      */
     DefaultSchChangeRequestResponse updateDefaultSch(UpdateDefaultSchParam param);
-
-    // ===== BW-12(§7-1): 휴게 미이용 상시 요청(근기법 제54조① 단서) — 근로자 본인 전용 =====
-
-    /**
-     * 현행값 조회. 노출 조건(eligibleYn)은 정규직 + 기본 근무타입 소정 240분·휴게 0 기준으로 서버가 판정한다.
-     */
-    BrkWaiveStandingResponse getBrkWaiveStanding(TokenInfo tokenInfo);
-
-    /**
-     * 상시 요청 저장(현행값 UPDATE + 이력 INSERT, 한 트랜잭션). 토큰 본인만 — 관리자 대리 경로 없음.
-     * 값이 'Y'/'N' 이 아니거나 일용직(DAILY)이면 ATTD_400_220 으로 거부한다.
-     */
-    BrkWaiveStandingResponse updateBrkWaiveStanding(BrkWaiveStandingUpdateParam param);
 }

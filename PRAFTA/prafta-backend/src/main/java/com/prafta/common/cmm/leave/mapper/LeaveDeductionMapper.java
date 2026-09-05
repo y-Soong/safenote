@@ -5,6 +5,7 @@ import org.apache.ibatis.annotations.Param;
 
 import java.util.List;
 
+import com.prafta.common.cmm.leave.vo.DailyFixedOtVO;
 import com.prafta.common.cmm.leave.vo.DailyScheduleVO;
 import com.prafta.common.cmm.leave.vo.HourlyLeaveAggVO;
 import com.prafta.common.cmm.leave.vo.LeaveTimeWindowVO;
@@ -71,14 +72,14 @@ public interface LeaveDeductionMapper {
                                                          @Param("workYmd") String workYmd);
 
     /**
-     * BW-12(§7-1, 2026-09-04): 사용자의 휴게 미이용 <b>상시</b> 요청 현행값({@code tb_user.BRK_WAIVE_STANDING_YN}).
+     * BW2-02(2026-09-05): 사용자/일자 적용 근무 스케줄의 <b>고정연장</b> 시각 조회(소정 4 + 전방·후방 4).
      *
-     * <p>단시간(소정 240분·휴게 0) 근무일의 법정 휴게 하한 배지({@code BreakLegalCheckUtils.evaluateDay})
-     * 판정 입력. 앱 홈 today 카드·웹 근태 일자상세가 공용한다(같은 값을 두 곳에서 다르게 읽지 않도록 공용 조회 1본).
-     * 사용자 미존재면 {@code null}(= 요청 없음으로 취급).
-     *
-     * <p>★ {@code prafta-brk-waive-3-standing-ddl.sql} 선적용 필수(미적용 시 1054 Unknown column).
+     * <p>{@link #selectDailySchedule} 와 같은 WORK_PLAN 조인 + effective-dating 으로 같은 버전을 읽되
+     * 컬럼만 다르다. 법정 휴게 하한 산식의 잔여 근로 {@code R = D − X + F}(요청서 §1-1·R5)의 F 산출 입력이며,
+     * {@code DailyScheduleVO} 에는 고정연장 필드를 두지 않는다(PRAFTA-FIXEDOT-2 가드). 행 없으면 {@code null}.
      */
-    String selectBrkWaiveStandingYn(@Param("cmpnyCd") String cmpnyCd,
-                                    @Param("userCd") String userCd);
+    DailyFixedOtVO selectDailyFixedOt(@Param("cmpnyCd") String cmpnyCd,
+                                      @Param("siteCd") String siteCd,
+                                      @Param("userCd") String userCd,
+                                      @Param("workYmd") String workYmd);
 }

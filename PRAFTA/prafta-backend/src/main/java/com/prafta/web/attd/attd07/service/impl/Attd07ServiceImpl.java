@@ -87,8 +87,6 @@ import lombok.extern.slf4j.Slf4j;
 public class Attd07ServiceImpl implements Attd07Service {
 
     private final Attd07Mapper attd07Mapper;
-    /** BW-06: 일자상세 요청 카드/확정 연차 카드 법정 휴게 하한 경고 산출용 그날 스케줄 조회. */
-    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
     private final AttdCloseService attdCloseService;
     /** PRAFTA-APP-021-3a(W2): 근태/초과근무 보정 결재 결과(승인/반려) 통보 PUSH 생산자(신청자 1인, afterCommit 격리). */
     private final ApprovalResultNotiService approvalResultNotiService;
@@ -755,16 +753,6 @@ public class Attd07ServiceImpl implements Attd07Service {
         String reducedWorkYn = (effectiveStdWork != null && StdWorkReasonCd.isReduced(effectiveStdWork.getReasonCd()))
                 ? "Y" : "N";
 
-        // BW-06: 요청 카드(05, 반차·시간차) / 확정 연차 카드의 법정 휴게 하한 경고 — 저장 시각 + BRK_WAIVE_YN + 그날 스케줄로
-        //   서버가 재산출해 문구까지 내린다(AttdDayDetailPop 배지, 클라 재계산 금지). 종일(00)·시각 없는 구 반차는 비대상.
-        monthlyAttdReqResultList = applyBrkLegalWarnToReqCards(param, monthlyAttdReqResultList);
-        confirmedLeaveResultList = applyBrkLegalWarnToConfirmedLeaves(param, confirmedLeaveResultList);
-
-        // BW-12(§7-1): 부분휴가가 없는 통상 근무일 축의 배지 — 그날 스케줄 소정 240·휴게 0 인데
-        //   근로자의 "휴게 미이용 상시 요청"이 없으면 경고(정책서 §8.5.10(e)). 표시 전용·차단 없음.
-        com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result dayLegal =
-                evaluateStandingDayWarn(param, confirmedLeaveResultList);
-
         return DailyAttdDetailsResponse.builder()
                 .dailyAttdDetailsResult(dailyAttdDetailsResult)
                 .dailyAttdDetailHistoryResultList(dailyAttdDetailHistoryResultList)
@@ -777,40 +765,7 @@ public class Attd07ServiceImpl implements Attd07Service {
                 .otLeaveExemptWindowList(otLeaveExemptWindowList)
                 .otFixedOtWindowList(otFixedOtWindowList)
                 .reducedWorkYn(reducedWorkYn)
-                // BW-12(§7-1): 일자 단위 법정 휴게 하한 배지(단시간 근로자 상시 요청 축).
-                .brkLegalWarnYn(dayLegal.warnYn())
-                .brkLegalWarnText(dayLegal.message())
                 .build();
-    }
-
-    /**
-     * BW-12(§7-1): 일자 단위 법정 휴게 하한 판정 — 그날 배정 스케줄이 "소정 240분·휴게 0" 이고
-     * 확정 연차 사용이 없을 때, 근로자의 휴게 미이용 <b>상시</b> 요청 여부로 경고를 산출한다.
-     *
-     * <p>판정·문구는 카드별 배지와 같은 단일 출처({@code BreakLegalCheckUtils}). 대상 타입이 아니면
-     * 상시 요청값 조회 자체를 하지 않는다(통상 근무타입은 추가 쿼리 0건).
-     * 조회 실패는 배지 미노출로 흡수한다(표시 부가 정보가 팝업 본체를 막지 않는다).
-     */
-    private com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result evaluateStandingDayWarn(
-            DailyAttdDetailsParam param, List<ConfirmedLeaveResult> confirmedLeaves) {
-
-        if (confirmedLeaves != null && !confirmedLeaves.isEmpty()) {
-            return com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result.notEligible();
-        }
-        try {
-            com.prafta.common.cmm.leave.vo.DailyScheduleVO sch = leaveDeductionMapper.selectDailySchedule(
-                    param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-            if (!com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateDay(sch, true, false).eligible()) {
-                return com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result.notEligible();
-            }
-            String standingYn = leaveDeductionMapper.selectBrkWaiveStandingYn(param.gvCmpnyCd(), param.userCd());
-            return com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateDay(
-                    sch, "Y".equals(standingYn), false);
-        } catch (Exception e) {
-            log.warn("[BW-12] 일자 단위 법정 휴게 배지 산출 실패(배지 생략) - userCd={}, workYmd={}",
-                    param.userCd(), param.workYmd(), e);
-            return com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result.notEligible();
-        }
     }
 
     /**
@@ -2496,69 +2451,6 @@ public class Attd07ServiceImpl implements Attd07Service {
      * <p>windows 폴백까지 전부 null(근태·스케줄 모두 부재)이면 빈 리스트 — 그 경우 FE 칩 자체가
      * 뜨지 않아(실근태 없음) 무해하다. 조회 실패는 팝업 본체를 막지 않는다(표시 부가 정보).
      */
-    /**
-     * BW-06: 연차 요청 카드(REQ_TYPE 05, 반차·시간차) 법정 휴게 하한 경고 산출. 그날 스케줄 1회 조회(지연) 후 카드별 재산출.
-     * 경고 대상이 아니면(종일·시각 결손·G-5 종일 미달 타입) 'N'/null.
-     */
-    private List<MonthlyAttdReqResult> applyBrkLegalWarnToReqCards(DailyAttdDetailsParam param,
-                                                                   List<MonthlyAttdReqResult> cards) {
-        if (cards == null || cards.isEmpty()) {
-            return cards;
-        }
-        List<MonthlyAttdReqResult> out = new ArrayList<>(cards.size());
-        com.prafta.common.cmm.leave.vo.DailyScheduleVO sch = null;
-        boolean loaded = false;
-        for (MonthlyAttdReqResult c : cards) {
-            if (!"05".equals(c.reqType()) || !isPartialLeaveUnit(c.useUnitType())
-                    || c.startTime() == null || c.endTime() == null) {
-                out.add(c.withBrkLegalWarn("N", null));
-                continue;
-            }
-            if (!loaded) {
-                sch = leaveDeductionMapper.selectDailySchedule(
-                        param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-                loaded = true;
-            }
-            com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result r =
-                    com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateStored(
-                            sch, c.startTime(), c.endTime(), "Y".equals(c.brkWaiveYn()));
-            out.add(c.withBrkLegalWarn(r.warnYn(), r.message()));
-        }
-        return out;
-    }
-
-    /** BW-06: 확정 연차 카드(반차·시간차) 법정 휴게 하한 경고 산출 — 요청 카드와 동일 규칙. */
-    private List<ConfirmedLeaveResult> applyBrkLegalWarnToConfirmedLeaves(DailyAttdDetailsParam param,
-                                                                         List<ConfirmedLeaveResult> leaves) {
-        if (leaves == null || leaves.isEmpty()) {
-            return leaves;
-        }
-        List<ConfirmedLeaveResult> out = new ArrayList<>(leaves.size());
-        com.prafta.common.cmm.leave.vo.DailyScheduleVO sch = null;
-        boolean loaded = false;
-        for (ConfirmedLeaveResult l : leaves) {
-            if (!isPartialLeaveUnit(l.useUnitType()) || l.startTime() == null || l.endTime() == null) {
-                out.add(l.withBrkLegalWarn("N", null));
-                continue;
-            }
-            if (!loaded) {
-                sch = leaveDeductionMapper.selectDailySchedule(
-                        param.gvCmpnyCd(), param.siteCd(), param.userCd(), param.workYmd());
-                loaded = true;
-            }
-            com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result r =
-                    com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateStored(
-                            sch, l.startTime(), l.endTime(), "Y".equals(l.brkWaiveYn()));
-            out.add(l.withBrkLegalWarn(r.warnYn(), r.message()));
-        }
-        return out;
-    }
-
-    /** BW-06: 법정 휴게 경고 대상 단위 = 반차(01)·시간차(02/03/04). */
-    private static boolean isPartialLeaveUnit(String unit) {
-        return "01".equals(unit) || "02".equals(unit) || "03".equals(unit) || "04".equals(unit);
-    }
-
     private List<OtLeaveExemptWindowView> buildOtLeaveExemptWindows(DailyAttdDetailsParam param) {
         try {
             List<LeaveExemptWindowResult> rows = attd07Mapper.selectLeaveExemptWindows(

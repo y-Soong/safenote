@@ -33,5 +33,7 @@ public record LeaveDetailBodyRow(
     , String brkWaiveYn
     /** BW-06: 휴게 미이용 요청 시각 'yyyy-MM-dd HH:mm'(서버 포맷, 없으면 null). */
     , String brkWaiveReqDtime
+    /** v2(BW2-07): 넘긴 휴게 분량(TB_USER_LEAVE_USE.BRK_WAIVE_MIN). v1 행·미요청은 null. ★record 끝(위치매핑). */
+    , Integer brkWaiveMin
 ) {
 }

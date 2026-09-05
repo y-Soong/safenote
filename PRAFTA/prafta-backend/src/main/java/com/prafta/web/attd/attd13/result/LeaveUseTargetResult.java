@@ -41,5 +41,10 @@ public record LeaveUseTargetResult(
     , String brkWaiveYn
     /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_REQ_DTIME('yyyy-MM-dd HH:mm:ss' 문자열, null 가능). ★위치매핑 — 맨 끝. */
     , String brkWaiveReqDtime
+    /**
+     * v2(BW2-06 승계): 원 행 BRK_WAIVE_MIN(반차 W / 시간차 편입분 / 기록 전용 0). NULL + 'Y' = v1 "전부 넘김"(B 해석).
+     * ★위치매핑 — 맨 끝.
+     */
+    , Integer brkWaiveMin
 ) {
 }

@@ -73,6 +73,12 @@ public class LeaveApplyRequest {
     @Pattern(regexp = "[YN]")
     private String brkWaiveYn;
 
+    /** v2(BW2-04, 앱 미러): 넘길 휴게 분량 W(분). 미전송=0, 15분 배수, 반차 전용(시간차·종일 >0 은 ATTD_400_221). */
+    @FieldLabel("휴게넘김분")
+    @jakarta.validation.constraints.Min(0)
+    @jakarta.validation.constraints.Max(720)
+    private Integer brkWaiveMin;
+
     /** 결재 필요 시 사용자가 구성한 결재자 순서(1단계부터). 결재 불요면 비워둠. */
     private List<String> approverUserCds;
 

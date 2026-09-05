@@ -1347,11 +1347,11 @@
 	    , CS.FIXED_OT_STR_TIME		AS curFixedOtStrTime
 	    , CS.FIXED_OT_END_TIME		AS curFixedOtEndTime
 	    <!-- BW-06: 연차 요청 카드 휴게 미이용 요청 배지(REQ→LEAVE_USE 조인 U 파생, 05 외 요청은 NULL).
-	         record(MonthlyAttdReqResult) 끝 4필드 - 뒤 2개(법정 경고)는 서비스가 채운다(NULL 자리). -->
+	         v2(BW2-07): 법정 경고 NULL 자리 2개 제거, 넘긴 휴게 분량(BRK_WAIVE_MIN) 추가.
+	         record(MonthlyAttdReqResult) 끝 3필드와 동일 순서(위치매핑). -->
 	    , U.BRK_WAIVE_YN			AS brkWaiveYn
 	    , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%d %H:%i')	AS brkWaiveReqDtime
-	    , CAST(NULL AS CHAR(1))		AS brkLegalWarnYn
-	    , CAST(NULL AS CHAR(1))		AS brkLegalWarnText
+	    , U.BRK_WAIVE_MIN			AS brkWaiveMin
 	FROM TB_USER_ATTD_REQ A
 	     <!-- 목표 스케줄: REQ 의 SCH_CD 로 스케줄 마스터 조인 (회사/사업장 스코프 고정 — 타 사업장 스케줄 유출 차단) -->
 	     LEFT JOIN TB_SCH_MGMT TS
@@ -1426,12 +1426,12 @@
                                 AND X.LEAVE_STATUS = 'CONFIRMED'
                                 AND X.DEL_YN       = 'N' )
                  END )                                                          AS leaveDays
-        <!-- BW-06: 휴게 미이용 요청 배지(요청 여부 + 요청 시각 'yyyy-MM-dd HH:mm' 서버 포맷). record 끝 append -
-             뒤 2필드(brkLegalWarnYn/brkLegalWarnText)는 서비스가 채운다(SELECT 에는 NULL 로 자리만). -->
+        <!-- BW-06: 휴게 미이용 요청 배지(요청 여부 + 요청 시각 'yyyy-MM-dd HH:mm' 서버 포맷). record 끝 append.
+             v2(BW2-07): 법정 경고 NULL 자리 2개 제거, 넘긴 휴게 분량(BRK_WAIVE_MIN) 추가 —
+             record(ConfirmedLeaveResult) 끝 3필드와 동일 순서(위치매핑). -->
         , U.BRK_WAIVE_YN                                                        AS brkWaiveYn
         , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%d %H:%i')                  AS brkWaiveReqDtime
-        , CAST(NULL AS CHAR(1))                                                 AS brkLegalWarnYn
-        , CAST(NULL AS CHAR(1))                                                 AS brkLegalWarnText
+        , U.BRK_WAIVE_MIN                                                       AS brkWaiveMin
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_LEAVE_TYPE_MGMT LT
              ON LT.CMPNY_CD = U.CMPNY_CD

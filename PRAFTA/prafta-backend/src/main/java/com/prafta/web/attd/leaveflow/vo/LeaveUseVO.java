@@ -34,4 +34,6 @@ public class LeaveUseVO {
     private String insertNo;
     /** BW-04: 휴게시간 무시 요청 'Y'/'N'(null=N). 분할 차감 시 모든 행 동일 값. 직접 차감 경로는 항상 null(=N). */
     private String brkWaiveYn;
+    /** v2(BW2-04): 넘긴 휴게 분량(반차 W_eff / 시간차 편입분 / 기록 전용 0). 'Y' 일 때만 저장(IFNULL 0), 직접 차감 경로는 null. */
+    private Integer brkWaiveMin;
 }

@@ -632,54 +632,7 @@
     )
     </insert>
 
-    <!-- ============================================================
-         BW-12(§7-1, 2026-09-04): 휴게 미이용 상시 요청 — 현행값(tb_user 2컬럼) + 변경 이력
-         근거: 근기법 제54조① 단서 / 정책서 attd/08-leave.md §8.5.10(e)
-         ★ DDL prafta-brk-waive-3-standing-ddl.sql 선적용 필수(미적용 시 1054/1146).
-         ============================================================ -->
-
-    <!-- 현행값 + 고용형태 1행. 시각은 서버 포맷으로 내린다(클라 포맷 금지 - 카운트다운 교훈 계열). -->
-    <select id="selectBrkWaiveStanding" resultType="com.prafta.app.mypage.mypage01.result.BrkWaiveStandingResult">
-    /* AppMypage01Mapper.selectBrkWaiveStanding */
-    SELECT
-          IFNULL(U.BRK_WAIVE_STANDING_YN, 'N')                          AS standingYn
-        , DATE_FORMAT(U.BRK_WAIVE_STANDING_DTIME, '%Y-%m-%d %H:%i')     AS standingDtime
-        , U.EMPLOYMENT_TYPE                                             AS employmentType
-      FROM TB_USER U
-     WHERE U.CMPNY_CD = #{cmpnyCd}
-       AND U.USER_CD  = #{userCd}
-     LIMIT 1
-    </select>
-
-    <!-- 현행값 UPDATE. 이력 INSERT 와 한 트랜잭션(서비스가 묶는다). -->
-    <update id="updateBrkWaiveStanding">
-    /* AppMypage01Mapper.updateBrkWaiveStanding */
-    UPDATE TB_USER
-       SET BRK_WAIVE_STANDING_YN    = #{standingYn}
-         , BRK_WAIVE_STANDING_DTIME = NOW()
-         , UPDATE_NO   = #{updateNo}
-         , UPDATE_DATE = NOW()
-     WHERE CMPNY_CD = #{cmpnyCd}
-       AND USER_CD  = #{userCd}
-    </update>
-
-    <!-- 켠/끈 이력 1행. CHG_BY 는 본인 코드(서버 강제) - 관리자 대리 경로 없음. -->
-    <insert id="insertBrkWaiveStandingHist">
-    /* AppMypage01Mapper.insertBrkWaiveStandingHist */
-    INSERT INTO TB_USER_BRK_WAIVE_STANDING_HIST (
-          CMPNY_CD
-        , USER_CD
-        , STANDING_YN
-        , CHG_DTIME
-        , CHG_BY
-    )
-    VALUES (
-          #{cmpnyCd}
-        , #{userCd}
-        , #{standingYn}
-        , NOW()
-        , #{chgBy}
-    )
-    </insert>
+    <!-- (v2 2026-09-05 BW2-08: 휴게 미이용 상시 요청 3본(select/update/insertHist)은 정책 §7-1 폐지로 제거.
+         tb_user 2컬럼·이력 테이블은 운영 적용분이라 잔존 - DROP 금지.) -->
 
 </mapper>

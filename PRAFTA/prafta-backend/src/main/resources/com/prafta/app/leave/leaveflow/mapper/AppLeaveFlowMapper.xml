@@ -468,6 +468,7 @@
         , LEAVE_MINUTES
         , BRK_WAIVE_YN
         , BRK_WAIVE_REQ_DTIME
+        , BRK_WAIVE_MIN
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -492,6 +493,7 @@
         , #{leaveMinutes}
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN NOW() ELSE NULL END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN IFNULL(#{brkWaiveMin}, 0) ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , #{leaveStatus}

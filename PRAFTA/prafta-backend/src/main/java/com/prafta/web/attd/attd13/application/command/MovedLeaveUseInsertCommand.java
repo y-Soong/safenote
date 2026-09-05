@@ -40,5 +40,10 @@ public record MovedLeaveUseInsertCommand(
     , String brkWaiveYn
     /** BW-04(Q-1 승계): 원 행 BRK_WAIVE_REQ_DTIME('yyyy-MM-dd HH:mm:ss', null 가능) 그대로 복사 — 요청 시각 보존. */
     , String brkWaiveReqDtime
+    /**
+     * v2(BW2-06 승계): 넘긴 휴게 분량. 반차 = 대상일 실효 cap 으로 클램프한 W_eff(서비스 산출) / 시간차 = 원 값 복사(R4 재검증 통과 시)
+     * / 시각 없는 구 반차·NULL 원 행 = NULL 승계 허용(매퍼는 IFNULL 없이 그대로 저장, 'N' 이면 NULL).
+     */
+    , Integer brkWaiveMin
 ) {
 }

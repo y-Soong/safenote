@@ -4,6 +4,8 @@ import java.util.List;
 
 import com.prafta.common.annotation.FieldLabel;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -100,4 +102,14 @@ public class LeaveApplyRequest {
     @Size(max = 1)
     @Pattern(regexp = "[YN]")
     private String brkWaiveYn;
+
+    /**
+     * v2(BW2-04, 법정 하한 상한제): 넘길 휴게 분량 W(분). 미전송/null=0. 15분 배수·반차 전용
+     * (시간차·종일에 0 초과 값은 ATTD_400_221). 반차 실효 cap = min(법정 cap, 파트 movable) 초과도 221.
+     * 서버 정규화 {@code waiveRequested = 'Y'.equals(brkWaiveYn) || brkWaiveMin > 0}.
+     */
+    @FieldLabel("휴게넘김분")
+    @Min(0)
+    @Max(720)
+    private Integer brkWaiveMin;
 }

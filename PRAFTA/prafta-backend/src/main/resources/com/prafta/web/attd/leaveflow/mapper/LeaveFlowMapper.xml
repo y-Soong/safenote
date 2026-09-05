@@ -339,6 +339,7 @@
         , LEAVE_MINUTES
         , BRK_WAIVE_YN
         , BRK_WAIVE_REQ_DTIME
+        , BRK_WAIVE_MIN
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -363,6 +364,7 @@
         , #{leaveMinutes}
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN NOW() ELSE NULL END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN IFNULL(#{brkWaiveMin}, 0) ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , #{leaveStatus}
@@ -638,9 +640,11 @@
              요청"이라 결재자가 승인 화면(Attd_10 연차 상신 상세)에서 요청 사실을 볼 수 있어야 한다.
              앱 관리자 승인 상세(AppAdminApprovalMapper.selectLeaveBody)와 같은 값을 그대로 내린다.
              분할 차감 시 모든 행이 같은 값이라 첫 분할행(U) 기준으로 충분하다.
-             ★record(MyLeaveApprovalVO) 위치 기반 매핑 — 맨 끝 2필드와 순서 일치(SELECT 맨 끝 유지). -->
+             ★record(MyLeaveApprovalVO) 위치 기반 매핑 — 맨 끝 3필드와 순서 일치(SELECT 맨 끝 유지). -->
         , U.BRK_WAIVE_YN                                                     AS brkWaiveYn
         , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%dT%H:%i:%s')            AS brkWaiveReqDtime
+        <!-- v2(BW2-11): 넘긴 휴게 분량(null=v1 전부 넘김 / 0=기록 전용 / N분). 맨 끝 유지. -->
+        , U.BRK_WAIVE_MIN                                                    AS brkWaiveMin
       FROM TB_USER_ATTD_REQ_APPROVAL AP
       JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = AP.CMPNY_CD

@@ -17,5 +17,7 @@ public record HalfLeaveWindowResult(
     , String useUnitType
     /** BW-05: 휴게 무시 요청 Y/N — 반차(01)+Y 인 날은 FE 인정시간/실근로에서 스케줄 휴게 공제 0. */
     , String brkWaiveYn
+    /** v2(BW2-13): 넘긴 휴게 분량(반차 W / 시간차 편입분 / 기록 전용 0). NULL + Y = v1 전부. ★record 끝(두 select 동시). */
+    , Integer brkWaiveMin
 ) {
 }

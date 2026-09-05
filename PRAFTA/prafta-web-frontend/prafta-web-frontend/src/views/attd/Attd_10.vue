@@ -341,10 +341,17 @@
                 <!-- QA D2(2026-09-04): 휴게 미이용 요청 배지(근기법 제54조① 단서) — 요건이 "근로자의
                      명시적 요청"이라 결재자가 승인 화면에서 요청 사실을 확인할 수 있어야 한다.
                      서버 값 표시 전용(승인/반려 게이트 무변경). 구서버 응답은 필드 부재 → 미노출. -->
+                <!-- v2(BW2-11): 넘긴 분량 표기 P6 — formatBrkWaiveText(null=전부(v1) / 0=기록 / N분) -->
                 <dt v-if="selected.brkWaiveYn === 'Y'">휴게</dt>
                 <dd v-if="selected.brkWaiveYn === 'Y'">
                   <span class="ra-chip brk-waive"
-                    >휴게 미이용 요청 ·
+                    >{{
+                      formatBrkWaiveText(
+                        selected.brkWaiveYn,
+                        selected.brkWaiveMin
+                      )
+                    }}
+                    ·
                     {{
                       (selected.brkWaiveReqDtime || "").replace("T", " ") || "-"
                     }}</span
@@ -668,6 +675,7 @@ import LeaveChangeScopeFilter from "./popup/LeaveChangeScopeFilter.vue";
 import ApprovalStepTimeline from "@/components/common/ApprovalStepTimeline.vue";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import { formatYmdDot } from "@/utils/dateFormat";
+import { formatBrkWaiveText } from "@/utils/leaveFormat";
 
 defineOptions({ name: "Attd_10" });
 const props = defineProps({

@@ -74,8 +74,10 @@ public class LeaveDeductionPreviewResponse {
     private final Integer brkWaivedMinutes;
     /** 시간차 차감 분 = 신청 − 휴게 겹침(체크 시). 미체크 시간차는 신청 분. 그 외 null. */
     private final Integer brkChargeMinutes;
-    /** BW-06: 법정 휴게 하한 경고 'Y'/'N'(차단 없음). */
-    private final String brkLegalWarnYn;
-    /** BW-06: 경고 문구(서버 생성). 경고 없으면 null. */
-    private final String brkLegalWarnMsg;
+
+    // ===== v2 법정 하한 상한제(BW2-04, 앱 미러) =====
+    /** 반차: 적용 W_eff / 시간차 체크: 편입 휴게분(저장 예정값) / 그 외·미요청: null. */
+    private final Integer brkWaiveMin;
+    /** 반차+파트: 실효 cap = min(법정 cap, 파트 movable) / 반차 파트 없음·시간차: 법정 cap / 종일: null. */
+    private final Integer brkWaiveCapMin;
 }

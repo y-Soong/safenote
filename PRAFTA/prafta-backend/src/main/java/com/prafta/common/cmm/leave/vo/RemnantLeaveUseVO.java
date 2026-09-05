@@ -36,6 +36,8 @@ public class RemnantLeaveUseVO {
     private final String evidenceFileId;
     /** BW-04: 휴게 무시 요청 'Y'/'N' — 분할 전 행 동일 값. REQ_DTIME 은 매퍼가 NOW() 로 채운다. */
     private final String brkWaiveYn;
+    /** v2(BW2-04): 넘긴 휴게 분량(반차 W_eff / 시간차 편입분 / 기록 전용 0). 'Y' 일 때만 저장(IFNULL 0), 전 행 동일 값. */
+    private final Integer brkWaiveMin;
     private final String leaveStatus;
     private final String insertNo;
 }

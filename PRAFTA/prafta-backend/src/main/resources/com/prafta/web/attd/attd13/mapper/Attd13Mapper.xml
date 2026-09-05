@@ -51,6 +51,8 @@
              ★위치매핑 - reqStatus 뒤 맨 끝에 추가. -->
         , U.BRK_WAIVE_YN         AS brkWaiveYn
         , DATE_FORMAT(U.BRK_WAIVE_REQ_DTIME, '%Y-%m-%d %H:%i:%s') AS brkWaiveReqDtime
+        <!-- v2(BW2-06 승계): 원 행 넘긴 휴게 분량(NULL + Y = v1 전부 넘김). ★위치매핑 - 맨 끝. -->
+        , U.BRK_WAIVE_MIN        AS brkWaiveMin
       FROM TB_USER_LEAVE_USE U
       LEFT JOIN TB_USER_ATTD_REQ R
         ON R.CMPNY_CD = U.CMPNY_CD
@@ -372,6 +374,8 @@
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
     <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
         , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
+    <!-- v2(BW2-06): 원 행 넘긴 휴게 분량(NULL + Y = 전부) - 확인 팝업 문구용. 3쿼리 동시(위치매핑 맨 끝). -->
+        , LU.BRK_WAIVE_MIN                           AS brkWaiveMin
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -475,6 +479,8 @@
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
     <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
         , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
+    <!-- v2(BW2-06): 원 행 넘긴 휴게 분량(NULL + Y = 전부) - 확인 팝업 문구용. 3쿼리 동시(위치매핑 맨 끝). -->
+        , LU.BRK_WAIVE_MIN                           AS brkWaiveMin
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -538,6 +544,8 @@
         , R.MOVE_TARGET_START_TIME                   AS moveTargetStartTime
     <!-- BW-12 잔여 B-1(2026-09-04): 원 행 휴게 미이용 요청 승계 표시 — record 마지막 컴포넌트와 1:1. -->
         , IFNULL(LU.BRK_WAIVE_YN, 'N')               AS brkWaiveYn
+    <!-- v2(BW2-06): 원 행 넘긴 휴게 분량(NULL + Y = 전부) - 확인 팝업 문구용. 3쿼리 동시(위치매핑 맨 끝). -->
+        , LU.BRK_WAIVE_MIN                           AS brkWaiveMin
       FROM TB_LEAVE_CHANGE_REQUEST R
       LEFT JOIN TB_USER TU
         ON TU.CMPNY_CD = R.CMPNY_CD
@@ -630,6 +638,7 @@
         , LEAVE_MINUTES
         , BRK_WAIVE_YN
         , BRK_WAIVE_REQ_DTIME
+        , BRK_WAIVE_MIN
         , LEAVE_REASON
         , EVIDENCE_FILE_ID
         , LEAVE_STATUS
@@ -657,6 +666,7 @@
         , #{leaveMinutes}
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN 'Y' ELSE 'N' END
         , CASE WHEN #{brkWaiveYn} = 'Y' THEN #{brkWaiveReqDtime} ELSE NULL END
+        , CASE WHEN #{brkWaiveYn} = 'Y' THEN #{brkWaiveMin} ELSE NULL END
         , #{leaveReason}
         , #{evidenceFileId}
         , 'CONFIRMED'

@@ -55,8 +55,6 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
     private final LeaveFlowService leaveFlowService;       // 연차 표준 엔진(대기/승인/반려 위임)
     private final ApprovalLineMapper approvalLineMapper;   // 결재선(steps/isApproverOf)
     private final AttdCloseService attdCloseService;       // 마감 차단 판정(부서 단위, PRAFTA-028)
-    /** BW-06: 승인상세 법정 휴게 하한 경고 산출용 그날 스케줄 조회(저장 행 기준 재산출). */
-    private final com.prafta.common.cmm.leave.mapper.LeaveDeductionMapper leaveDeductionMapper;
 
     private static final String GROUP_LEAVE = "LEAVE";
     private static final String STEP_APPLIED = "01";       // SYS044 신청(차례)
@@ -233,18 +231,11 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
             // 연차 신청 증빙 필수화(2026-08-29): 증빙 파일 ID. 열람은 GET /appApi/leaveflow/evidence-file/{fileMgmtCd}
             // (본인/결재선 스코프 검증은 그 API 안에서 처리 — 여기선 존재 유무만 노출).
             body.put("evidenceFileId", lb.evidenceFileId());
-            // BW-06: 휴게 미이용 요청 배지 + 법정 휴게 하한 경고(저장 행 기준 재산출 — 그날 스케줄 + 저장 시각 + BRK_WAIVE_YN).
-            //   구앱은 Map 키를 무시(무영향). 문구는 서버 생성(클라 재계산 금지).
+            // BW-06: 휴게 미이용 요청 배지(구앱은 Map 키를 무시 — 무영향). 법정 경고 필드는 v2 BW2-07 에서 제거됨.
+            //   v2(BW2-07): 넘긴 휴게 분량(BRK_WAIVE_MIN). v1 'Y' 행은 null(= 휴게 전부, FE 가 해석).
             body.put("brkWaiveYn", lb.brkWaiveYn() == null ? "N" : lb.brkWaiveYn());
             body.put("brkWaiveReqDtime", lb.brkWaiveReqDtime());
-            com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result legal =
-                    isPartialUnit(lb.useUnitType())
-                            ? com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.evaluateStored(
-                                    leaveDeductionMapper.selectDailySchedule(cmpnyCd, meta.siteCd(), meta.userCd(), lb.startDate()),
-                                    lb.startTime(), lb.endTime(), "Y".equals(lb.brkWaiveYn()))
-                            : com.prafta.common.cmm.leave.util.BreakLegalCheckUtils.Result.notEligible();
-            body.put("brkLegalWarnYn", legal.warnYn());
-            body.put("brkLegalWarnMsg", legal.message());
+            body.put("brkWaiveMin", lb.brkWaiveMin());
 
             Map<String, Object> applied = new LinkedHashMap<>();
             applied.put("startDate", lb.startDate());
@@ -264,11 +255,6 @@ public class AppLeaveApprovalServiceImpl implements AppLeaveApprovalService {
         }
         body.put("steps", buildSteps(steps));
         return body;
-    }
-
-    /** BW-06: 법정 휴게 경고 대상 단위 = 반차(01)·시간차(02/03/04). 종일(00)은 비대상. */
-    private static boolean isPartialUnit(String unit) {
-        return "01".equals(unit) || "02".equals(unit) || "03".equals(unit) || "04".equals(unit);
     }
 
     private List<Map<String, Object>> buildSteps(List<ApprovalStepVO> steps) {

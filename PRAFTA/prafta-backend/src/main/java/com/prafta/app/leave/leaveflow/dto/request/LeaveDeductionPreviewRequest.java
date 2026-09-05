@@ -2,6 +2,8 @@ package com.prafta.app.leave.leaveflow.dto.request;
 
 import com.prafta.common.annotation.FieldLabel;
 
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
@@ -51,4 +53,18 @@ public class LeaveDeductionPreviewRequest {
     @Size(max = 1)
     @Pattern(regexp = "[YN]")
     private String brkWaiveYn;
+
+    /** v2(BW2-04): 넘길 휴게 분량 W(분). 미전송=0, 15분 배수, 반차 전용(submit 과 동일 검증 — ATTD_400_221). */
+    @FieldLabel("휴게넘김분")
+    @Min(0)
+    @Max(720)
+    private Integer brkWaiveMin;
+
+    /**
+     * v2(BW2-04, §7 Q3): 반차 preview 에서 파트(START/END)·W 기준 결과 시각을 받기 위한 선택 입력.
+     * 미전송이면 종전(END 미체크 경계 + 양 파트 요약). 반차 외 단위에서는 무시.
+     */
+    @FieldLabel("반차구분")
+    @Size(max = 5)
+    private String halfPart;
 }

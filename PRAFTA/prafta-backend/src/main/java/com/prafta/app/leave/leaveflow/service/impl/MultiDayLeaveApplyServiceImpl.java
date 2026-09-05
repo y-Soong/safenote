@@ -180,7 +180,8 @@ public class MultiDayLeaveApplyServiceImpl implements MultiDayLeaveApplyService 
                 false,                     // isBorrow — 1차 범위 제외
                 cmpny, site, user, groupId,
                 evidenceFileId,            // 연차 신청 증빙 필수화(2026-08-29) — 날짜별 파생에 그대로 승계
-                "N");                      // BW-04: 기간 신청은 종일 전용 — 휴게 무시 요청 'N' 고정(deriveForDate 도 'N')
+                "N",                       // BW-04: 기간 신청은 종일 전용 — 휴게 무시 요청 'N' 고정(deriveForDate 도 'N')
+                0);                        // v2(BW2-04): 분량도 0 고정
 
         for (String ymd : targets) {
             // ★별도 빈(AppLeaveFlowService 프록시) 호출이라 REQUIRED 로 본 트랜잭션에 합류한다.
