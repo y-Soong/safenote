@@ -93,7 +93,7 @@
             @click="fnSelect(a)"
           >
             <div class="acc-item-r1">
-              <span class="acc-name">{{ a.victimUserNm }}</span>
+              <span class="acc-name">{{ victimLabel(a) }}</span>
               <span class="grade" :class="gradeClass(a.acctGradeCd)">
                 {{ a.acctGradeNm || a.acctGradeCd }}
               </span>
@@ -123,7 +123,7 @@
         </template>
         <template v-else>
           <div class="acc-det-head">
-            <h1>{{ current.victimUserNm }}</h1>
+            <h1>{{ victimLabel(current) }}</h1>
             <span class="grade" :class="gradeClass(current.acctGradeCd)">
               {{ current.acctGradeNm || current.acctGradeCd }}
             </span>
@@ -150,6 +150,68 @@
           >
             <span class="acc-desc-label">경위</span>
             <span class="acc-desc-text">{{ current.acctDesc }}</span>
+          </div>
+
+          <!-- prafta-065: 재해자 목록(사고 1:N). 대표 = 서버 representativeYn. 편집은 create(BTN_NEW) 권한만 -->
+          <div class="acc-victims">
+            <div class="acc-victims__head">
+              <span class="acc-victims__title"
+                >재해자 <b>{{ victimList.length }}</b
+                >명</span
+              >
+              <button
+                v-if="localButtons.create === 'Y'"
+                type="button"
+                class="btn btn-second btn-sm"
+                @click="fnOpenVictimEdit"
+              >
+                재해자 편집
+              </button>
+            </div>
+            <div v-if="victimLoading" class="acc-victims__empty">
+              재해자 조회 중...
+            </div>
+            <div v-else-if="victimList.length === 0" class="acc-victims__empty">
+              재해자 정보가 없습니다.
+            </div>
+            <div v-else class="acc-victims__rows">
+              <div
+                v-for="v in victimList"
+                :key="v.victimSeq"
+                class="acc-victims__row"
+              >
+                <span class="acc-victims__seq">{{ v.victimSeq }}</span>
+                <span v-if="v.representativeYn === 'Y'" class="acc-rep-badge"
+                  >대표</span
+                >
+                <span class="acc-victims__name"
+                  >{{ v.userNm
+                  }}<span class="acc-victims__sub"
+                    >({{ v.userTypeNm
+                    }}<template v-if="v.nodeNm"> · {{ v.nodeNm }}</template
+                    >)</span
+                  ></span
+                >
+                <span class="acc-victims__sub" v-if="v.mblNoLast4"
+                  >****{{ v.mblNoLast4 }}</span
+                >
+                <span class="acc-victims__result">{{
+                  v.victimResultNm || v.victimResultCd
+                }}</span>
+                <span class="acc-victims__sub"
+                  >요양 {{ v.careDays ?? "-" }}일 / 휴업
+                  {{ v.restDays ?? "-" }}일</span
+                >
+                <span
+                  class="acc-victims__sub"
+                  v-if="v.injuryPart || v.injuryDesc"
+                  >·
+                  {{
+                    [v.injuryPart, v.injuryDesc].filter(Boolean).join(" · ")
+                  }}</span
+                >
+              </div>
+            </div>
           </div>
 
           <!-- 탭 -->
@@ -377,6 +439,7 @@ import SiteSearchPop from "@/components/popup/SiteSearchPop.vue";
 import AcctCreatePop from "./popup/AcctCreatePop.vue";
 import AcctLinkConfirmPop from "./popup/AcctLinkConfirmPop.vue";
 import AcctSafetyPrintPop from "./popup/AcctSafetyPrintPop.vue";
+import AcctVictimEditPop from "./popup/AcctVictimEditPop.vue";
 
 defineOptions({ name: "Acct_01" });
 const props = defineProps({
@@ -423,6 +486,10 @@ const historyList = ref([]);
 
 // 사고 경위 펼침 상태 (헤더 경위 블록: 접힘=2줄 말줄임)
 const descExpanded = ref(false);
+
+// prafta-065: 재해자 목록(GET /acct01/victims) — 탭과 무관하게 사고 선택 시 로드
+const victimList = ref([]);
+const victimLoading = ref(false);
 
 onMounted(async () => {
   fnInit();
@@ -522,6 +589,7 @@ const fnSearch = async () => {
       snapshotList.value = [];
       legalStepList.value = [];
       historyList.value = [];
+      victimList.value = [];
     }
   } catch (err) {
     await proxy.$alert(
@@ -534,7 +602,53 @@ const fnSearch = async () => {
 const fnSelect = async (a) => {
   current.value = a;
   descExpanded.value = false; // 경위 펼침 상태는 사고 전환 시 초기화
-  await fnLoadTab(activeTab.value);
+  await Promise.all([fnLoadVictims(), fnLoadTab(activeTab.value)]);
+};
+
+// prafta-065: 재해자 표기 — 대표 이름 + (N>1) ' 외 N-1명'. victimCnt 미수신(구 응답) 시 종전 표기.
+const victimLabel = (a) => {
+  if (!a) return "";
+  const cnt = Number(a.victimCnt);
+  if (cnt > 1) return `${a.victimUserNm} 외 ${cnt - 1}명`;
+  return a.victimUserNm;
+};
+
+// 재해자 목록 조회(사고 헤더 사업장 스코프). 응답 도착 시점에 다른 사고로 바뀌었으면 버린다.
+const fnLoadVictims = async () => {
+  if (!current.value) return;
+  const { siteCd: sc, acctId } = current.value;
+  victimLoading.value = true;
+  try {
+    const response = await axios.get("/webApi/acct01/victims", {
+      params: { siteCd: sc, acctId },
+    });
+    if (
+      response.status === 200 &&
+      current.value &&
+      current.value.siteCd === sc &&
+      current.value.acctId === acctId
+    ) {
+      victimList.value = response.data?.victimList || [];
+    }
+  } catch (err) {
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "재해자 조회 중 오류가 발생했습니다.")
+    );
+  } finally {
+    victimLoading.value = false;
+  }
+};
+
+// 재해자 편집 팝업(D4). 저장/제외 반영 → 재해자 섹션 재조회 + 헤더(대표 이름·인원수) 재조회
+const fnOpenVictimEdit = () => {
+  if (!current.value) return;
+  openPop(AcctVictimEditPop, {
+    siteCd: current.value.siteCd,
+    acctId: current.value.acctId,
+    onSaved: async () => {
+      await Promise.all([fnLoadVictims(), fnRefreshCurrentStatus()]);
+    },
+  });
 };
 
 const fnSelectTab = async (key) => {
@@ -723,6 +837,12 @@ const fnRefreshCurrentStatus = async () => {
       row.processStatusNm = info.processStatusNm;
       row.updateNo = info.updateNo;
       row.updateDate = info.updateDate;
+      // prafta-065: 재해자 편집(대표 승계·인원수 변동) 반영 — 목록 카드 이름 표기 갱신
+      row.victimUserNm = info.victimUserNm;
+      row.victimUserTypeCd = info.victimUserTypeCd;
+      row.victimUserCd = info.victimUserCd;
+      row.victimMblNoLast4 = info.victimMblNoLast4;
+      row.victimCnt = info.victimCnt;
     }
   } catch (err) {
     await proxy.$alert(
@@ -783,11 +903,10 @@ const fnOpenLinkConfirm = (cond) => {
 //   상세 본문은 BE 가 acctId 로 victim/occurYmd 를 서버 도출해 라이브 조회한다.
 const fnOpenSafetyPrint = () => {
   if (!current.value) return;
+  // prafta-065: 재해자 표시값은 출력 팝업이 응답(victimList/victimSections)에서 직접 받으므로 넘기지 않는다.
   openPop(AcctSafetyPrintPop, {
     siteCd: current.value.siteCd,
     acctId: current.value.acctId,
-    victimUserNm: current.value.victimUserNm,
-    victimUserTypeCd: current.value.victimUserTypeCd,
     occurYmd: current.value.occurYmd,
     occurTime: current.value.occurTime,
     occurPlace: current.value.occurPlace,
@@ -820,16 +939,33 @@ const domainLabel = (code) => {
   return fb[code] || code;
 };
 
+const safeParse = (json) => {
+  try {
+    return json ? JSON.parse(json) : {};
+  } catch (e) {
+    return {};
+  }
+};
+
+// prafta-065: 근태·TBM 스냅샷의 재해자 접두 "[이름] ". 구 스냅샷(victimUserNm 없음)은 접두 없이 종전 표기.
+//   제외된 재해자 판정은 LINK_KEY_JSON 의 userTypeCd+userCd 를 현재 재해자 목록과 대조(D-I: 순번 재사용 대비).
+const victimPrefix = (snap, key) => {
+  if (!snap.victimUserNm) return "";
+  const hasKey = !!(key.userTypeCd && key.userCd);
+  const stillIn =
+    !hasKey ||
+    victimList.value.some(
+      (v) => v.userTypeCd === key.userTypeCd && v.userCd === key.userCd
+    );
+  return `[${snap.victimUserNm}${stillIn ? "" : " (제외됨)"}] `;
+};
+
 // 스냅샷 1건 요약(snapshotJson 파싱; 도메인별 핵심 필드)
 const snapshotSummary = (domain, s) => {
-  let snap = {};
-  try {
-    snap = s.snapshotJson ? JSON.parse(s.snapshotJson) : {};
-  } catch (e) {
-    snap = {};
-  }
+  const snap = safeParse(s.snapshotJson);
   if (domain === "ATTD") {
-    return `구간 ${snap.workSeq ?? "-"} · 출근 ${snap.checkInTime || "-"} / 퇴근 ${snap.checkOutTime || "-"}`;
+    const key = safeParse(s.linkKeyJson);
+    return `${victimPrefix(snap, key)}구간 ${snap.workSeq ?? "-"} · 출근 ${snap.checkInTime || "-"} / 퇴근 ${snap.checkOutTime || "-"}`;
   }
   if (domain === "CHKPT") {
     return `${snap.chkptNm || "-"} · 양호 ${snap.goodCnt ?? 0} / 불량 ${snap.badCnt ?? 0}`;
@@ -838,7 +974,8 @@ const snapshotSummary = (domain, s) => {
     return `${snap.assessmentCd || "-"} · ${[snap.processNm, snap.riskTypeNm, snap.hazardNm].filter(Boolean).join("/")} · 위험도 ${snap.initRiskLv || "-"}`;
   }
   if (domain === "TBM") {
-    return `${snap.title || "-"} · 재해자 이수 ${snap.victimCompletionStatusNm || (snap.victimCompletionStatusCd ? snap.victimCompletionStatusCd : "기록없음")}`;
+    const key = safeParse(s.linkKeyJson);
+    return `${victimPrefix(snap, key)}${snap.title || "-"} · 재해자 이수 ${snap.victimCompletionStatusNm || (snap.victimCompletionStatusCd ? snap.victimCompletionStatusCd : "기록없음")}`;
   }
   return s.linkKeyJson || "";
 };
@@ -1147,6 +1284,76 @@ const fmtHm = (hhmm) => formatHm(hhmm);
   display: block;
   -webkit-line-clamp: unset;
   overflow: visible;
+}
+/* prafta-065 재해자 섹션 */
+.acc-victims {
+  margin-bottom: 1rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--input-radius, 10px);
+  background: var(--color-surface, #fff);
+}
+.acc-victims__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--color-border, #eef0f3);
+}
+.acc-victims__title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted, #4b5563);
+}
+.acc-victims__title b {
+  color: var(--color-text-strong, #111827);
+}
+.acc-victims__empty {
+  padding: 0.8rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--color-text-muted, #8b94a3);
+}
+.acc-victims__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8rem;
+  border-bottom: 1px solid var(--color-border, #eef0f3);
+}
+.acc-victims__row:last-child {
+  border-bottom: none;
+}
+.acc-victims__seq {
+  min-width: 1.2rem;
+  color: var(--color-text-muted, #8b94a3);
+}
+.acc-victims__name {
+  font-weight: 700;
+  color: var(--color-text-strong, #111827);
+}
+.acc-victims__sub {
+  color: var(--color-text-muted, #5b6472);
+  font-size: 0.74rem;
+  font-weight: 400;
+}
+.acc-victims__result {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.08rem 0.45rem;
+  border-radius: 5px;
+  background: var(--color-bg, #f1f5f9);
+  color: var(--color-text, #374151);
+}
+.acc-rep-badge {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-primary-soft, rgba(22, 163, 74, 0.12));
+  color: var(--color-primary-hover, #15803d);
 }
 /* 탭 */
 /* 탭바 표준(Attd_01 .attd01-tab-bar/.attd01-tab-btn 스펙 준수 — 밑줄형 14px) */
