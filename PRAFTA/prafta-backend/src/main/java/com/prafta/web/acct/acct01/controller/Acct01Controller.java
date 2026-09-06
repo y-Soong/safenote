@@ -17,6 +17,10 @@ import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimAddParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimListParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimRemoveParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimUpdateParam;
 import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
@@ -32,6 +36,10 @@ import com.prafta.web.acct.acct01.dto.request.AcctDeleteRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctInfoRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctListRequest;
 import com.prafta.web.acct.acct01.dto.request.AcctUpdateRequest;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimAddRequest;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimListRequest;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimRemoveRequest;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimUpdateRequest;
 import com.prafta.web.acct.acct01.dto.request.AttdTbmPrintRequest;
 import com.prafta.web.acct.acct01.dto.request.ChkptOptionRequest;
 import com.prafta.web.acct.acct01.dto.request.LegalStepListRequest;
@@ -127,6 +135,52 @@ public class Acct01Controller {
         return ResponseEntity.status(HttpStatus.OK).body(
             acct01Service.searchVictim(
                 VictimSearchParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+    }
+
+    // ── 065 재해자 (사고 1:N) ────────────────────────────────────
+
+    // 사고 재해자 목록 (순번순, 대표 여부 포함)
+    @GetMapping("/victims")
+    public ResponseEntity<?> victims(
+            @ModelAttribute AcctVictimListRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(
+            acct01Service.selectAcctVictims(
+                AcctVictimListParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+    }
+
+    // 사고 재해자 추가 (쓰기 역할, 사고 단위 잠금, MAX+1 채번)
+    @PostMapping(value = "/victims/add", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> victimAdd(
+            @RequestBody AcctVictimAddRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        return ResponseEntity.status(HttpStatus.OK).body(
+            acct01Service.addVictim(
+                AcctVictimAddParam.from(request, jwtUtil.getAllClaimsAsMap(authorization))));
+    }
+
+    // 사고 재해자 속성 수정 (인물 불변)
+    @PostMapping(value = "/victims/update", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> victimUpdate(
+            @RequestBody AcctVictimUpdateRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        acct01Service.updateVictimAttr(
+            AcctVictimUpdateParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+        return ResponseEntity.status(HttpStatus.OK).build();
+    }
+
+    // 사고 재해자 제외 (하한 1명, 대표 제외 시 승계)
+    @PostMapping(value = "/victims/remove", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> victimRemove(
+            @RequestBody AcctVictimRemoveRequest request,
+            @RequestHeader(value = "Authorization", required = false) String authorization) {
+
+        acct01Service.removeVictim(
+            AcctVictimRemoveParam.from(request, jwtUtil.getAllClaimsAsMap(authorization)));
+        return ResponseEntity.status(HttpStatus.OK).build();
     }
 
     // ── 048-04 연계 조회 ─────────────────────────────────────────

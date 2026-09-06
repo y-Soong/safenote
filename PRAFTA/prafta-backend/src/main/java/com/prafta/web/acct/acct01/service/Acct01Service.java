@@ -5,6 +5,10 @@ import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimAddParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimListParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimRemoveParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimUpdateParam;
 import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
@@ -18,6 +22,8 @@ import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
 import com.prafta.web.acct.acct01.dto.response.AcctCreateResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctInfoResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctListResponse;
+import com.prafta.web.acct.acct01.dto.response.AcctVictimAddResponse;
+import com.prafta.web.acct.acct01.dto.response.AcctVictimListResponse;
 import com.prafta.web.acct.acct01.dto.response.AttdTbmPrintResponse;
 import com.prafta.web.acct.acct01.dto.response.AttendanceLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.ChkptOptionResponse;
@@ -45,6 +51,19 @@ public interface Acct01Service {
     void deleteAcct(AcctDeleteParam param);
 
     VictimSearchResponse searchVictim(VictimSearchParam param);
+
+    // ── 065 재해자 (사고 1:N) ──
+    // 재해자 목록 (대표 여부 포함)
+    AcctVictimListResponse selectAcctVictims(AcctVictimListParam param);
+
+    // 재해자 추가 (MAX+1 채번, 동일 인물 차단, 상한 50)
+    AcctVictimAddResponse addVictim(AcctVictimAddParam param);
+
+    // 재해자 속성 수정 (인물 불변)
+    void updateVictimAttr(AcctVictimUpdateParam param);
+
+    // 재해자 제외 (하한 1명, 대표 제외 시 승계)
+    void removeVictim(AcctVictimRemoveParam param);
 
     // ── 048-04 연계 조회 ──
     AttendanceLinkResponse selectLinkAttendance(LinkQueryParam param);

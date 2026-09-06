@@ -26,4 +26,7 @@ public class LinkQueryRequest {
     private String processCd;
     private String riskTypeCd;
     private String hazardCd;
+
+    // 근태/TBM 재해자 선택(prafta-065 D3). 미입력이면 대표 재해자(헤더 컬럼) 기준(무회귀)
+    private Integer victimSeq;
 }

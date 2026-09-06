@@ -6,10 +6,12 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import com.prafta.web.acct.acct01.application.command.AcctInsertCommand;
+import com.prafta.web.acct.acct01.application.command.AcctVictimInsertCommand;
 import com.prafta.web.acct.acct01.application.command.LinkQueryContext;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimUpdateParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepSaveParam;
@@ -17,6 +19,8 @@ import com.prafta.web.acct.acct01.application.param.LinkSnapshotParam;
 import com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam;
 import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
 import com.prafta.web.acct.acct01.result.AcctResult;
+import com.prafta.web.acct.acct01.result.AcctVictimKeyResult;
+import com.prafta.web.acct.acct01.result.AcctVictimResult;
 import com.prafta.web.acct.acct01.result.AttendanceLinkResult;
 import com.prafta.web.acct.acct01.result.ChkptOptionResult;
 import com.prafta.web.acct.acct01.result.LegalStepHistoryResult;
@@ -190,4 +194,61 @@ public interface Acct01Mapper {
 
     // ③탭 처리 이력 파생 롤업 (IS_DONE_YN='Y' 완료절차 시간순)
     List<LegalStepHistoryResult> selectLegalStepHistory(LegalStepListParam param);
+
+    // ── 065 재해자 (TB_ACCT_VICTIM, 사고 1:N) ─────────────────────
+    // 재해자 1행 INSERT (동일 인물 UNIQUE 위반은 DuplicateKeyException — 서비스가 400 으로 번역)
+    int insertAcctVictim(AcctVictimInsertCommand command);
+
+    // 재해자 목록(순번순). victimSeq 지정 시 해당 순번 1행만(실재 검증 겸용). 헤더 DEL_YN='N' 사고만
+    List<AcctVictimResult> selectAcctVictimList(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("victimSeq") Integer victimSeq
+    );
+
+    // 사고 재해자 인원수 (하한 1 / 상한 50 판정)
+    int countAcctVictim(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+    );
+
+    // 다음 재해자 순번 = MAX + 1 (lockAcctHeader 선행 필수)
+    int selectNextVictimSeq(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+    );
+
+    // 재해자 속성 수정(인물 불변). 0 이면 순번 미실재
+    int updateAcctVictimAttr(AcctVictimUpdateParam param);
+
+    // 재해자 제외(물리 삭제). 스냅샷은 보존
+    int deleteAcctVictim(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("victimSeq") Integer victimSeq
+    );
+
+    // 대표 승계용: 남은 인원 중 순번 최소 1명 (없으면 null)
+    AcctVictimKeyResult selectFirstAcctVictim(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+    );
+
+    // 헤더 대표 재해자 컬럼 갱신(대표 제외 시 승계)
+    int updateAcctRepresentativeVictim(
+        @Param("gvCmpnyCd") String gvCmpnyCd
+        , @Param("siteCd") String siteCd
+        , @Param("acctId") String acctId
+        , @Param("victimUserTypeCd") String victimUserTypeCd
+        , @Param("victimUserCd") String victimUserCd
+        , @Param("gvUserCd") String gvUserCd
+    );
+
+    // 재해 결과 코드(SYS084, USE_YN='Y') 실재 COUNT
+    int countVictimResultCd(@Param("victimResultCd") String victimResultCd);
 }

@@ -1,14 +1,16 @@
 package com.prafta.web.acct.acct01.application.param;
 
+import java.util.List;
+
 import com.prafta.common.dto.TokenInfo;
 import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.web.acct.acct01.dto.request.AcctCreateRequest;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimItem;
 
 public record AcctCreateParam(
     String siteCd
-    , String victimUserTypeCd
-    , String victimUserCd
+    , List<AcctVictimItem> victimList
     , String occurYmd
     , String occurTime
     , String occurPlace
@@ -28,8 +30,7 @@ public record AcctCreateParam(
 
         return new AcctCreateParam(
             request.getSiteCd()
-            , request.getVictimUserTypeCd()
-            , request.getVictimUserCd()
+            , request.getVictimList()
             , request.getOccurYmd()
             , request.getOccurTime()
             , request.getOccurPlace()

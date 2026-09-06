@@ -1,8 +1,13 @@
 package com.prafta.web.acct.acct01.service.impl;
 
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
@@ -11,12 +16,17 @@ import com.prafta.common.error.common.CommonErrorCode;
 import com.prafta.common.exception.ApiException;
 import com.prafta.common.util.AuthRoleUtils;
 import com.prafta.web.acct.acct01.application.command.AcctInsertCommand;
+import com.prafta.web.acct.acct01.application.command.AcctVictimInsertCommand;
 import com.prafta.web.acct.acct01.application.command.LinkQueryContext;
 import com.prafta.web.acct.acct01.application.param.AcctCreateParam;
 import com.prafta.web.acct.acct01.application.param.AcctDeleteParam;
 import com.prafta.web.acct.acct01.application.param.AcctInfoParam;
 import com.prafta.web.acct.acct01.application.param.AcctListParam;
 import com.prafta.web.acct.acct01.application.param.AcctUpdateParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimAddParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimListParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimRemoveParam;
+import com.prafta.web.acct.acct01.application.param.AcctVictimUpdateParam;
 import com.prafta.web.acct.acct01.application.param.AttdTbmPrintParam;
 import com.prafta.web.acct.acct01.application.param.ChkptOptionParam;
 import com.prafta.web.acct.acct01.application.param.LegalStepListParam;
@@ -27,10 +37,13 @@ import com.prafta.web.acct.acct01.application.param.LinkSnapshotParam;
 import com.prafta.web.acct.acct01.application.param.RiskAssessmentPrintParam;
 import com.prafta.web.acct.acct01.application.param.RiskCategoryOptionParam;
 import com.prafta.web.acct.acct01.application.param.VictimSearchParam;
+import com.prafta.web.acct.acct01.dto.request.AcctVictimItem;
 import com.prafta.web.acct.acct01.dto.request.LinkConfirmRequest;
 import com.prafta.web.acct.acct01.dto.response.AcctCreateResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctInfoResponse;
 import com.prafta.web.acct.acct01.dto.response.AcctListResponse;
+import com.prafta.web.acct.acct01.dto.response.AcctVictimAddResponse;
+import com.prafta.web.acct.acct01.dto.response.AcctVictimListResponse;
 import com.prafta.web.acct.acct01.dto.response.AttdTbmPrintResponse;
 import com.prafta.web.acct.acct01.dto.response.AttendanceLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.ChkptOptionResponse;
@@ -41,9 +54,12 @@ import com.prafta.web.acct.acct01.dto.response.PatrolLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.RiskCategoryOptionResponse;
 import com.prafta.web.acct.acct01.dto.response.RiskLinkResponse;
 import com.prafta.web.acct.acct01.dto.response.TbmLinkResponse;
+import com.prafta.web.acct.acct01.dto.response.VictimPrintSection;
 import com.prafta.web.acct.acct01.dto.response.VictimSearchResponse;
 import com.prafta.web.acct.acct01.mapper.Acct01Mapper;
 import com.prafta.web.acct.acct01.result.AcctResult;
+import com.prafta.web.acct.acct01.result.AcctVictimKeyResult;
+import com.prafta.web.acct.acct01.result.AcctVictimResult;
 import com.prafta.web.acct.acct01.result.LegalStepProgressResult;
 import com.prafta.web.acct.acct01.result.RiskAssessmentDetailResult;
 import com.prafta.web.acct.acct01.result.ScheduleLinkResult;
@@ -78,6 +94,13 @@ public class Acct01ServiceImpl implements Acct01Service {
     private static final String DOMAIN_TBM = "TBM";
 
     private static final String USER_TYPE_DAILY = "DAILY";
+
+    // 재해자(prafta-065): 인원 상한 / 요양·휴업 일수 상한 (하한 1명 = D5)
+    private static final int VICTIM_MAX_CNT = 50;
+    private static final int VICTIM_DAYS_MAX = 3650;
+    // 부상 부위/내용 길이 상한 = tb_acct_victim INJURY_PART varchar(100) / INJURY_DESC varchar(500)
+    private static final int VICTIM_INJURY_PART_MAX_LEN = 100;
+    private static final int VICTIM_INJURY_DESC_MAX_LEN = 500;
 
     // 처리상태(SYS066): 100 접수 / 200 처리중 / 300 종결 — 법정단계(PROCESS) 완료율로 파생
     private static final String STATUS_RECEIVED = "100";
@@ -121,39 +144,51 @@ public class Acct01ServiceImpl implements Acct01Service {
     @Override
     @Transactional
     public AcctCreateResponse createAcct(AcctCreateParam param) {
-        log.info("사고 등록 진입 - cmpnyCd={}, siteCd={}, victimUserCd={}",
-            param.gvCmpnyCd(), param.siteCd(), param.victimUserCd());
+        List<AcctVictimItem> victimList = param.victimList();
+        log.info("사고 등록 진입 - cmpnyCd={}, siteCd={}, victimCnt={}",
+            param.gvCmpnyCd(), param.siteCd(), victimList == null ? 0 : victimList.size());
 
         assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
         assertCanWrite(param.gvAuthCd(), param.gvUserCd());
 
-        // 필수값 검증
-        if (!StringUtils.hasText(param.victimUserTypeCd())
-            || !StringUtils.hasText(param.victimUserCd())
-            || !StringUtils.hasText(param.occurYmd())
+        // 필수값 검증(헤더)
+        if (!StringUtils.hasText(param.occurYmd())
             || !StringUtils.hasText(param.occurTime())
             || !StringUtils.hasText(param.acctGradeCd())
             || !StringUtils.hasText(param.acctDesc())) {
             throw new ApiException(AcctErrorCode.ACCT_400_001);
         }
 
-        // 재해자 실재/소속 검증: body 의 재해자가 권한검증을 통과한 회사+사업장에 실재하는지 확인.
-        // siteCd 는 assertSiteAccess 로 검증된 값만 사용(body siteCd 단독 신뢰 금지 원칙 유지).
-        // victimUserTypeCd 화이트리스트(REGULAR/DAILY) 밖이거나 매칭 0 건이면 차단(유령/타 사업장 IDOR).
-        if (acct01Mapper.countVictim(
-                param.gvCmpnyCd(), param.siteCd(), param.victimUserTypeCd(), param.victimUserCd()) == 0) {
-            log.warn("재해자 실재/소속 검증 실패 - cmpnyCd={}, siteCd={}, victimUserTypeCd={}, victimUserCd={}",
-                param.gvCmpnyCd(), param.siteCd(), param.victimUserTypeCd(), param.victimUserCd());
-            throw new ApiException(AcctErrorCode.ACCT_400_002);
+        // 재해자 배열 검증(prafta-065 R2-1): 하한 1명(D5) / 상한 50 / 항목별 필수·실재·코드·일수 / 배열 내 동일 인물 중복.
+        // 1건이라도 실패 시 예외 → 헤더·자식 모두 롤백(@Transactional).
+        if (victimList == null || victimList.isEmpty()) {
+            throw new ApiException(AcctErrorCode.ACCT_400_003);
+        }
+        if (victimList.size() > VICTIM_MAX_CNT) {
+            throw new ApiException(AcctErrorCode.ACCT_400_007);
+        }
+        Set<String> victimKeys = new HashSet<>();
+        for (AcctVictimItem item : victimList) {
+            validateVictimItem(param.gvCmpnyCd(), param.siteCd(), item);
+            if (!victimKeys.add(item.getUserTypeCd() + "_" + item.getUserCd())) {
+                throw new ApiException(AcctErrorCode.ACCT_400_004);
+            }
         }
 
         // 채번: ACC + YYYYMMDD(발생일) + 4자리 SEQ (사업장+발생일 기준)
         String acctId = acct01Mapper.selectNextAcctId(
             param.gvCmpnyCd(), param.siteCd(), param.occurYmd());
 
-        acct01Mapper.insertAcct(AcctInsertCommand.from(param, acctId));
+        // 헤더 대표 재해자 = 배열 첫 인원(D1). 자식은 배열 순서대로 VICTIM_SEQ 1..N.
+        acct01Mapper.insertAcct(AcctInsertCommand.from(param, acctId, victimList.get(0)));
 
-        log.info("사고 등록 완료 - acctId={}", acctId);
+        int seq = 1;
+        for (AcctVictimItem item : victimList) {
+            acct01Mapper.insertAcctVictim(AcctVictimInsertCommand.from(
+                param.gvCmpnyCd(), param.siteCd(), acctId, seq++, item, param.gvUserCd()));
+        }
+
+        log.info("사고 등록 완료 - acctId={}, victimCnt={}", acctId, victimList.size());
 
         return AcctCreateResponse.builder()
             .acctId(acctId)
@@ -216,6 +251,204 @@ public class Acct01ServiceImpl implements Acct01Service {
             .build();
     }
 
+    // ── 065 재해자 (TB_ACCT_VICTIM, 사고 1:N) ─────────────────────
+
+    @Override
+    public AcctVictimListResponse selectAcctVictims(AcctVictimListParam param) {
+        log.info("사고 재해자 목록 조회 진입 - cmpnyCd={}, siteCd={}, acctId={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId());
+
+        assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+
+        if (!StringUtils.hasText(param.acctId())) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        // 사고 헤더 실재(사업장 스코프) — 타 사업장 acctId 조작 차단
+        if (acct01Mapper.selectAcctHeader(param.gvCmpnyCd(), param.siteCd(), param.acctId()) == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        return AcctVictimListResponse.builder()
+            .victimList(acct01Mapper.selectAcctVictimList(
+                param.gvCmpnyCd(), param.siteCd(), param.acctId(), null))
+            .build();
+    }
+
+    // 재해자 추가/수정/제외는 READ_COMMITTED: 비전사 역할은 assertSiteAccess 의 일반 SELECT 가
+    //   lockAcctHeader(FOR UPDATE) 보다 먼저 실행되어 REPEATABLE-READ 스냅샷이 잠금 전에 고정되면
+    //   잠금 이후 COUNT/채번/대표 승계 조회가 stale 값을 읽는다(security prafta-065-001, AdvisoryLockTxUtils 규약).
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public AcctVictimAddResponse addVictim(AcctVictimAddParam param) {
+        log.info("사고 재해자 추가 진입 - cmpnyCd={}, siteCd={}, acctId={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId());
+
+        assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+        assertCanWrite(param.gvAuthCd(), param.gvUserCd());
+
+        if (!StringUtils.hasText(param.acctId()) || param.victim() == null) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        // 사고 헤더 행 잠금(FOR UPDATE): 동시 추가/제외를 사고 단위로 직렬화(순번 채번·인원수 판정 정합). 없으면 404.
+        if (acct01Mapper.lockAcctHeader(param.gvCmpnyCd(), param.siteCd(), param.acctId()) == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        if (acct01Mapper.countAcctVictim(param.gvCmpnyCd(), param.siteCd(), param.acctId()) >= VICTIM_MAX_CNT) {
+            throw new ApiException(AcctErrorCode.ACCT_400_007);
+        }
+
+        validateVictimItem(param.gvCmpnyCd(), param.siteCd(), param.victim());
+
+        int victimSeq = acct01Mapper.selectNextVictimSeq(param.gvCmpnyCd(), param.siteCd(), param.acctId());
+
+        // 동일 인물(UNIQUE UX_TB_ACCT_VICTIM_USER) 위반은 400 으로 번역 — INSERT 한 줄만 감싼다
+        try {
+            acct01Mapper.insertAcctVictim(AcctVictimInsertCommand.from(
+                param.gvCmpnyCd(), param.siteCd(), param.acctId(), victimSeq, param.victim(), param.gvUserCd()));
+        } catch (DuplicateKeyException e) {
+            throw new ApiException(AcctErrorCode.ACCT_400_004);
+        }
+
+        log.info("사고 재해자 추가 완료 - acctId={}, victimSeq={}", param.acctId(), victimSeq);
+
+        return AcctVictimAddResponse.builder()
+            .victimSeq(victimSeq)
+            .build();
+    }
+
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void updateVictimAttr(AcctVictimUpdateParam param) {
+        log.info("사고 재해자 속성 수정 진입 - cmpnyCd={}, siteCd={}, acctId={}, victimSeq={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), param.victimSeq());
+
+        assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+        assertCanWrite(param.gvAuthCd(), param.gvUserCd());
+
+        if (!StringUtils.hasText(param.acctId()) || param.victimSeq() == null) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        if (acct01Mapper.lockAcctHeader(param.gvCmpnyCd(), param.siteCd(), param.acctId()) == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        // 속성 검증(인물은 바꾸지 않으므로 실재/소속 검증 대상 아님)
+        validateVictimResultCd(param.victimResultCd());
+        validateVictimDays(param.careDays());
+        validateVictimDays(param.restDays());
+        validateVictimTextLength(param.injuryPart(), param.injuryDesc());
+
+        // 순번이 해당 사고(PK4)에 실재하지 않으면 0행 → 404
+        if (acct01Mapper.updateAcctVictimAttr(param) == 0) {
+            throw new ApiException(AcctErrorCode.ACCT_404_002);
+        }
+
+        log.info("사고 재해자 속성 수정 완료 - acctId={}, victimSeq={}", param.acctId(), param.victimSeq());
+    }
+
+    @Override
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void removeVictim(AcctVictimRemoveParam param) {
+        log.info("사고 재해자 제외 진입 - cmpnyCd={}, siteCd={}, acctId={}, victimSeq={}",
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), param.victimSeq());
+
+        assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), param.siteCd());
+        assertCanWrite(param.gvAuthCd(), param.gvUserCd());
+
+        if (!StringUtils.hasText(param.acctId()) || param.victimSeq() == null) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+
+        // 사고 단위 직렬화: 동시 제외로 0명이 되는 경합 차단
+        if (acct01Mapper.lockAcctHeader(param.gvCmpnyCd(), param.siteCd(), param.acctId()) == null) {
+            throw new ApiException(AcctErrorCode.ACCT_404_001);
+        }
+
+        // 하한 1명(D5): 현재 1명 이하이면 제외 불가
+        if (acct01Mapper.countAcctVictim(param.gvCmpnyCd(), param.siteCd(), param.acctId()) <= 1) {
+            throw new ApiException(AcctErrorCode.ACCT_400_003);
+        }
+
+        // 대상 순번 실재 검증(해당 사고 PK 범위 안에서만) + 대표 여부 확보
+        List<AcctVictimResult> targets = acct01Mapper.selectAcctVictimList(
+            param.gvCmpnyCd(), param.siteCd(), param.acctId(), param.victimSeq());
+        if (targets == null || targets.isEmpty()) {
+            throw new ApiException(AcctErrorCode.ACCT_404_002);
+        }
+        AcctVictimResult target = targets.get(0);
+
+        // 물리 삭제. 이 인원 기준으로 확정된 스냅샷(TB_ACCT_LINK)은 삭제하지 않는다(확정 시점 사본 보존).
+        acct01Mapper.deleteAcctVictim(param.gvCmpnyCd(), param.siteCd(), param.acctId(), param.victimSeq());
+
+        // 대표 재해자였으면 남은 인원 중 순번 최소로 헤더 컬럼 승계(D1)
+        if ("Y".equals(target.representativeYn())) {
+            AcctVictimKeyResult next = acct01Mapper.selectFirstAcctVictim(
+                param.gvCmpnyCd(), param.siteCd(), param.acctId());
+            if (next == null) {
+                // 하한 검증을 통과했으므로 도달 불가. 방어적으로 롤백.
+                throw new ApiException(AcctErrorCode.ACCT_400_003);
+            }
+            acct01Mapper.updateAcctRepresentativeVictim(
+                param.gvCmpnyCd(), param.siteCd(), param.acctId(),
+                next.userTypeCd(), next.userCd(), param.gvUserCd());
+            log.info("대표 재해자 승계 - acctId={}, {} -> {}", param.acctId(), param.victimSeq(), next.victimSeq());
+        }
+
+        log.info("사고 재해자 제외 완료 - acctId={}, victimSeq={}", param.acctId(), param.victimSeq());
+    }
+
+    /**
+     * 재해자 항목 검증(등록 배열 원소 / 추가 body 공통).
+     * 필수(유형·코드·재해결과) → 실재/소속(countVictim, REGULAR/DAILY 화이트리스트) → SYS084 → 일수 범위.
+     * siteCd 는 assertSiteAccess 를 통과한 값만 전달된다(body siteCd 단독 신뢰 금지).
+     */
+    private void validateVictimItem(String gvCmpnyCd, String siteCd, AcctVictimItem item) {
+        if (item == null
+            || !StringUtils.hasText(item.getUserTypeCd())
+            || !StringUtils.hasText(item.getUserCd())
+            || !StringUtils.hasText(item.getVictimResultCd())) {
+            throw new ApiException(AcctErrorCode.ACCT_400_001);
+        }
+        if (acct01Mapper.countVictim(gvCmpnyCd, siteCd, item.getUserTypeCd(), item.getUserCd()) == 0) {
+            log.warn("재해자 실재/소속 검증 실패 - cmpnyCd={}, siteCd={}, userTypeCd={}",
+                gvCmpnyCd, siteCd, item.getUserTypeCd());
+            throw new ApiException(AcctErrorCode.ACCT_400_002);
+        }
+        validateVictimResultCd(item.getVictimResultCd());
+        validateVictimDays(item.getCareDays());
+        validateVictimDays(item.getRestDays());
+        validateVictimTextLength(item.getInjuryPart(), item.getInjuryDesc());
+    }
+
+    // 부상 부위 100자 / 부상 내용 500자 (tb_acct_victim varchar 한도) — DB 오류(500)로 새지 않도록 선검증
+    private void validateVictimTextLength(String injuryPart, String injuryDesc) {
+        if ((injuryPart != null && injuryPart.length() > VICTIM_INJURY_PART_MAX_LEN)
+            || (injuryDesc != null && injuryDesc.length() > VICTIM_INJURY_DESC_MAX_LEN)) {
+            throw new ApiException(AcctErrorCode.ACCT_400_008);
+        }
+    }
+
+    // 재해 결과 코드 = SYS084 실재 + USE_YN='Y' 만 허용(계획서 D-G: DB 조회)
+    private void validateVictimResultCd(String victimResultCd) {
+        // DB 비교는 대소문자 무시(utf8mb4_unicode_ci)라 'injury' 도 통과·저장되므로 대문자 원형만 허용(qa R-18)
+        if (!StringUtils.hasText(victimResultCd)
+            || !victimResultCd.equals(victimResultCd.toUpperCase())
+            || acct01Mapper.countVictimResultCd(victimResultCd) == 0) {
+            throw new ApiException(AcctErrorCode.ACCT_400_005);
+        }
+    }
+
+    // 요양·휴업 일수 = null(미확정) 또는 0 이상 3650 이하
+    private void validateVictimDays(Integer days) {
+        if (days != null && (days < 0 || days > VICTIM_DAYS_MAX)) {
+            throw new ApiException(AcctErrorCode.ACCT_400_006);
+        }
+    }
+
     // ── 048-04 연계 조회 ─────────────────────────────────────────
 
     @Override
@@ -233,6 +466,8 @@ public class Acct01ServiceImpl implements Acct01Service {
             .records(acct01Mapper.selectAttendanceRecords(ctx))
             .occurTime(ctx.occurTime())
             .notice(NOTICE_ATTD)
+            .victimSeq(ctx.victimSeq())
+            .victimUserNm(ctx.victimUserNm())
             .build();
     }
 
@@ -264,6 +499,8 @@ public class Acct01ServiceImpl implements Acct01Service {
         return TbmLinkResponse.builder()
             .tbmList(acct01Mapper.selectTbmList(ctx))
             .notice(NOTICE_TBM)
+            .victimSeq(ctx.victimSeq())
+            .victimUserNm(ctx.victimUserNm())
             .build();
     }
 
@@ -284,17 +521,43 @@ public class Acct01ServiceImpl implements Acct01Service {
             throw new ApiException(AcctErrorCode.ACCT_404_001);
         }
 
-        // 일용직은 스케줄 없음(selectLinkAttendance 분기/상수 미러링). 실근태·TBM 은 DAILY 도 정상 조회.
-        boolean isDaily = USER_TYPE_DAILY.equals(ctx.victimUserTypeCd());
-        ScheduleLinkResult schedule = isDaily ? null : acct01Mapper.selectAttendanceSchedule(ctx);
+        // prafta-065 D3: 재해자 전원(순번순)을 순회해 재해자별 섹션을 만든다. 첫 항목 = 대표(순번 최소).
+        List<AcctVictimResult> victims = acct01Mapper.selectAcctVictimList(
+            ctx.gvCmpnyCd(), ctx.siteCd(), param.acctId(), null);
+        if (victims == null || victims.isEmpty()) {
+            log.error("재해자 백필 누락 의심 - 사고에 재해자 행이 없음. acctId={}", param.acctId());
+            throw new ApiException(AcctErrorCode.ACCT_404_002);
+        }
+
+        List<VictimPrintSection> sections = new ArrayList<>();
+        for (AcctVictimResult victim : victims) {
+            LinkQueryContext vctx = LinkQueryContext.forPrint(header, victim);
+            // 일용직은 스케줄 없음(selectLinkAttendance 분기/상수 미러링). 실근태·TBM 은 DAILY 도 정상 조회.
+            boolean isDaily = USER_TYPE_DAILY.equals(vctx.victimUserTypeCd());
+            ScheduleLinkResult schedule = isDaily ? null : acct01Mapper.selectAttendanceSchedule(vctx);
+
+            sections.add(VictimPrintSection.builder()
+                .victim(victim)
+                .hasSchedule(schedule != null)
+                .scheduleNote(isDaily ? SCHEDULE_NOTE_DAILY : null)
+                .schedule(schedule)
+                .records(acct01Mapper.selectAttendanceRecords(vctx))
+                .tbmList(acct01Mapper.selectTbmList(vctx))
+                .build());
+        }
+
+        // 단건 필드(계획서 D-A 유지, @Deprecated) = 대표 재해자(첫 섹션) 값 — A→B 배포 창의 구 FE 호환
+        VictimPrintSection first = sections.get(0);
 
         return AttdTbmPrintResponse.builder()
             .acctHeader(header)
-            .hasSchedule(schedule != null)
-            .scheduleNote(isDaily ? SCHEDULE_NOTE_DAILY : null)
-            .schedule(schedule)
-            .records(acct01Mapper.selectAttendanceRecords(ctx))
-            .tbmList(acct01Mapper.selectTbmList(ctx))
+            .hasSchedule(first.isHasSchedule())
+            .scheduleNote(first.getScheduleNote())
+            .schedule(first.getSchedule())
+            .records(first.getRecords())
+            .tbmList(first.getTbmList())
+            .victimList(victims)
+            .victimSections(sections)
             .build();
     }
 
@@ -537,7 +800,7 @@ public class Acct01ServiceImpl implements Acct01Service {
     private LinkQueryParam toLinkQueryParam(
             String siteCd, String acctId, String gvCmpnyCd, String gvUserCd, String gvAuthCd) {
         return new LinkQueryParam(
-            siteCd, acctId, null, null, null, null, null, gvCmpnyCd, gvUserCd, gvAuthCd);
+            siteCd, acctId, null, null, null, null, null, gvCmpnyCd, gvUserCd, gvAuthCd, null);
     }
 
     private LinkQueryContext resolveLinkContext(LinkQueryParam param) {
@@ -556,6 +819,17 @@ public class Acct01ServiceImpl implements Acct01Service {
 
         // 헤더 siteCd 로 한 번 더 권한 검증(요청 siteCd 와 헤더 siteCd 가 어긋날 가능성 차단)
         assertSiteAccess(param.gvAuthCd(), param.gvUserCd(), param.gvCmpnyCd(), header.siteCd());
+
+        // prafta-065: victimSeq 지정 시 자식 테이블에서 해당 사고 PK 범위 안의 순번 실재를 검증한 인원으로,
+        // 미지정이면 대표 재해자(헤더 컬럼) 기준(기존 호출 무회귀).
+        if (param.victimSeq() != null) {
+            List<AcctVictimResult> victims = acct01Mapper.selectAcctVictimList(
+                header.cmpnyCd(), header.siteCd(), param.acctId(), param.victimSeq());
+            if (victims == null || victims.isEmpty()) {
+                throw new ApiException(AcctErrorCode.ACCT_404_002);
+            }
+            return LinkQueryContext.ofVictim(param, header, victims.get(0));
+        }
 
         return LinkQueryContext.of(param, header);
     }

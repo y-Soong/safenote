@@ -18,7 +18,8 @@
     <!-- ============================ 048-03 CRUD ============================ -->
 
     <!-- 사고 단건/목록 공통 SELECT 컬럼 (AcctResult 생성자 인자 순서와 1:1 일치).
-         재해자 PII: 이름은 마스킹(앞2자 + *), 휴대폰은 끝4자리만. 평문 복호화 없음. -->
+         재해자 PII: 이름은 마스킹(앞2자 + *), 휴대폰은 끝4자리만. 평문 복호화 없음.
+         victim* 컬럼 = 대표 재해자(헤더 컬럼, prafta-065 D1). victimCnt = 자식 TB_ACCT_VICTIM COUNT(맨 끝 고정). -->
     <sql id="acctColumns">
         A.CMPNY_CD                                                                  AS cmpnyCd
       , A.SITE_CD                                                                   AS siteCd
@@ -47,6 +48,13 @@
       , DATE_FORMAT(A.INSERT_DATE, '%Y-%m-%d %H:%i')                                AS insertDate
       , A.UPDATE_NO                                                                 AS updateNo
       , DATE_FORMAT(A.UPDATE_DATE, '%Y-%m-%d %H:%i')                                AS updateDate
+      , (
+            SELECT COUNT(1)
+            FROM TB_ACCT_VICTIM V
+            WHERE V.CMPNY_CD = A.CMPNY_CD
+              AND V.SITE_CD = A.SITE_CD
+              AND V.ACCT_ID = A.ACCT_ID
+        )                                                                           AS victimCnt
     </sql>
 
     <!-- 재해자 이름/끝4자리 결합용 서브쿼리 (정규 tb_user + 일용 tb_daily_user) -->
@@ -102,10 +110,32 @@
       <if test="endDate != null and endDate != ''">
         AND A.OCCUR_YMD &lt;= REPLACE(#{endDate}, '-', '')
       </if>
+      <!-- 재해자명 검색은 대표뿐 아니라 TB_ACCT_VICTIM 전원 매칭(prafta-065 R2-6). 발생장소 조건은 종전 동일 -->
       <if test="searchKeyword != null and searchKeyword != ''">
         AND (
-            (A.VICTIM_USER_TYPE_CD = 'REGULAR' AND RU.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%'))
-         OR (A.VICTIM_USER_TYPE_CD = 'DAILY'   AND DU.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%'))
+            EXISTS (
+                SELECT 1
+                FROM TB_ACCT_VICTIM V
+                     LEFT OUTER JOIN TB_USER VR
+                        ON (
+                            V.USER_TYPE_CD = 'REGULAR'
+                        AND V.CMPNY_CD = VR.CMPNY_CD
+                        AND V.USER_CD = VR.USER_CD
+                        )
+                     LEFT OUTER JOIN TB_DAILY_USER VD
+                        ON (
+                            V.USER_TYPE_CD = 'DAILY'
+                        AND V.CMPNY_CD = VD.CMPNY_CD
+                        AND V.USER_CD = VD.USER_CD
+                        )
+                WHERE V.CMPNY_CD = A.CMPNY_CD
+                  AND V.SITE_CD = A.SITE_CD
+                  AND V.ACCT_ID = A.ACCT_ID
+                  AND (
+                       VR.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%')
+                    OR VD.USER_NM LIKE CONCAT('%', #{searchKeyword}, '%')
+                  )
+            )
          OR A.OCCUR_PLACE LIKE CONCAT('%', #{searchKeyword}, '%')
         )
       </if>
@@ -946,6 +976,213 @@
       AND S.ACCT_ID = #{acctId}
       AND S.IS_DONE_YN = 'Y'
     ORDER BY S.DONE_DTIME DESC, M.STEP_IDX
+    </select>
+
+    <!-- ============================ 065 재해자 (TB_ACCT_VICTIM, 사고 1:N) ============================ -->
+
+    <!-- 재해자 1행 INSERT. victimSeq 는 서비스가 채번(selectNextVictimSeq). 동일 인물은 UNIQUE(UX_TB_ACCT_VICTIM_USER) 로 차단 -->
+    <insert id="insertAcctVictim"
+            parameterType="com.prafta.web.acct.acct01.application.command.AcctVictimInsertCommand">
+    /* Acct01Mapper.insertAcctVictim */
+    INSERT INTO TB_ACCT_VICTIM
+    (
+        CMPNY_CD
+      , SITE_CD
+      , ACCT_ID
+      , VICTIM_SEQ
+      , USER_TYPE_CD
+      , USER_CD
+      , VICTIM_RESULT_CD
+      , CARE_DAYS
+      , REST_DAYS
+      , INJURY_PART
+      , INJURY_DESC
+      , INSERT_NO
+      , INSERT_DATE
+    )
+    VALUES
+    (
+        #{gvCmpnyCd}
+      , #{siteCd}
+      , #{acctId}
+      , #{victimSeq}
+      , #{userTypeCd}
+      , #{userCd}
+      , #{victimResultCd}
+      , #{careDays}
+      , #{restDays}
+      , #{injuryPart}
+      , #{injuryDesc}
+      , #{gvUserCd}
+      , NOW()
+    )
+    </insert>
+
+    <!-- 재해자 목록(순번순). victimSeq 가 있으면 해당 순번 1행만(실재 검증 겸용).
+         사고 헤더 INNER JOIN 으로 삭제/미사용 사고의 자식은 제외. PII 마스킹은 acctColumns 와 동일식.
+         representativeYn = 헤더 대표 컬럼과 유형+코드 일치 시 'Y'.
+         AcctVictimResult 순서: victimSeq, userTypeCd, userTypeNm, userCd, userNm, mblNoLast4, nodeNm,
+         victimResultCd, victimResultNm, careDays, restDays, injuryPart, injuryDesc, representativeYn, insertDate -->
+    <select id="selectAcctVictimList"
+            resultType="com.prafta.web.acct.acct01.result.AcctVictimResult">
+    /* Acct01Mapper.selectAcctVictimList */
+    SELECT
+        V.VICTIM_SEQ                                                                AS victimSeq
+      , V.USER_TYPE_CD                                                              AS userTypeCd
+      , FNC_CMM_INFO_SRCH(V.CMPNY_CD, 'SYST_VAL', V.USER_TYPE_CD, 'SYS050')         AS userTypeNm
+      , V.USER_CD                                                                   AS userCd
+      , CASE
+            WHEN VU.VU_NM IS NULL THEN NULL
+            WHEN CHAR_LENGTH(VU.VU_NM) &lt;= 1 THEN VU.VU_NM
+            WHEN CHAR_LENGTH(VU.VU_NM) = 2 THEN CONCAT(LEFT(VU.VU_NM, 1), '*')
+            ELSE CONCAT(LEFT(VU.VU_NM, 2), REPEAT('*', CHAR_LENGTH(VU.VU_NM) - 2))
+        END                                                                         AS userNm
+      , VU.VU_LAST4                                                                 AS mblNoLast4
+      , ND.NODE_NM                                                                  AS nodeNm
+      , V.VICTIM_RESULT_CD                                                          AS victimResultCd
+      , FNC_CMM_INFO_SRCH(V.CMPNY_CD, 'SYST_VAL', V.VICTIM_RESULT_CD, 'SYS084')     AS victimResultNm
+      , V.CARE_DAYS                                                                 AS careDays
+      , V.REST_DAYS                                                                 AS restDays
+      , V.INJURY_PART                                                               AS injuryPart
+      , V.INJURY_DESC                                                               AS injuryDesc
+      , CASE
+            WHEN V.USER_TYPE_CD = A.VICTIM_USER_TYPE_CD AND V.USER_CD = A.VICTIM_USER_CD THEN 'Y'
+            ELSE 'N'
+        END                                                                         AS representativeYn
+      , DATE_FORMAT(V.INSERT_DATE, '%Y-%m-%d %H:%i')                                AS insertDate
+    FROM TB_ACCT_VICTIM V
+         INNER JOIN TB_ACCT A
+            ON (
+                V.CMPNY_CD = A.CMPNY_CD
+            AND V.SITE_CD = A.SITE_CD
+            AND V.ACCT_ID = A.ACCT_ID
+            AND A.DEL_YN = 'N'
+            AND A.USE_YN = 'Y'
+            )
+         LEFT OUTER JOIN TB_USER RU
+            ON (
+                V.USER_TYPE_CD = 'REGULAR'
+            AND V.CMPNY_CD = RU.CMPNY_CD
+            AND V.USER_CD = RU.USER_CD
+            )
+         LEFT OUTER JOIN TB_SITE_NODE ND
+            ON (
+                RU.CMPNY_CD = ND.CMPNY_CD
+            AND RU.SITE_CD = ND.SITE_CD
+            AND RU.NODE_CD = ND.NODE_CD
+            )
+         LEFT OUTER JOIN TB_DAILY_USER DU
+            ON (
+                V.USER_TYPE_CD = 'DAILY'
+            AND V.CMPNY_CD = DU.CMPNY_CD
+            AND V.USER_CD = DU.USER_CD
+            )
+         LEFT OUTER JOIN LATERAL (
+            SELECT
+                CASE WHEN V.USER_TYPE_CD = 'REGULAR' THEN RU.USER_NM ELSE DU.USER_NM END AS VU_NM
+              , CASE WHEN V.USER_TYPE_CD = 'REGULAR' THEN RU.MBL_NO_LAST4 ELSE DU.MBL_NO_LAST4 END AS VU_LAST4
+         ) VU ON TRUE
+    WHERE V.CMPNY_CD = #{gvCmpnyCd}
+      AND V.SITE_CD = #{siteCd}
+      AND V.ACCT_ID = #{acctId}
+      <if test="victimSeq != null">
+        AND V.VICTIM_SEQ = #{victimSeq}
+      </if>
+    ORDER BY V.VICTIM_SEQ
+    </select>
+
+    <!-- 사고 재해자 인원수 (하한 1명 / 상한 50명 판정) -->
+    <select id="countAcctVictim" resultType="int">
+    /* Acct01Mapper.countAcctVictim */
+    SELECT
+        COUNT(1)
+    FROM TB_ACCT_VICTIM V
+    WHERE V.CMPNY_CD = #{gvCmpnyCd}
+      AND V.SITE_CD = #{siteCd}
+      AND V.ACCT_ID = #{acctId}
+    </select>
+
+    <!-- 다음 재해자 순번 = 현재 MAX + 1 (계획서 D-I(a)). 호출 전 lockAcctHeader 로 사고 단위 직렬화 필수 -->
+    <select id="selectNextVictimSeq" resultType="int">
+    /* Acct01Mapper.selectNextVictimSeq */
+    SELECT
+        IFNULL(MAX(V.VICTIM_SEQ), 0) + 1
+    FROM TB_ACCT_VICTIM V
+    WHERE V.CMPNY_CD = #{gvCmpnyCd}
+      AND V.SITE_CD = #{siteCd}
+      AND V.ACCT_ID = #{acctId}
+    </select>
+
+    <!-- 재해자 속성 수정(재해결과/요양/휴업/부위/내용). 인물(유형·코드)은 변경하지 않는다. 0행이면 순번 미실재 -->
+    <update id="updateAcctVictimAttr"
+            parameterType="com.prafta.web.acct.acct01.application.param.AcctVictimUpdateParam">
+    /* Acct01Mapper.updateAcctVictimAttr */
+    UPDATE TB_ACCT_VICTIM
+    SET
+        VICTIM_RESULT_CD = #{victimResultCd}
+      , CARE_DAYS        = #{careDays}
+      , REST_DAYS        = #{restDays}
+      , INJURY_PART      = #{injuryPart}
+      , INJURY_DESC      = #{injuryDesc}
+      , UPDATE_NO        = #{gvUserCd}
+      , UPDATE_DATE      = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND VICTIM_SEQ = #{victimSeq}
+    </update>
+
+    <!-- 재해자 제외(물리 삭제). 스냅샷(TB_ACCT_LINK)은 삭제하지 않는다(확정 시점 사본 보존) -->
+    <delete id="deleteAcctVictim">
+    /* Acct01Mapper.deleteAcctVictim */
+    DELETE FROM TB_ACCT_VICTIM
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND VICTIM_SEQ = #{victimSeq}
+    </delete>
+
+    <!-- 대표 승계용: 남아있는 인원 중 순번 최소 1명.
+         AcctVictimKeyResult 순서: victimSeq, userTypeCd, userCd -->
+    <select id="selectFirstAcctVictim"
+            resultType="com.prafta.web.acct.acct01.result.AcctVictimKeyResult">
+    /* Acct01Mapper.selectFirstAcctVictim */
+    SELECT
+        V.VICTIM_SEQ    AS victimSeq
+      , V.USER_TYPE_CD  AS userTypeCd
+      , V.USER_CD       AS userCd
+    FROM TB_ACCT_VICTIM V
+    WHERE V.CMPNY_CD = #{gvCmpnyCd}
+      AND V.SITE_CD = #{siteCd}
+      AND V.ACCT_ID = #{acctId}
+    ORDER BY V.VICTIM_SEQ
+    LIMIT 1
+    </select>
+
+    <!-- 헤더 대표 재해자 컬럼 갱신(대표 제외 시 승계). 수정자/수정일 함께 갱신 -->
+    <update id="updateAcctRepresentativeVictim">
+    /* Acct01Mapper.updateAcctRepresentativeVictim */
+    UPDATE TB_ACCT
+    SET
+        VICTIM_USER_TYPE_CD = #{victimUserTypeCd}
+      , VICTIM_USER_CD      = #{victimUserCd}
+      , UPDATE_NO           = #{gvUserCd}
+      , UPDATE_DATE         = NOW()
+    WHERE CMPNY_CD = #{gvCmpnyCd}
+      AND SITE_CD = #{siteCd}
+      AND ACCT_ID = #{acctId}
+      AND DEL_YN = 'N'
+    </update>
+
+    <!-- 재해 결과 코드 화이트리스트(SYS084, USE_YN='Y') 실재 COUNT. 전사 공통 코드(CMPNY_CD 없음) -->
+    <select id="countVictimResultCd" resultType="int">
+    /* Acct01Mapper.countVictimResultCd */
+    SELECT
+        COUNT(1)
+    FROM TB_SYST_VAL_D D
+    WHERE D.SYST_VAL_CD = 'SYS084'
+      AND D.SYST_VAL_D_CD = #{victimResultCd}
+      AND D.USE_YN = 'Y'
     </select>
 
 </mapper>
