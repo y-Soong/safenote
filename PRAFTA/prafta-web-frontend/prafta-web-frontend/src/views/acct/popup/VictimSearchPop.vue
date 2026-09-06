@@ -12,7 +12,7 @@
       >
         <!-- 1. Title -->
         <div class="modal-header" @mousedown="startDrag">
-          <span>재해자 검색 (정규 + 일용)</span>
+          <span>재해자 검색 (정규 + 일용 · 다중 선택)</span>
           <button class="icon-button" @click="$emit('close')" aria-label="닫기">
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -31,7 +31,7 @@
           </button>
         </div>
 
-        <!-- 2. 조회 Form -->
+        <!-- 2. 조회 Form (prafta-065: 다건 선택 — HazardSearchPop 계약) -->
         <div class="viewSearch">
           <div class="form-left">
             <label>사용자유형</label>
@@ -49,6 +49,7 @@
           </div>
           <div class="btn-group">
             <button class="btn btn-primary" @click="fnSearch">조회</button>
+            <button class="btn btn-primary" @click="fnSelect">선택 완료</button>
           </div>
         </div>
 
@@ -58,6 +59,14 @@
             <table class="data-grid">
               <thead>
                 <tr>
+                  <th class="check-col">
+                    <input
+                      type="checkbox"
+                      :checked="isAllChecked"
+                      :indeterminate.prop="isIndeterminate"
+                      @change="toggleAll"
+                    />
+                  </th>
                   <th>유형</th>
                   <th>아이디</th>
                   <th>이름</th>
@@ -69,7 +78,7 @@
               <tbody>
                 <template v-if="!rows || rows.length === 0">
                   <tr>
-                    <td colspan="6" class="edu-grid-empty">
+                    <td colspan="7" class="edu-grid-empty">
                       조회된 재해자가 없습니다.
                     </td>
                   </tr>
@@ -77,13 +86,35 @@
                 <template v-else>
                   <tr
                     v-for="item in rows"
-                    :key="item.userTypeCd + '_' + item.userCd"
-                    @dblclick="fnSelectRow(item)"
-                    style="cursor: pointer"
+                    :key="rowKey(item)"
+                    :class="{
+                      selected: selectedMap[rowKey(item)],
+                      locked: lockedMap[rowKey(item)],
+                    }"
+                    @click="toggleRow(item)"
                   >
+                    <td class="check-col">
+                      <input
+                        type="checkbox"
+                        :checked="
+                          !!selectedMap[rowKey(item)] ||
+                          !!lockedMap[rowKey(item)]
+                        "
+                        :disabled="!!lockedMap[rowKey(item)]"
+                        @click.stop
+                        @change="toggleRow(item)"
+                      />
+                    </td>
                     <td>{{ item.userTypeNm || item.userTypeCd }}</td>
                     <td>{{ item.userId }}</td>
-                    <td>{{ item.userNm }}</td>
+                    <td>
+                      {{ item.userNm
+                      }}<span
+                        v-if="lockedMap[rowKey(item)]"
+                        class="vs-locked-badge"
+                        >등록됨</span
+                      >
+                    </td>
                     <td>
                       {{ item.mblNoLast4 ? "****" + item.mblNoLast4 : "-" }}
                     </td>
@@ -103,6 +134,8 @@
 <script setup>
 import {
   ref,
+  reactive,
+  computed,
   defineProps,
   defineEmits,
   onMounted,
@@ -113,9 +146,14 @@ import axios from "@/api/axios";
 import { resolveApiErrorMessage } from "@/utils/apiError";
 import BaseSelect from "@/components/common/BaseSelect.vue";
 
+// prafta-065: 다건 선택 계약(HazardSearchPop 미러).
+//   selectedKeys = 사전 선택(해제 가능) / lockedKeys = 이미 등록된 인원(체크 고정·해제 불가·반환 제외)
+//   행 키 = userTypeCd + '_' + userCd (정규/일용 사용자코드 충돌 방지)
 const props = defineProps({
   siteCd: { type: String, default: "" },
-  onSelect: Function,
+  selectedKeys: { type: Array, default: () => [] },
+  lockedKeys: { type: Array, default: () => [] },
+  onSelect: Function, // (list: VictimResult[]) => void — 잠기지 않은 체크 인원 전체
 });
 const emit = defineEmits(["close", "select"]);
 
@@ -129,8 +167,36 @@ const { position, startDrag } = useCenteredDraggable(modalRef, {
 const userTypeCd = ref("");
 const userNm = ref("");
 const rows = ref([]);
+const selectedMap = reactive({}); // { [rowKey]: true }
+const lockedMap = reactive({}); // { [rowKey]: true }
+
+const rowKey = (it) => `${it.userTypeCd}_${it.userCd}`;
+
+// 잠기지 않은 행만 전체체크 대상으로 계산한다.
+const selectableRows = computed(() =>
+  rows.value.filter((r) => !lockedMap[rowKey(r)])
+);
+const selectedCount = computed(
+  () => selectableRows.value.filter((r) => selectedMap[rowKey(r)]).length
+);
+const isAllChecked = computed(
+  () =>
+    selectableRows.value.length > 0 &&
+    selectedCount.value === selectableRows.value.length
+);
+const isIndeterminate = computed(
+  () =>
+    selectedCount.value > 0 && selectedCount.value < selectableRows.value.length
+);
 
 onMounted(() => {
+  (props.lockedKeys || []).forEach((k) => {
+    if (k) lockedMap[k] = true;
+  });
+  (props.selectedKeys || []).forEach((k) => {
+    // 잠긴 인원은 selected 로 중복 표시하지 않는다(반환 대상에서 제외되어야 함).
+    if (k && !lockedMap[k]) selectedMap[k] = true;
+  });
   fnSearch();
 });
 
@@ -154,11 +220,37 @@ const fnSearch = async () => {
   }
 };
 
-const fnSelectRow = (item) => {
-  if (typeof props.onSelect === "function") {
-    props.onSelect(item);
+const toggleRow = (item) => {
+  const key = rowKey(item);
+  if (lockedMap[key]) return; // 등록된 인원은 해제 불가
+  if (selectedMap[key]) delete selectedMap[key];
+  else selectedMap[key] = true;
+};
+
+const toggleAll = () => {
+  if (isAllChecked.value) {
+    selectableRows.value.forEach((r) => delete selectedMap[rowKey(r)]);
   } else {
-    emit("select", item);
+    selectableRows.value.forEach((r) => {
+      selectedMap[rowKey(r)] = true;
+    });
+  }
+};
+
+// 선택 완료: 현재 조회 결과 중 체크된(잠기지 않은) 인원을 반환한다.
+//   검색 조건을 바꿔 화면에서 사라진 사전선택 인원은 부모가 보존하므로(병합) 여기서는 조회 결과만 다룬다.
+const fnSelect = async () => {
+  const selected = rows.value.filter(
+    (r) => selectedMap[rowKey(r)] && !lockedMap[rowKey(r)]
+  );
+  if (selected.length === 0) {
+    await proxy.$alert("선택된 재해자가 없습니다.");
+    return;
+  }
+  if (typeof props.onSelect === "function") {
+    props.onSelect(selected);
+  } else {
+    emit("select", selected);
   }
   emit("close");
 };
@@ -181,5 +273,29 @@ const fnSelectRow = (item) => {
 /* 사용자정보 입력칸을 기본(120px)보다 길게 */
 .viewSearch .form-left input {
   width: 200px;
+}
+/* prafta-065 다건 선택 */
+.check-col {
+  width: 36px;
+  text-align: center;
+}
+tbody tr {
+  cursor: pointer;
+}
+tbody tr.selected {
+  background: var(--color-primary-soft, rgba(22, 163, 74, 0.08));
+}
+tbody tr.locked {
+  color: var(--color-text-muted, #8b94a3);
+  cursor: default;
+}
+.vs-locked-badge {
+  margin-left: 0.35rem;
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.05rem 0.35rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-border, #e5e7eb);
+  color: var(--color-text-muted, #6b7280);
 }
 </style>

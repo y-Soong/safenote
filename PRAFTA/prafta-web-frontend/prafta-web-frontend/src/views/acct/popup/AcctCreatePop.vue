@@ -68,16 +68,10 @@
                 </button>
               </div>
             </div>
-            <div class="acc-field">
-              <label>재해자<span class="req">*</span></label>
+            <!-- prafta-065: 재해자 다건 행 테이블(속성 입력 포함). 첫 행 = 대표 재해자(자동, 변경 불가) -->
+            <div class="acc-field acc-field--span2">
+              <label>재해자 (다건)<span class="req">*</span></label>
               <div class="acc-inline">
-                <input
-                  type="text"
-                  :value="victimLabel"
-                  placeholder="사업장 선택 후 재해자를 검색하세요"
-                  readonly
-                  @click="fnOpenVictimSearch"
-                />
                 <button
                   class="btn btn-second"
                   :disabled="!siteCd"
@@ -85,6 +79,94 @@
                 >
                   재해자 검색
                 </button>
+                <span class="acc-chip-count" v-if="victimRows.length">
+                  {{ victimRows.length }}명 선택됨
+                </span>
+              </div>
+              <table class="data-grid acc-victim-grid" v-if="victimRows.length">
+                <thead>
+                  <tr>
+                    <th class="acc-victim-grid__rep">대표</th>
+                    <th>이름</th>
+                    <th>유형</th>
+                    <th>재해결과<span class="req">*</span></th>
+                    <th>요양일수</th>
+                    <th>휴업일수</th>
+                    <th>부상부위</th>
+                    <th>부상내용</th>
+                    <th class="acc-victim-grid__x"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(r, i) in victimRows"
+                    :key="r.userTypeCd + '_' + r.userCd"
+                  >
+                    <td class="acc-victim-grid__rep">
+                      <span v-if="i === 0" class="acc-rep-badge">대표</span>
+                    </td>
+                    <td>
+                      {{ r.userNm
+                      }}<span class="acc-victim-dept" v-if="r.nodeNm">
+                        · {{ r.nodeNm }}</span
+                      >
+                    </td>
+                    <td>{{ r.userTypeCd === "DAILY" ? "일용" : "정규" }}</td>
+                    <td>
+                      <BaseSelect v-model="r.victimResultCd">
+                        <option value="">선택</option>
+                        <option
+                          v-for="opt in resultOptions"
+                          :key="opt.systValDCd"
+                          :value="opt.systValDCd"
+                        >
+                          {{ opt.systValDNm }}
+                        </option>
+                      </BaseSelect>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        max="3650"
+                        v-model.trim="r.careDays"
+                        placeholder="미확정"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min="0"
+                        max="3650"
+                        v-model.trim="r.restDays"
+                        placeholder="미확정"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        maxlength="100"
+                        v-model.trim="r.injuryPart"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="text"
+                        maxlength="500"
+                        v-model.trim="r.injuryDesc"
+                      />
+                    </td>
+                    <td class="acc-victim-grid__x">
+                      <button class="acc-chip-x" @click="fnRemoveVictim(r)">
+                        ✕
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="acc-hint" v-else>
+                사업장 선택 후 재해자를 검색하세요. 첫 번째 인원이 대표 재해자로
+                자동 지정됩니다.
               </div>
             </div>
           </div>
@@ -227,6 +309,13 @@
                   <div class="acc-grade-d">{{ opt.desc }}</div>
                 </div>
               </div>
+              <!-- prafta-065: 재해자 속성 기반 참고 카운트. 자동 판정·경고·색 강조 없음(판단은 사람). -->
+              <div class="acc-ref-count">
+                참고: 사망 <b>{{ victimStats.deathCnt }}</b
+                >명 · 요양 90일↑ <b>{{ victimStats.longCareCnt }}</b
+                >명 · 총 <b>{{ victimStats.total }}</b
+                >명
+              </div>
               <div class="acc-hint">
                 휴업일수는 사고 직후 미확정일 수 있습니다. 등급은 추후 변경
                 가능하며, 변경 시 법정 기한이 재계산됩니다.
@@ -303,10 +392,12 @@ const occurTimeInput = ref(""); // HH:MM (time input)
 const siteCd = ref("");
 const siteNo = ref("");
 const siteNm = ref("");
-const victimUserTypeCd = ref("");
-const victimUserCd = ref("");
-const victimUserNm = ref("");
-const victimDeptNm = ref("");
+// prafta-065: 재해자 다건 행. 첫 행 = 대표(서버는 배열 첫 인원을 헤더 대표로 기록).
+//   { userTypeCd, userCd, userNm, nodeNm, mblNoLast4, victimResultCd, careDays, restDays, injuryPart, injuryDesc }
+const victimRows = ref([]);
+// 참고 카운트 "요양 90일↑" 임계(D-E): 중대재해 정의 "3개월 이상 요양" 근사. 판정·경고 없이 표시만.
+const LONG_CARE_DAYS = 90;
+const MAX_DAYS = 3650;
 
 // 연관 조회 조건
 const chklstType = ref("");
@@ -321,7 +412,7 @@ const acctDesc = ref("");
 
 // 코드
 const baseCodeArr = ref({}); // COM001
-const systCodeArr = ref({}); // SYS065(재해등급)
+const systCodeArr = ref({}); // SYS065(재해등급) / SYS084(재해결과)
 const riskCategoryList = ref([]); // RiskCategoryOptionResult[]
 
 const gradeFallback = [
@@ -363,13 +454,25 @@ const gradeOptions = computed(() => {
   });
 });
 
-// 재해자 표시 라벨
-const victimLabel = computed(() => {
-  if (!victimUserNm.value) return "";
-  const dept = victimDeptNm.value ? ` · ${victimDeptNm.value}` : "";
-  const type = victimUserTypeCd.value === "DAILY" ? " (일용)" : "";
-  return `${victimUserNm.value}${dept}${type}`;
+// 재해결과(SYS084) 옵션
+const resultOptions = computed(() => systCodeArr.value["SYS084"] || []);
+
+// 참고 카운트(입력값 기반 실시간). 등급 자동 판정에 쓰지 않는다(원칙 4).
+const victimStats = computed(() => {
+  const rows = victimRows.value;
+  return {
+    deathCnt: rows.filter((r) => r.victimResultCd === "DEATH").length,
+    longCareCnt: rows.filter(
+      (r) =>
+        r.careDays !== "" &&
+        r.careDays != null &&
+        Number(r.careDays) >= LONG_CARE_DAYS
+    ).length,
+    total: rows.length,
+  };
 });
+
+const victimKey = (v) => `${v.userTypeCd}_${v.userCd}`;
 
 // 위험성평가 3계층 옵션 (categoryType + parentCode 로 필터)
 const processOptions = computed(() =>
@@ -440,11 +543,11 @@ const fnGetBaseinfoList = async () => {
   }
 };
 
-// SYS065(재해등급)
+// SYS065(재해등급) / SYS084(재해결과)
 const fnGetSystinfoList = async () => {
   try {
     const response = await axios.get("/comApi/baseinfo/syst-info-lists", {
-      params: { systCodeList: ["SYS065"] },
+      params: { systCodeList: ["SYS065", "SYS084"] },
     });
     if (response.status === 200) {
       const resData = response.data?.systInfoList || [];
@@ -505,11 +608,8 @@ const onSiteSelected = async (siteCdVal, siteNoVal, siteNmVal) => {
   siteCd.value = siteCdVal;
   siteNo.value = siteNoVal;
   siteNm.value = siteNmVal;
-  // 사업장 변경 시 사업장 종속값 초기화
-  victimUserTypeCd.value = "";
-  victimUserCd.value = "";
-  victimUserNm.value = "";
-  victimDeptNm.value = "";
+  // 사업장 변경 시 사업장 종속값 초기화(재해자는 사업장 소속 검증 대상이므로 전부 비운다)
+  victimRows.value = [];
   selectedChkpts.value = [];
   processCd.value = "";
   riskTypeCd.value = "";
@@ -517,7 +617,7 @@ const onSiteSelected = async (siteCdVal, siteNoVal, siteNmVal) => {
   await fnGetRiskCategoryOptions();
 };
 
-// 재해자 검색 팝업 (인라인 검색 모달)
+// 재해자 검색 팝업 (다건) — 현재 행을 사전선택으로 넘기고, 결과는 기존 행과 병합한다.
 const fnOpenVictimSearch = () => {
   if (!siteCd.value) {
     proxy.$alert("발생 사업장을 먼저 선택하세요.");
@@ -525,16 +625,52 @@ const fnOpenVictimSearch = () => {
   }
   openPop(VictimSearchPop, {
     siteCd: siteCd.value,
+    selectedKeys: victimRows.value.map(victimKey),
     onSelect: onVictimSelected,
   });
 };
 
-const onVictimSelected = (v) => {
-  victimUserTypeCd.value = v.userTypeCd;
-  victimUserCd.value = v.userCd;
-  victimUserNm.value = v.userNm;
-  victimDeptNm.value = v.nodeNm || "";
+// 병합 규칙: 이미 있는 인원은 입력한 속성을 보존하고, 새 인원만 뒤에 추가한다(중복 행 없음).
+//   행 순서 = 기존 순서 유지 → 첫 행(대표)이 재검색으로 바뀌지 않는다.
+const onVictimSelected = (list) => {
+  const existing = {};
+  victimRows.value.forEach((r) => {
+    existing[victimKey(r)] = true;
+  });
+  const appended = (list || [])
+    .filter((v) => !existing[victimKey(v)])
+    .map((v) => ({
+      userTypeCd: v.userTypeCd,
+      userCd: v.userCd,
+      userNm: v.userNm,
+      nodeNm: v.nodeNm || "",
+      mblNoLast4: v.mblNoLast4 || "",
+      victimResultCd: "",
+      careDays: "",
+      restDays: "",
+      injuryPart: "",
+      injuryDesc: "",
+    }));
+  victimRows.value = [...victimRows.value, ...appended];
 };
+
+const fnRemoveVictim = (row) => {
+  const key = victimKey(row);
+  victimRows.value = victimRows.value.filter((r) => victimKey(r) !== key);
+};
+
+// 일수 검증: 빈값(미확정) 허용, 그 외 0 이상 정수 + 상한 3650. 반환 = 오류 메시지("" 이면 정상)
+const validateDays = (val, label, idx) => {
+  if (val === "" || val == null) return "";
+  const s = String(val);
+  if (!/^\d+$/.test(s))
+    return `${idx}번 재해자의 ${label}는 0 이상 정수로 입력하세요.`;
+  if (Number(s) > MAX_DAYS)
+    return `${idx}번 재해자의 ${label}는 ${MAX_DAYS}일을 초과할 수 없습니다.`;
+  return "";
+};
+
+const toDaysOrNull = (val) => (val === "" || val == null ? null : Number(val));
 
 // 점검대상 검색 팝업 (다건)
 const fnOpenChkptSearch = () => {
@@ -625,7 +761,16 @@ const fnValidate = () => {
   if (!occurDate.value) return "사고 발생일을 입력하세요.";
   if (!occurTimeInput.value) return "발생 시각을 입력하세요.";
   if (!siteCd.value) return "발생 사업장을 선택하세요.";
-  if (!victimUserCd.value) return "재해자를 선택하세요.";
+  if (victimRows.value.length === 0) return "재해자를 1명 이상 선택하세요.";
+  for (let i = 0; i < victimRows.value.length; i += 1) {
+    const r = victimRows.value[i];
+    const n = i + 1;
+    if (!r.victimResultCd) return `${n}번 재해자의 재해 결과를 선택하세요.`;
+    const careMsg = validateDays(r.careDays, "요양일수", n);
+    if (careMsg) return careMsg;
+    const restMsg = validateDays(r.restDays, "휴업일수", n);
+    if (restMsg) return restMsg;
+  }
   if (!acctGradeCd.value) return "재해 등급을 선택하세요.";
   if (!acctDesc.value) return "사고 경위를 입력하세요.";
   return "";
@@ -638,10 +783,18 @@ const fnCreate = async () => {
     return;
   }
 
+  // prafta-065 R2-1 계약: victimList 배열(첫 인원 = 대표). 단건 필드(victimUserTypeCd/Cd)는 전송하지 않는다.
   const body = {
     siteCd: siteCd.value,
-    victimUserTypeCd: victimUserTypeCd.value,
-    victimUserCd: victimUserCd.value,
+    victimList: victimRows.value.map((r) => ({
+      userTypeCd: r.userTypeCd,
+      userCd: r.userCd,
+      victimResultCd: r.victimResultCd,
+      careDays: toDaysOrNull(r.careDays),
+      restDays: toDaysOrNull(r.restDays),
+      injuryPart: r.injuryPart || null,
+      injuryDesc: r.injuryDesc || null,
+    })),
     occurYmd: toYmd(occurDate.value),
     occurTime: toHm(occurTimeInput.value),
     acctGradeCd: acctGradeCd.value,
@@ -861,6 +1014,58 @@ const fnCreate = async () => {
   font-size: 0.66rem;
   color: var(--color-text-muted, #8b94a3);
   line-height: 1.45;
+}
+/* prafta-065 재해자 행 테이블 */
+.acc-field--span2 {
+  grid-column: 1 / -1;
+}
+.acc-victim-grid {
+  width: 100%;
+  font-size: 0.78rem;
+}
+.acc-victim-grid th,
+.acc-victim-grid td {
+  padding: 0.35rem 0.4rem;
+  vertical-align: middle;
+}
+.acc-victim-grid input {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+.acc-victim-grid :deep(select) {
+  width: 100%;
+  padding: 0.3rem 0.45rem;
+  font-size: 0.78rem;
+}
+.acc-victim-grid__rep {
+  width: 44px;
+  text-align: center;
+}
+.acc-victim-grid__x {
+  width: 32px;
+  text-align: center;
+}
+.acc-victim-dept {
+  color: var(--color-text-muted, #8b94a3);
+  font-size: 0.72rem;
+}
+.acc-rep-badge {
+  display: inline-block;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-primary-soft, rgba(22, 163, 74, 0.12));
+  color: var(--color-primary-hover, #15803d);
+}
+.acc-ref-count {
+  font-size: 0.74rem;
+  color: var(--color-text, #374151);
+  margin: 0.4rem 0 0.2rem;
+}
+.acc-ref-count b {
+  color: var(--color-text-strong, #111827);
 }
 .acc-info-box {
   background: var(--color-primary-soft, #f0fdf4);
