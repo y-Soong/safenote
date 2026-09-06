@@ -59,36 +59,57 @@
             ⓘ {{ currentNotice }}
           </div>
 
+          <!-- prafta-065: 근태·TBM 은 재해자 축. 칩 = 보기 전환만. 확정은 도메인당 1회, 재해자 전원 체크 항목 병합 전송(REPLACE 회귀 차단) -->
+          <div v-if="isVictimDomain && victimList.length" class="lc-victim-bar">
+            <span class="lc-victim-bar__label">재해자</span>
+            <button
+              v-for="v in victimList"
+              :key="v.victimSeq"
+              type="button"
+              class="lc-victim-chip"
+              :class="{ active: selectedVictimSeq === v.victimSeq }"
+              @click="fnSelectVictim(v.victimSeq)"
+            >
+              {{ v.userNm
+              }}<span
+                v-if="v.representativeYn === 'Y'"
+                class="lc-victim-chip__rep"
+                >대표</span
+              >
+            </button>
+          </div>
+
           <!-- 로딩 -->
           <div v-if="loading" class="lc-state">조회 중...</div>
 
-          <!-- 근태 (ATTD) -->
+          <!-- 근태 (ATTD) — 선택 재해자(attdView)의 스케줄/실근태. 체크 상태는 attdId 키 -->
           <template v-else-if="activeDomain === 'ATTD'">
             <div class="lc-sub">
-              발생 시각 마커: <b>{{ fmtHm(attd.occurTime) }}</b>
-              <span v-if="!attd.hasSchedule" class="lc-muted">
-                · {{ attd.scheduleNote || "스케줄 없음" }}
+              발생 시각 마커: <b>{{ fmtHm(attdView.data.occurTime) }}</b>
+              <span v-if="!attdView.data.hasSchedule" class="lc-muted">
+                · {{ attdView.data.scheduleNote || "스케줄 없음" }}
               </span>
             </div>
-            <div v-if="attd.schedule" class="lc-card">
+            <div v-if="attdView.data.schedule" class="lc-card">
               <div class="lc-card-h">정규 당일 스케줄</div>
               <div class="lc-kv">
                 <span>1구간</span>
                 <span
-                  >{{ fmtHm(attd.schedule.fstSchStrTime) }} ~
-                  {{ fmtHm(attd.schedule.fstSchEndTime) }}</span
+                  >{{ fmtHm(attdView.data.schedule.fstSchStrTime) }} ~
+                  {{ fmtHm(attdView.data.schedule.fstSchEndTime) }}</span
                 >
               </div>
               <div
                 class="lc-kv"
                 v-if="
-                  attd.schedule.secSchStrTime || attd.schedule.secSchEndTime
+                  attdView.data.schedule.secSchStrTime ||
+                  attdView.data.schedule.secSchEndTime
                 "
               >
                 <span>2구간</span>
                 <span
-                  >{{ fmtHm(attd.schedule.secSchStrTime) }} ~
-                  {{ fmtHm(attd.schedule.secSchEndTime) }}</span
+                  >{{ fmtHm(attdView.data.schedule.secSchStrTime) }} ~
+                  {{ fmtHm(attdView.data.schedule.secSchEndTime) }}</span
                 >
               </div>
             </div>
@@ -102,14 +123,21 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!attd.records || attd.records.length === 0">
+                <tr
+                  v-if="
+                    !attdView.data.records || attdView.data.records.length === 0
+                  "
+                >
                   <td colspan="4" class="edu-grid-empty">
                     당일 실근태 기록이 없습니다.
                   </td>
                 </tr>
-                <tr v-for="(r, i) in attd.records" :key="r.attdId">
+                <tr v-for="r in attdView.data.records" :key="r.attdId">
                   <td class="check-col">
-                    <input type="checkbox" v-model="attdChecked[i]" />
+                    <input
+                      type="checkbox"
+                      v-model="attdView.checked[r.attdId]"
+                    />
                   </td>
                   <td>{{ r.workSeq }}</td>
                   <td>{{ fmtDateTime(r.checkInDate, r.checkInTime) }}</td>
@@ -226,14 +254,21 @@
                 </tr>
               </thead>
               <tbody>
-                <tr v-if="!tbm.tbmList || tbm.tbmList.length === 0">
+                <tr
+                  v-if="
+                    !tbmView.data.tbmList || tbmView.data.tbmList.length === 0
+                  "
+                >
                   <td colspan="6" class="edu-grid-empty">
                     당일 TBM 기록이 없습니다.
                   </td>
                 </tr>
-                <tr v-for="(r, i) in tbm.tbmList" :key="r.sessionCd">
+                <tr v-for="r in tbmView.data.tbmList" :key="r.sessionCd">
                   <td class="check-col">
-                    <input type="checkbox" v-model="tbmChecked[i]" />
+                    <input
+                      type="checkbox"
+                      v-model="tbmView.checked[r.sessionCd]"
+                    />
                   </td>
                   <td>{{ r.sessionCd }}</td>
                   <td>{{ r.title }}</td>
@@ -270,7 +305,10 @@
               현재 도메인 선택 확정
             </button>
             <span class="lc-muted">
-              선택한 항목을 확정하면 ① 안전관리 현황 탭에 스냅샷으로 저장됩니다.
+              선택한 항목을 확정하면 ① 안전관리 현황 탭에 스냅샷으로
+              저장됩니다.<template v-if="isVictimDomain">
+                재해자 전원의 체크 항목이 함께 저장됩니다.</template
+              >
             </span>
           </div>
 
@@ -335,8 +373,19 @@ const domains = [
 const activeDomain = ref("");
 const loading = ref(false);
 
-// 도메인별 조회 응답
-const attd = ref({
+// ── prafta-065: 재해자 축(ATTD/TBM) ──
+// victimList = GET /victims (진입 시 1회). selectedVictimSeq = 보기 전환용(기본 = 대표).
+// attdByVictim / tbmByVictim = { [victimKey]: { data: 응답, checked: { [attdId|sessionCd]: true } } }
+//   ★체크 상태는 식별자 키 객체(인덱스 배열 금지) — 재해자 전환·재조회 후에도 보존.
+//   ★확정은 도메인당 1회 POST 에 재해자 전원의 체크 항목을 병합(서버 REPLACE → 개별 확정 시 앞 인원이 지워지는 회귀 차단).
+const victimList = ref([]);
+const selectedVictimSeq = ref(null);
+const attdByVictim = reactive({});
+const tbmByVictim = reactive({});
+const attdLoaded = ref(false);
+const tbmLoaded = ref(false);
+
+const emptyAttd = () => ({
   hasSchedule: false,
   scheduleNote: "",
   schedule: null,
@@ -344,15 +393,47 @@ const attd = ref({
   occurTime: "",
   notice: "",
 });
+const emptyTbm = () => ({ tbmList: [], notice: "" });
+
+// 재해자 0명(백필 누락) 방어: 대표 기준 종전 경로(victimSeq 미전송) 1축으로 동작
+const FALLBACK_VICTIM = {
+  victimSeq: null,
+  userNm: "",
+  userTypeCd: "",
+  userCd: "",
+  representativeYn: "Y",
+  _fallback: true,
+};
+const victimAxis = computed(() =>
+  victimList.value.length ? victimList.value : [FALLBACK_VICTIM]
+);
+const victimKeyOf = (v) => (v.victimSeq == null ? "REP" : String(v.victimSeq));
+const selectedVictimKey = computed(() => {
+  const found = victimAxis.value.find(
+    (v) => v.victimSeq === selectedVictimSeq.value
+  );
+  return victimKeyOf(found || victimAxis.value[0]);
+});
+const isVictimDomain = computed(
+  () => activeDomain.value === "ATTD" || activeDomain.value === "TBM"
+);
+// 선택 재해자의 표시용 항목(없으면 빈 구조 — 기록 0건이라 체크 쓰기 대상도 없음)
+const attdView = computed(
+  () =>
+    attdByVictim[selectedVictimKey.value] || { data: emptyAttd(), checked: {} }
+);
+const tbmView = computed(
+  () =>
+    tbmByVictim[selectedVictimKey.value] || { data: emptyTbm(), checked: {} }
+);
+
+// 사업장 축 도메인(CHKPT/RISK) — 종전 구조 무변경
 const patrol = ref({ summaryList: [], badItemList: [], notice: "" });
 const risk = ref({ riskList: [], notice: "" });
-const tbm = ref({ tbmList: [], notice: "" });
 
-// 체크 상태 (인덱스 기반)
-const attdChecked = ref([]);
+// 체크 상태 (CHKPT/RISK 는 종전 인덱스 기반 유지 — 재해자 전환이 없어 붕괴 요인 없음)
 const patrolChecked = ref([]);
 const riskChecked = ref([]);
-const tbmChecked = ref([]);
 
 // 도메인별 확정 건수
 const confirmedCount = reactive({
@@ -366,20 +447,21 @@ let anyConfirmed = false;
 const currentNotice = computed(() => {
   switch (activeDomain.value) {
     case "ATTD":
-      return attd.value.notice;
+      return attdView.value.data.notice;
     case "CHKPT":
       return patrol.value.notice;
     case "RISK":
       return risk.value.notice;
     case "TBM":
-      return tbm.value.notice;
+      return tbmView.value.data.notice;
     default:
       return "";
   }
 });
 
-onMounted(() => {
-  fnSelectDomain("ATTD");
+onMounted(async () => {
+  await fnLoadVictims();
+  await fnSelectDomain("ATTD");
 });
 
 // 공통 조회 파라미터(식별자는 서버 JWT/사고헤더에서 도출)
@@ -388,16 +470,75 @@ const baseParams = () => ({
   acctId: props.acctId,
 });
 
+// 재해자 목록 로드 + 기본 선택(대표). 0건이면 안내 후 대표 기준 종전 경로로 동작.
+const fnLoadVictims = async () => {
+  try {
+    const res = await axios.get("/webApi/acct01/victims", {
+      params: baseParams(),
+    });
+    victimList.value = res.data?.victimList || [];
+  } catch (err) {
+    victimList.value = [];
+    await proxy.$alert(
+      resolveApiErrorMessage(err, "재해자 조회 중 오류가 발생했습니다.")
+    );
+  }
+  if (victimList.value.length === 0) {
+    await proxy.$alert(
+      "재해자 정보를 찾을 수 없어 대표 재해자 기준으로 근태·TBM 을 조회합니다."
+    );
+    selectedVictimSeq.value = null;
+    return;
+  }
+  const rep =
+    victimList.value.find((v) => v.representativeYn === "Y") ||
+    victimList.value[0];
+  selectedVictimSeq.value = rep.victimSeq;
+};
+
+// 재해자 칩 클릭 = 보기 전환만(조회 없음, 체크 보존)
+const fnSelectVictim = (seq) => {
+  selectedVictimSeq.value = seq;
+};
+
+// 재해자 1명 기준 조회 파라미터(victimSeq 없으면 서버가 대표로 처리 — 종전 경로)
+const victimParams = (v) =>
+  v.victimSeq == null
+    ? baseParams()
+    : { ...baseParams(), victimSeq: v.victimSeq };
+
+// 식별자 키 → true 맵(전원 기본 체크: 현행 관례)
+const allChecked = (list, keyName) => {
+  const m = {};
+  (list || []).forEach((r) => {
+    m[r[keyName]] = true;
+  });
+  return m;
+};
+
 const fnSelectDomain = async (code) => {
   activeDomain.value = code;
   loading.value = true;
   try {
     if (code === "ATTD") {
-      const res = await axios.get("/webApi/acct01/link/attendance", {
-        params: baseParams(),
-      });
-      attd.value = res.data || attd.value;
-      attdChecked.value = (attd.value.records || []).map(() => true);
+      // 재해자 전원 일괄 조회(D-D). 이미 로드된 도메인은 재조회하지 않음(체크 보존).
+      if (!attdLoaded.value) {
+        const results = await Promise.all(
+          victimAxis.value.map((v) =>
+            axios.get("/webApi/acct01/link/attendance", {
+              params: victimParams(v),
+            })
+          )
+        );
+        victimAxis.value.forEach((v, idx) => {
+          const data = results[idx].data || emptyAttd();
+          attdByVictim[victimKeyOf(v)] = {
+            data,
+            checked: allChecked(data.records, "attdId"),
+          };
+        });
+        attdLoaded.value = true;
+      }
     } else if (code === "CHKPT") {
       // 점검대상 다건 선택 시 chkptCd 별 반복 호출 후 병합
       const cds =
@@ -443,11 +584,21 @@ const fnSelectDomain = async (code) => {
       risk.value = { riskList, notice: riskNotice };
       riskChecked.value = (risk.value.riskList || []).map(() => true);
     } else if (code === "TBM") {
-      const res = await axios.get("/webApi/acct01/link/tbm", {
-        params: baseParams(),
-      });
-      tbm.value = res.data || tbm.value;
-      tbmChecked.value = (tbm.value.tbmList || []).map(() => true);
+      if (!tbmLoaded.value) {
+        const results = await Promise.all(
+          victimAxis.value.map((v) =>
+            axios.get("/webApi/acct01/link/tbm", { params: victimParams(v) })
+          )
+        );
+        victimAxis.value.forEach((v, idx) => {
+          const data = results[idx].data || emptyTbm();
+          tbmByVictim[victimKeyOf(v)] = {
+            data,
+            checked: allChecked(data.tbmList, "sessionCd"),
+          };
+        });
+        tbmLoaded.value = true;
+      }
     }
   } catch (err) {
     await proxy.$alert(
@@ -476,8 +627,12 @@ const fnConfirmDomain = async () => {
     if (response.status === 200) {
       confirmedCount[code] = items.length;
       anyConfirmed = true;
+      const victimNote =
+        isVictimDomain.value && victimList.value.length
+          ? `(재해자 ${victimList.value.length}명)`
+          : "";
       await proxy.$alert(
-        `${labelOf(code)} ${items.length}건이 확정되었습니다.`
+        `${labelOf(code)} ${items.length}건${victimNote}이 확정되었습니다.`
       );
     }
   } catch (err) {
@@ -496,10 +651,35 @@ const buildConfirmItems = (code) => {
       snapshotJson: JSON.stringify(snapObj),
     });
   };
+  // 재해자 축: 전원 순회 × 식별자 키 체크. 순서 = 재해자 순번 → 원본 순서(LINK_SEQ 는 서버 부여).
+  //   LINK_KEY_JSON 에 victimSeq + userTypeCd/userCd 를 함께 넣어 순번 재사용(D-I)에도 인물을 특정한다.
+  //   SNAPSHOT_JSON 에 victimSeq/victimUserNm(마스킹 응답값 그대로) 을 넣어 ① 탭 요약 접두에 쓴다.
+  //   폴백(재해자 0명) 축은 종전 키/스냅샷 그대로(구 스냅샷 호환).
+  const pushVictimItems = (v, entry, keyName) => {
+    if (!entry) return;
+    (entry.data[keyName === "attdId" ? "records" : "tbmList"] || []).forEach(
+      (r) => {
+        if (!entry.checked[r[keyName]]) return;
+        if (v._fallback) {
+          push({ [keyName]: r[keyName] }, r);
+          return;
+        }
+        push(
+          {
+            [keyName]: r[keyName],
+            victimSeq: v.victimSeq,
+            userTypeCd: v.userTypeCd,
+            userCd: v.userCd,
+          },
+          { ...r, victimSeq: v.victimSeq, victimUserNm: v.userNm }
+        );
+      }
+    );
+  };
   if (code === "ATTD") {
-    (attd.value.records || []).forEach((r, i) => {
-      if (attdChecked.value[i]) push({ attdId: r.attdId }, r);
-    });
+    victimAxis.value.forEach((v) =>
+      pushVictimItems(v, attdByVictim[victimKeyOf(v)], "attdId")
+    );
   } else if (code === "CHKPT") {
     (patrol.value.summaryList || []).forEach((r, i) => {
       if (patrolChecked.value[i]) push({ chkptCd: r.chkptCd }, r);
@@ -509,9 +689,9 @@ const buildConfirmItems = (code) => {
       if (riskChecked.value[i]) push({ assessmentCd: r.assessmentCd }, r);
     });
   } else if (code === "TBM") {
-    (tbm.value.tbmList || []).forEach((r, i) => {
-      if (tbmChecked.value[i]) push({ sessionCd: r.sessionCd }, r);
-    });
+    victimAxis.value.forEach((v) =>
+      pushVictimItems(v, tbmByVictim[victimKeyOf(v)], "sessionCd")
+    );
   }
   return items;
 };
@@ -619,6 +799,46 @@ const fmtDateTime = (ymd, hhmm) => {
   padding: 2rem;
   text-align: center;
   color: var(--color-text-muted, #8b94a3);
+}
+/* prafta-065 재해자 칩 바(ATTD/TBM) */
+.lc-victim-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+.lc-victim-bar__label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--color-text-muted, #4b5563);
+  margin-right: 0.2rem;
+}
+.lc-victim-chip {
+  border: 1px solid var(--color-border, #e5e7eb);
+  background: var(--color-surface, #fff);
+  color: var(--color-text, #374151);
+  font-size: 0.76rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-pill, 999px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.lc-victim-chip.active {
+  border-color: var(--color-primary, #16a34a);
+  background: var(--color-primary-soft, rgba(22, 163, 74, 0.1));
+  color: var(--color-primary-hover, #15803d);
+  font-weight: 700;
+}
+.lc-victim-chip__rep {
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.02rem 0.3rem;
+  border-radius: var(--radius-pill, 999px);
+  background: var(--color-primary, #16a34a);
+  color: var(--color-surface, #fff);
 }
 .lc-sub {
   font-size: 0.8rem;

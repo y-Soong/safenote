@@ -12,7 +12,7 @@
         <!-- 헤더 -->
         <div class="modal-header" @mousedown="startDrag">
           <span
-            >안전관리 현황 출력 — {{ props.victimUserNm }} /
+            >안전관리 현황 출력 — {{ headerVictimLabel }} /
             {{ props.acctId }}</span
           >
           <button
@@ -171,8 +171,20 @@
                       </td>
                     </tr>
                     <tr>
-                      <th>피해자</th>
-                      <td>{{ props.victimUserNm }} ({{ victimTypeLabel }})</td>
+                      <!-- prafta-065: 재해자 전원 나열 — 이름(유형 · 재해결과) -->
+                      <th>재해자</th>
+                      <td>
+                        <template v-if="victimList.length === 0">-</template>
+                        <template
+                          v-for="(v, i) in victimList"
+                          :key="v.victimSeq"
+                          ><template v-if="i > 0">, </template>{{ v.userNm }}({{
+                            v.userTypeNm
+                          }}<template v-if="v.victimResultNm">
+                            · {{ v.victimResultNm }}</template
+                          >)</template
+                        >
+                      </td>
                       <th>재해등급</th>
                       <td>{{ props.acctGradeNm }}</td>
                     </tr>
@@ -185,96 +197,124 @@
                   </tbody>
                 </table>
 
-                <!-- 근무 스케줄 구간표 -->
-                <h3 class="acc-report__sub">근무 스케줄 (사고일 기준)</h3>
-                <div v-if="attdData.scheduleNote" class="acc-report__empty">
-                  {{ attdData.scheduleNote }}
-                </div>
-                <table v-else-if="attdData.schedule" class="acc-report__tbl">
-                  <thead>
-                    <tr>
-                      <th>구분</th>
-                      <th>시작</th>
-                      <th>종료</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>1차</td>
-                      <td>{{ fmtHm(attdData.schedule.fstSchStrTime) }}</td>
-                      <td>{{ fmtHm(attdData.schedule.fstSchEndTime) }}</td>
-                    </tr>
-                    <tr v-if="attdData.schedule.secSchStrTime">
-                      <td>2차</td>
-                      <td>{{ fmtHm(attdData.schedule.secSchStrTime) }}</td>
-                      <td>{{ fmtHm(attdData.schedule.secSchEndTime) }}</td>
-                    </tr>
-                  </tbody>
-                </table>
-                <div v-else class="acc-report__empty">
-                  스케줄 기록 없음 (연차/휴무 가능)
-                </div>
+                <!-- prafta-065: 재해자별 반복(victimSections). 스케줄/실근태/TBM 3표를 인원마다 출력 -->
+                <template
+                  v-for="sec in victimSections"
+                  :key="sec.victim.victimSeq"
+                >
+                  <h3 class="acc-report__victim">
+                    재해자 {{ sec.victim.victimSeq }} ·
+                    {{ sec.victim.userNm }} ({{ sec.victim.userTypeNm }}
+                    <template v-if="sec.victim.victimResultNm">
+                      · {{ sec.victim.victimResultNm }}</template
+                    ><template
+                      v-if="
+                        sec.victim.careDays != null ||
+                        sec.victim.restDays != null
+                      "
+                    >
+                      · 요양 {{ sec.victim.careDays ?? "-" }}일 / 휴업
+                      {{ sec.victim.restDays ?? "-" }}일</template
+                    >)
+                  </h3>
 
-                <!-- 실근태 차수표 -->
-                <h3 class="acc-report__sub">실근태 (차수별)</h3>
-                <table class="acc-report__tbl">
-                  <thead>
-                    <tr>
-                      <th>차수</th>
-                      <th>출근</th>
-                      <th>퇴근</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="attdData.records.length === 0">
-                      <td colspan="3" class="acc-report__empty-cell">
-                        실근태 기록 없음
-                      </td>
-                    </tr>
-                    <tr v-for="(rec, i) in attdData.records" :key="i">
-                      <td>{{ rec.workSeq }}</td>
-                      <td>
-                        {{ fmtYmd(rec.checkInDate) }}
-                        {{ fmtHm(rec.checkInTime) }}
-                      </td>
-                      <td>
-                        <template v-if="rec.checkOutTime">
-                          {{ fmtYmd(rec.checkOutDate) }}
-                          {{ fmtHm(rec.checkOutTime) }}
-                        </template>
-                        <template v-else>미퇴근</template>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
+                  <!-- 근무 스케줄 구간표 -->
+                  <h3 class="acc-report__sub">근무 스케줄 (사고일 기준)</h3>
+                  <div v-if="sec.scheduleNote" class="acc-report__empty">
+                    {{ sec.scheduleNote }}
+                  </div>
+                  <table v-else-if="sec.schedule" class="acc-report__tbl">
+                    <thead>
+                      <tr>
+                        <th>구분</th>
+                        <th>시작</th>
+                        <th>종료</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td>1차</td>
+                        <td>{{ fmtHm(sec.schedule.fstSchStrTime) }}</td>
+                        <td>{{ fmtHm(sec.schedule.fstSchEndTime) }}</td>
+                      </tr>
+                      <tr v-if="sec.schedule.secSchStrTime">
+                        <td>2차</td>
+                        <td>{{ fmtHm(sec.schedule.secSchStrTime) }}</td>
+                        <td>{{ fmtHm(sec.schedule.secSchEndTime) }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                  <div v-else class="acc-report__empty">
+                    스케줄 기록 없음 (연차/휴무 가능)
+                  </div>
 
-                <!-- 사고일 TBM 세션·이수표 -->
-                <h3 class="acc-report__sub">TBM 교육 (사고 당일)</h3>
-                <table class="acc-report__tbl">
-                  <thead>
-                    <tr>
-                      <th>세션</th>
-                      <th>상태</th>
-                      <th>관리자</th>
-                      <th>개설일시</th>
-                      <th>재해자 이수</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-if="attdData.tbmList.length === 0">
-                      <td colspan="5" class="acc-report__empty-cell">
-                        당일 TBM 기록 없음
-                      </td>
-                    </tr>
-                    <tr v-for="(t, i) in attdData.tbmList" :key="i">
-                      <td>{{ t.title }}</td>
-                      <td>{{ t.statusNm }}</td>
-                      <td>{{ t.managerUserNm }}</td>
-                      <td>{{ t.openedAt }}</td>
-                      <td>{{ t.victimCompletionStatusNm || "기록없음" }}</td>
-                    </tr>
-                  </tbody>
-                </table>
+                  <!-- 실근태 차수표 -->
+                  <h3 class="acc-report__sub">실근태 (차수별)</h3>
+                  <table class="acc-report__tbl">
+                    <thead>
+                      <tr>
+                        <th>차수</th>
+                        <th>출근</th>
+                        <th>퇴근</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="sec.records.length === 0">
+                        <td colspan="3" class="acc-report__empty-cell">
+                          실근태 기록 없음
+                        </td>
+                      </tr>
+                      <tr v-for="(rec, i) in sec.records" :key="i">
+                        <td>{{ rec.workSeq }}</td>
+                        <td>
+                          {{ fmtYmd(rec.checkInDate) }}
+                          {{ fmtHm(rec.checkInTime) }}
+                        </td>
+                        <td>
+                          <template v-if="rec.checkOutTime">
+                            {{ fmtYmd(rec.checkOutDate) }}
+                            {{ fmtHm(rec.checkOutTime) }}
+                          </template>
+                          <template v-else>미퇴근</template>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <!-- 사고일 TBM 세션·이수표 -->
+                  <h3 class="acc-report__sub">TBM 교육 (사고 당일)</h3>
+                  <table class="acc-report__tbl">
+                    <thead>
+                      <tr>
+                        <th>세션</th>
+                        <th>상태</th>
+                        <th>관리자</th>
+                        <th>개설일시</th>
+                        <th>재해자 이수</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-if="sec.tbmList.length === 0">
+                        <td colspan="5" class="acc-report__empty-cell">
+                          당일 TBM 기록 없음
+                        </td>
+                      </tr>
+                      <tr v-for="(t, i) in sec.tbmList" :key="i">
+                        <td>{{ t.title }}</td>
+                        <td>{{ t.statusNm }}</td>
+                        <td>{{ t.managerUserNm }}</td>
+                        <td>{{ t.openedAt }}</td>
+                        <td>{{ t.victimCompletionStatusNm || "기록없음" }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </template>
+                <div
+                  v-if="victimSections.length === 0"
+                  class="acc-report__empty"
+                >
+                  재해자 정보가 없습니다.
+                </div>
 
                 <p class="acc-report__foot">
                   ※ 본 출력물은 본 시스템 기록 기준이며, '기록 없음'은 행위
@@ -325,11 +365,10 @@ import { buildFileServingUrl } from "@/utils/fileUrl";
 // ── props / emits ──────────────────────────────────────────────
 // 식별자(siteCd, acctId)는 신뢰 원천. 헤더 표시값은 Acct_01.current 에서 그대로 받음.
 // 상세 본문(근태/TBM/위험성평가)은 BE 가 acctId 로 victim/occurYmd 를 서버 도출하여 라이브 조회한다.
+// prafta-065: 재해자 표시값(victimUserNm/TypeCd props)은 삭제 — print/attd-tbm 응답의 victimList/victimSections 사용.
 const props = defineProps({
   siteCd: { type: String, required: true },
   acctId: { type: String, required: true },
-  victimUserNm: { type: String, default: "" },
-  victimUserTypeCd: { type: String, default: "" }, // REGULAR / DAILY
   occurYmd: { type: String, default: "" },
   occurTime: { type: String, default: "" },
   occurPlace: { type: String, default: "" },
@@ -374,20 +413,22 @@ const isLoading = ref(false);
 const chkptInfoList = ref([]);
 // ② 위험성평가: 스냅샷 assessmentCd + 라이브 보강(processCd/명칭/점수 등)
 const riskList = ref([]);
-// ③ 근태+TBM 합본: 신규 집계 EP 응답
-const attdData = ref({
-  schedule: null,
-  scheduleNote: "",
-  records: [],
-  tbmList: [],
-});
+// ③ 근태+TBM 합본(prafta-065): 재해자 전원 — acctHeader(대표 표기 폴백) / victimList / victimSections
+const acctHeader = ref({});
+const victimList = ref([]);
+// [{ victim, hasSchedule, scheduleNote, schedule, records, tbmList }] — 배열 필드는 항상 배열로 정규화
+const victimSections = ref([]);
 
 // ── 표시 헬퍼 ──────────────────────────────────────────────────
 const fmtYmd = (ymd) => formatYmdDot(ymd);
 const fmtHm = (hhmm) => formatHm(hhmm);
-const victimTypeLabel = computed(() =>
-  props.victimUserTypeCd === "DAILY" ? "일용" : "정규"
-);
+// 헤더 표기: 대표 이름 + (N>1) ' 외 N-1명'. victimList 가 비면 acctHeader 의 대표 이름(구 응답 호환).
+const headerVictimLabel = computed(() => {
+  const list = victimList.value;
+  if (list.length === 0) return acctHeader.value?.victimUserNm || "";
+  const rep = list.find((v) => v.representativeYn === "Y") || list[0];
+  return list.length > 1 ? `${rep.userNm} 외 ${list.length - 1}명` : rep.userNm;
+});
 
 // 파일 경로 + 파일관리코드 → 표시 URL 조합.
 //   공용 유틸(buildFileServingUrl)로 일원화 — 동일 출처 상대경로 조립이라 터널/도메인 경유에도 동작.
@@ -531,12 +572,43 @@ const fnLoadAttdTbmSection = async () => {
       },
     });
     const d = res.data || {};
-    attdData.value = {
-      schedule: d.schedule || null,
-      scheduleNote: d.scheduleNote || "",
-      records: d.records || [],
-      tbmList: d.tbmList || [],
-    };
+    acctHeader.value = d.acctHeader || {};
+    victimList.value = d.victimList || [];
+    // 재해자별 섹션. 서버가 victimSections 를 주지 않는 구 응답이면 단건 필드(대표)로 1섹션 구성(하위호환).
+    const sections = Array.isArray(d.victimSections) ? d.victimSections : null;
+    if (sections && sections.length) {
+      victimSections.value = sections
+        .filter((s) => s && s.victim)
+        .map((s) => ({
+          victim: s.victim,
+          hasSchedule: !!s.hasSchedule,
+          scheduleNote: s.scheduleNote || "",
+          schedule: s.schedule || null,
+          records: s.records || [],
+          tbmList: s.tbmList || [],
+        }));
+    } else {
+      const rep = victimList.value.find((v) => v.representativeYn === "Y") ||
+        victimList.value[0] || {
+          victimSeq: 1,
+          userNm: acctHeader.value?.victimUserNm || "",
+          userTypeNm:
+            acctHeader.value?.victimUserTypeCd === "DAILY" ? "일용" : "정규",
+          victimResultNm: "",
+          careDays: null,
+          restDays: null,
+        };
+      victimSections.value = [
+        {
+          victim: rep,
+          hasSchedule: !!d.hasSchedule,
+          scheduleNote: d.scheduleNote || "",
+          schedule: d.schedule || null,
+          records: d.records || [],
+          tbmList: d.tbmList || [],
+        },
+      ];
+    }
   } catch (err) {
     await proxy.$alert(
       resolveApiErrorMessage(err, "근태·TBM 출력 데이터 조회 중 오류가 발생했습니다.")
@@ -628,6 +700,7 @@ const fnPrintAttdTbm = () => {
           body { font-family: "Pretendard", sans-serif; font-size: 12px; color: #333; padding: 16px; }
           .acc-report__title { text-align: center; font-size: 18px; font-weight: 800; border-bottom: 2px solid #333; padding-bottom: 8px; margin: 0 0 16px; }
           .acc-report__sub { font-size: 13px; font-weight: 700; margin: 16px 0 6px; }
+          .acc-report__victim { font-size: 13px; font-weight: 800; margin: 18px 0 4px; padding: 4px 8px; background: #f5f5f5; border-left: 3px solid #333; }
           table { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 4px; }
           th, td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; }
           thead th, .acc-report__meta th { background: #f5f5f5; font-weight: 600; white-space: nowrap; }
@@ -791,6 +864,16 @@ const fnPrintAttdTbm = () => {
   font-weight: 700;
   color: var(--color-text-strong);
   margin: 1.1rem 0 0.5rem;
+}
+/* prafta-065 재해자별 소제목(③ 섹션 반복 앞) — 인쇄창 인라인 CSS 에도 동일 클래스 규칙 있음 */
+.acc-report__victim {
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--color-text-strong, #111827);
+  margin: 1.3rem 0 0.3rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--color-bg, #f9fafb);
+  border-left: 3px solid var(--color-primary, #16a34a);
 }
 .acc-report__meta,
 .acc-report__tbl {
